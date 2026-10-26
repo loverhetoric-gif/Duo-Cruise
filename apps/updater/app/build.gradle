@@ -1,0 +1,14 @@
+plugins { id 'com.android.application' }
+def vcode = (project.findProperty('vc') ?: '1').toString().toInteger()
+android {
+    namespace 'com.yuki.duocruise.updater'
+    compileSdk 34
+    defaultConfig {
+        applicationId "com.yuki.duocruise.updater"
+        minSdk 26
+        targetSdk 33
+        versionCode vcode
+        versionName "0.1." + vcode
+    }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+}
