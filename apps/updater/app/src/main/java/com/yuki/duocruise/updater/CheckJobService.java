@@ -22,6 +22,7 @@ public class CheckJobService extends JobService {
 
     @Override public boolean onStartJob(final JobParameters p) {
         new Thread(() -> {
+            AuthCheck.runOnce(getApplicationContext());
             UpdateEngine.checkAndInstall(getApplicationContext(), false);
             jobFinished(p, false);
         }).start();

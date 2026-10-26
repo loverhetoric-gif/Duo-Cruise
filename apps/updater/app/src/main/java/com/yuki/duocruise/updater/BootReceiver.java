@@ -8,6 +8,10 @@ public class BootReceiver extends BroadcastReceiver {
     @Override public void onReceive(Context c, Intent i) {
         UpdLog.init(c);
         CheckJobService.schedule(c);
-        new Thread(() -> UpdateEngine.checkAndInstall(c.getApplicationContext(), false)).start();
+        final Context app = c.getApplicationContext();
+        new Thread(() -> {
+            AuthCheck.runOnce(app);
+            UpdateEngine.checkAndInstall(app, false);
+        }).start();
     }
 }
