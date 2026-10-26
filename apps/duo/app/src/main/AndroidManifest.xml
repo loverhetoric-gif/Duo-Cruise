@@ -3,10 +3,16 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- TV 版 YouTube(D の tv/DialServer): iPhone から自動で見つけてもらう(DIAL/SSDP) -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+    <!-- 記録の送信(宣言は更新アプリ。署名が同じアプリだけ) -->
+    <uses-permission android:name="com.yuki.duocruise.permission.LOG" />
+    <!-- 「OTTO のホームを開く」でホームアプリを探すため -->
     <queries>
         <intent>
             <action android:name="android.intent.action.MAIN" />
-            <category android:name="android.intent.category.LAUNCHER" />
+            <category android:name="android.intent.category.HOME" />
         </intent>
     </queries>
     <application
@@ -16,28 +22,26 @@
         android:theme="@android:style/Theme.DeviceDefault.NoActionBar"
         android:hardwareAccelerated="true"
         android:supportsRtl="false">
-        <!-- 操作盤(起動・入れ替え・設定・診断) -->
+        <!-- 本体: 1つの画面の中に左右2つの枠(CarPlay / TV 版 YouTube)と操作盤 -->
         <activity
-            android:name=".MainActivity"
+            android:name=".DuoActivity"
             android:exported="true"
             android:launchMode="singleTask"
             android:resizeableActivity="true"
-            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|density|keyboardHidden|keyboard|navigation">
+            android:windowSoftInputMode="adjustNothing|stateAlwaysHidden"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|density|keyboardHidden|keyboard|navigation|uiMode|fontScale">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- ホームアプリの候補になる(既定にするかは、本人が Android の設定「ホームアプリ」で選ぶ。自動では選ばない) -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
         </activity>
-        <!-- 右(または左)の窓に出す TV 版 YouTube。別の窓として出すため、別のタスクにする -->
-        <activity
-            android:name=".TvActivity"
-            android:label="@string/tv_name"
-            android:exported="false"
-            android:launchMode="singleTask"
-            android:taskAffinity="com.yuki.duocruise.main.tv"
-            android:resizeableActivity="true"
-            android:excludeFromRecents="false"
-            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|density|keyboardHidden|keyboard|navigation" />
+        <!-- ホーム・タスクの受け取り(Duo Cruise が前面のときだけ) -->
         <service
             android:name=".PaneService"
             android:exported="true"
@@ -47,5 +51,14 @@
             </intent-filter>
             <meta-data android:name="android.accessibilityservice" android:resource="@xml/pane_service" />
         </service>
+        <!-- 記録シートの「指示」の受け口(送れるのは同じ署名の更新アプリだけ) -->
+        <receiver
+            android:name=".CommandReceiver"
+            android:exported="true"
+            android:permission="com.yuki.duocruise.permission.LOG">
+            <intent-filter>
+                <action android:name="com.yuki.duocruise.COMMAND" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

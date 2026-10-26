@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Duo Cruise</string>
-    <string name="tv_name">Duo Cruise TV</string>
-    <string name="svc_desc">コマンダーのボタンを、いま操作している側(左か右)へ届けます。長押しで操作する側を切り替え、枠で表示します。</string>
+    <string name="svc_desc">Duo Cruise が前面のときだけ、ホーム・タスクのボタンを受け取り、割り当てた操作(操作盤・操作側の切り替えなど)にします。ほかのアプリの画面では何もしません。</string>
 </resources>
