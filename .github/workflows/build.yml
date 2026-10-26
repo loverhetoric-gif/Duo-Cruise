@@ -1,8 +1,11 @@
 name: build-and-release
 
-# main に変更が入ると、アプリを作って署名し、最新リリースとして公開する。
-# 車のオットキャスト(Duo Cruise 更新)が、このリリースを15分ごとに見に行く。
-# PR(変更の提案)のときは、作って署名するところまで確かめるだけで、公開はしない。
+# main に変更が入ると、アプリを作って署名し、正式版(latest)として公開する。
+#   車のオットキャスト(Duo Cruise 更新)が、この正式版を15分ごとに見に行く。
+#   正式版には「1つ前の正式版の中身を、今と同じ版番号で作り直したもの」(prev-*.apk)も付ける。
+#   Android は版番号を下げて入れられないため、更新アプリの「1つ前の版に戻す」はこれを入れる。
+# PR(変更の提案)のときは、作って署名し、テスト版(prerelease「test-番号」)として公開する。
+#   正式版(latest)は変えない。更新アプリで「テスト版を受け取る」をオンにした端末だけが入れる。
 on:
   push:
     branches: [main]
@@ -13,22 +16,39 @@ on:
 
 permissions:
   contents: write
+  # 終わったことを Issue「自動ビルドの知らせ」に書き、本人に @ で知らせる(GitHub からメールが届く)
+  issues: write
 
 env:
   AIRPLAY_UPSTREAM: https://github.com/jqssun/android-airplay-server
   AIRPLAY_COMMIT: a46cca0a6a1274e9e33c0e750f0f1c1eb1d881ea
+  # 署名・照合に使う道具(更新アプリ・キー記録・AirPlay で実績のある版)
+  BT_SIGN: '34.0.0'
+  # manifest 用の読み取り(SDK 37 で作る本体も読めるよう新しい版)
+  BT_READ: '37.0.0'
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # 1つ前の正式版の中身を取り出すため、履歴とタグを全部取る
 
+      # Java:17 / 25 も入れておく(本体 apps/duo の toolchain 用)。最後に書いた 21 が既定
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '21'
+          java-version: |
+            17
+            25
+            21
+
+      - name: Gradle に Java の場所を教える(toolchain 用)
+        run: |
+          mkdir -p ~/.gradle
+          echo "org.gradle.java.installations.fromEnv=JAVA_HOME_17_X64,JAVA_HOME_21_X64,JAVA_HOME_25_X64" >> ~/.gradle/gradle.properties
 
       - uses: gradle/actions/setup-gradle@v4
         with:
@@ -38,11 +58,19 @@ jobs:
         run: |
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
-            "platforms;android-34" "platforms;android-37.0" "build-tools;34.0.0" \
-            "ndk;27.0.12077973" "cmake;3.22.1" > /dev/null
+            "platforms;android-34" "platforms;android-37.0" \
+            "build-tools;$BT_SIGN" "build-tools;$BT_READ" \
+            "ndk;27.0.12077973" "ndk;28.2.13676358" "cmake;3.22.1" > /dev/null
 
-      - name: 版番号
-        run: echo "VC=$((1000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
+      - name: 版番号と、本体があるか
+        run: |
+          echo "VC=$((1000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
+          if [ -f apps/duo/settings.gradle ] || [ -f apps/duo/settings.gradle.kts ]; then
+            echo "HAS_DUO=1" >> "$GITHUB_ENV"
+          else
+            echo "HAS_DUO=0" >> "$GITHUB_ENV"
+            echo "apps/duo がないので、本体は作りません"
+          fi
 
       - name: Duo Cruise 更新 を作る
         working-directory: apps/updater
@@ -56,6 +84,18 @@ jobs:
           echo "sdk.dir=$ANDROID_HOME" > local.properties
           gradle --no-daemon assembleDebug -Pvc=$VC
 
+      - name: Duo Cruise 本体 を作る(apps/duo があるときだけ)
+        if: env.HAS_DUO == '1'
+        working-directory: apps/duo
+        run: |
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          if [ -f gradlew ]; then
+            chmod +x gradlew
+            ./gradlew --no-daemon assembleDebug -Pvc=$VC
+          else
+            gradle --no-daemon assembleDebug -Pvc=$VC
+          fi
+
       - name: Duo Cruise AirPlay を作る(元のソースに修正を当てる)
         run: |
           git clone --recursive "$AIRPLAY_UPSTREAM" airplay-src
@@ -67,6 +107,39 @@ jobs:
           echo "sdk.dir=$ANDROID_HOME" > local.properties
           ./gradlew --no-daemon assembleDebug
 
+      # 正式版のときだけ:1つ前の正式版の中身を、今と同じ版番号で作り直す(中身が変わったアプリだけ)
+      - name: 1つ前の正式版を作り直す(戻す用)
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          PREV_TAG=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name 2>/dev/null || true)
+          if [ -z "$PREV_TAG" ] || ! git rev-parse -q --verify "refs/tags/$PREV_TAG" > /dev/null; then
+            echo "1つ前の正式版が見つからないので、戻す用は作りません"; exit 0
+          fi
+          PREV_SHA=$(git rev-list -n 1 "$PREV_TAG")
+          echo "PREV_TAG=$PREV_TAG" >> "$GITHUB_ENV"
+          echo "1つ前の正式版: $PREV_TAG ($PREV_SHA)"
+          git worktree add -f prev-src "$PREV_SHA"
+          mkdir -p prev-out
+          for app in updater keyrecorder duo; do
+            [ -d "prev-src/apps/$app" ] || { echo "$app: 1つ前にはないので省きます"; continue; }
+            [ -d "apps/$app" ] || continue
+            if git diff --quiet "$PREV_SHA" HEAD -- "apps/$app"; then
+              echo "$app: 中身が同じなので省きます"; continue
+            fi
+            echo "$app: 1つ前の中身を版番号 $VC で作り直します"
+            (
+              cd "prev-src/apps/$app"
+              echo "sdk.dir=$ANDROID_HOME" > local.properties
+              if [ -f gradlew ]; then chmod +x gradlew; ./gradlew --no-daemon assembleDebug -Pvc=$VC
+              else gradle --no-daemon assembleDebug -Pvc=$VC; fi
+            ) && cp "prev-src/apps/$app/app/build/outputs/apk/debug/app-debug.apk" "prev-out/$app.apk" \
+              || echo "$app: 1つ前の中身を作れませんでした(戻す用から省きます)"
+          done
+          ls -la prev-out
+
       - name: 署名して、公開用ファイルを作る
         env:
           KS_B64: ${{ secrets.DUO_KEYSTORE_B64 }}
@@ -75,7 +148,7 @@ jobs:
           set -e
           test -n "$KS_B64" -a -n "$KS_PASS"
           echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/mx.jks"
-          BT="$ANDROID_HOME/build-tools/34.0.0"
+          BT="$ANDROID_HOME/build-tools/$BT_SIGN"
           mkdir -p out
           sign() { # 入力 出力名
             "$BT/zipalign" -f -p 4 "$1" "$RUNNER_TEMP/aligned.apk"
@@ -85,18 +158,57 @@ jobs:
           }
           sign apps/updater/app/build/outputs/apk/debug/app-debug.apk duo-updater.apk
           sign apps/keyrecorder/app/build/outputs/apk/debug/app-debug.apk duo-keys.apk
+          if [ "$HAS_DUO" = 1 ]; then sign apps/duo/app/build/outputs/apk/debug/app-debug.apk duo-main.apk; fi
           sign airplay-src/app/build/outputs/apk/debug/app-debug.apk duo-airplay.apk
+          [ -f prev-out/updater.apk ] && sign prev-out/updater.apk prev-duo-updater.apk
+          [ -f prev-out/keyrecorder.apk ] && sign prev-out/keyrecorder.apk prev-duo-keys.apk
+          [ -f prev-out/duo.apk ] && sign prev-out/duo.apk prev-duo-main.apk
           rm -f "$RUNNER_TEMP/mx.jks" out/*.idsig
-          python3 tools/make_manifest.py out "$BT/aapt2" "$GITHUB_RUN_NUMBER"
+          python3 tools/make_manifest.py out "$ANDROID_HOME/build-tools/$BT_READ/aapt2" "$GITHUB_RUN_NUMBER" "${PREV_TAG:-}"
           ls -la out
           cat out/manifest.json
 
-      - name: リリースを公開する
-        if: github.event_name != 'pull_request'
+      - name: 正式版として公開する(main)
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "build-$GITHUB_RUN_NUMBER" out/* \
+            --target "$GITHUB_SHA" \
             --title "build $GITHUB_RUN_NUMBER" \
-            --notes "commit: $GITHUB_SHA" \
+            --notes "commit: $GITHUB_SHA ${PREV_TAG:+(戻す用: $PREV_TAG の中身)}" \
             --latest
+
+      - name: テスト版として公開する(PR。正式版 latest は変えない)
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          gh release create "test-$GITHUB_RUN_NUMBER" out/* \
+            --target "$HEAD_SHA" \
+            --title "test PR#$PR_NUMBER build $GITHUB_RUN_NUMBER" \
+            --notes "PR #$PR_NUMBER のテスト版。commit: $HEAD_SHA。「テスト版を受け取る」がオンの端末だけが入れます。" \
+            --prerelease --latest=false
+
+      # 成功でも失敗でも必ず動く。本人(リポジトリの持ち主)を @ で呼ぶので、GitHub の通知とメールが届く
+      - name: 終わったことを知らせる
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESULT: ${{ job.status }}
+          OWNER: ${{ github.repository_owner }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          KIND: "${{ github.event_name == 'pull_request' && format('PR #{0} のテスト版', github.event.pull_request.number) || '正式版' }}"
+        run: |
+          TITLE="自動ビルドの知らせ"
+          N=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "$TITLE in:title" --json number,title \
+            --jq "map(select(.title == \"$TITLE\"))[0].number // empty")
+          if [ -z "$N" ]; then
+            N=$(gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" \
+              --body "自動ビルドが終わるたびに、ここに結果を書きます(持ち主に通知が届きます)。" | grep -o '[0-9]*$')
+          fi
+          case "$RESULT" in success) R="成功" ;; failure) R="失敗" ;; cancelled) R="中止" ;; *) R="$RESULT" ;; esac
+          gh issue comment "$N" --repo "$GITHUB_REPOSITORY" --body "@$OWNER 自動ビルド $GITHUB_RUN_NUMBER($KIND): **$R**
+          $RUN_URL"
