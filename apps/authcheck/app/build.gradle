@@ -1,0 +1,15 @@
+plugins { id 'com.android.application' }
+def vcode = (project.findProperty('vc') ?: '2').toString().toInteger()
+android {
+    namespace 'com.yuki.duocruise.authcheck'
+    compileSdk 34
+    defaultConfig {
+        applicationId "com.yuki.duocruise.authcheck"
+        minSdk 26
+        targetSdk 33
+        versionCode vcode
+        versionName "0.2." + vcode
+    }
+    buildTypes { release { minifyEnabled false } }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+}
