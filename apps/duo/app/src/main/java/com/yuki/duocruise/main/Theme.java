@@ -13,7 +13,6 @@ final class Theme {
     static final int SCRIM = Color.parseColor("#F00E1420");
     static final int CARD = Color.parseColor("#172033");
     static final int CARD_FOCUS = Color.parseColor("#24314D");
-    static final int CAR_BG = Color.parseColor("#101826");
     static final int ACCENT = Color.parseColor("#4F8CFF");
     static final int GREEN = Color.parseColor("#1F8F6E");
     static final int AMBER = Color.parseColor("#B07A1E");

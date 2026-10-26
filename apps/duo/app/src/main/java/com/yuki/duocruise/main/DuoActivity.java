@@ -459,8 +459,8 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         b.append(" | ユーザー補助 ").append(accessOn() ? "ON" : "OFF");
         b.append(" | ホームアプリ ").append(isDefaultHome() ? "Duo Cruise" : "ほか");
         b.append(" | 割り当て ").append(keyMap.serialize()).append(" 長押し").append(Store.longMs(this)).append("ms");
-        b.append(" | CarPlay").append(car.real() ? "" : "(仮)").append(": ").append(safeStatus(car));
-        b.append(" | YouTube").append(tv.real() ? "" : "(仮)").append(": ").append(safeStatus(tv));
+        b.append(" | CarPlay").append(car.real() ? "" : "(作れず)").append(": ").append(safeStatus(car));
+        b.append(" | YouTube").append(tv.real() ? "" : "(作れず)").append(": ").append(safeStatus(tv));
         return b.toString();
     }
 

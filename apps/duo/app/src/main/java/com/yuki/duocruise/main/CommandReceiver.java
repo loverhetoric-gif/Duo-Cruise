@@ -6,7 +6,8 @@ import android.content.Intent;
 import android.os.Handler;
 import android.os.Looper;
 
-import java.lang.reflect.Method;
+import com.yuki.duocruise.carplay.MfiProbe;
+
 import java.util.List;
 
 /**
@@ -21,7 +22,6 @@ import java.util.List;
 public class CommandReceiver extends BroadcastReceiver {
     static final String ACTION = "com.yuki.duocruise.COMMAND";
     static final String PREFIX = "com.yuki.duocruise.main:";
-    static final String MFI_CLASS = "com.yuki.duocruise.carplay.MfiProbe";
 
     @Override public void onReceive(Context c, Intent i) {
         DuoLog.init(c);
@@ -31,7 +31,7 @@ public class CommandReceiver extends BroadcastReceiver {
         if (cmd.isEmpty()) { DuoLog.result("指示が空です"); return; }
         DuoLog.log("指示を受けました: " + cmd);
 
-        if (cmd.equals("mfi-probe")) {
+        if (cmd.equals(MfiProbe.COMMAND)) {
             String err = mfiProbe(c.getApplicationContext());
             if (err != null) DuoLog.result("mfi-probe: " + err);
             return;
@@ -79,17 +79,11 @@ public class CommandReceiver extends BroadcastReceiver {
         return b.length() == 0 ? "記録なし" : b.toString();
     }
 
-    /** B の部品を呼ぶだけ(別スレッドで読み、結果は B が送る)。呼べなかったときだけ理由を返す。 */
+    /** B の部品を呼ぶだけ(別スレッドで読み、結果は B が kind=result で送る)。呼べなかったときだけ理由を返す。 */
     private static String mfiProbe(Context c) {
         try {
-            Class<?> k = Class.forName(MFI_CLASS);
-            Method m = k.getMethod("runAndReport", Context.class);
-            m.invoke(null, c);
+            MfiProbe.runAndReport(c);
             return null;
-        } catch (ClassNotFoundException e) {
-            return "B の部品(" + MFI_CLASS + ")が未着です";
-        } catch (NoSuchMethodException e) {
-            return "B の部品に runAndReport(Context) がありません";
         } catch (Throwable t) {
             return "失敗: " + DuoLog.why(t);
         }

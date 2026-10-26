@@ -5,8 +5,7 @@
   追加で `command(String)`(記録シートの指示 `com.yuki.duocruise.main:tv-…` 用)。
 - `DialServer` … iPhone の YouTube の送信ボタンに「Duo Cruise」を出す DIAL サーバー(SSDP＋dd.xml＋/apps/YouTube)。
   TvPane が起動・停止する。つながっている全ての回線(wlan0・p2p 等)で応え、10秒ごとに新しい回線を拾う。
-- `TvLog` … 記録。C の `com.yuki.duocruise.main.DuoLog.send(Context, String kind, String text)` があればそれを使い、
-  無ければ約束のブロードキャスト(`com.yuki.duocruise.updater.LOG`、宛先 `com.yuki.duocruise.updater`)を直接送る。
+- `TvLog` … 記録。本体の `com.yuki.duocruise.main.DuoLog.send(Context, String kind, String text)` を直接使う。
 
 ## C にお願いしたいこと(C の持ち場なので D は触っていない)
 1. DuoActivity で `new TvPane(this)` を作り、`view()` を右(入れ替え時は左)の枠に置く。

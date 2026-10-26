@@ -6,8 +6,7 @@ import android.view.View;
 
 /**
  * 左右の枠に入る部品(CarPlay / TV 版 YouTube)を、DuoActivity から同じ形で扱うための窓口。
- * 本物の部品(B の CarPlayPane、D の TvPane)は Panes が見つけて、この形に合わせる。
- * 見つからない間は、同じ約束の仮の部品(StubCarPane / StubTvPane)が入る。
+ * B の CarPlayPane、D の TvPane を、Panes がこの形に合わせる。
  */
 interface Pane {
     View view();
