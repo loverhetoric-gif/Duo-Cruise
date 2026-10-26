@@ -306,7 +306,9 @@ class CarPlayPane(context: Context, private val listener: Listener?) {
         label = "Duo Cruise",
         hostName = "DuoCruise",
         transport = CarPlayTransport.WIRELESS,
-        wirelessHotspotMode = WirelessHotspotMode.WIFI_P2P,
+        // OTTO では Wi-Fi Direct のグループが作れない(実機：家の Wi-Fi あり・なし とも createGroup が generic error)。
+        // アプリ専用のアクセスポイント(LocalOnlyHotspot)で iPhone を受ける
+        wirelessHotspotMode = WirelessHotspotMode.LOCAL_ONLY_HOTSPOT,
         wifiHighPerformanceEnabled = true,
     )
 
@@ -402,7 +404,7 @@ class CarPlayPane(context: Context, private val listener: Listener?) {
         CarPlayStatus.WaitingForMfi -> "MFi チップの応答待ち"
         CarPlayStatus.RequestingMfiPermission -> "MFi の許可待ち"
         CarPlayStatus.MfiReady -> "MFi チップ OK"
-        CarPlayStatus.StartingHotspot -> "Wi-Fi(P2P)を立てています"
+        CarPlayStatus.StartingHotspot -> "Wi-Fi(アクセスポイント)を立てています"
         is CarPlayStatus.HotspotReady -> "Wi-Fi 準備完了 ${status.band} ch${status.channel}"
         CarPlayStatus.WaitingForPairedIphone -> "ペアリング済みの iPhone を待っています"
         CarPlayStatus.ConnectingBluetooth -> "Bluetooth で iPhone に接続中"
