@@ -11,7 +11,7 @@ import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 
-/** 画面・ファイル・logcat(DUOUPD)に記録する。 */
+/** 画面・ファイル・logcat(DUOUPD)・記録シート(Remote)に記録する。 */
 final class UpdLog {
     interface Listener { void changed(); }
     private static final List<String> lines = new ArrayList<>();
@@ -34,6 +34,8 @@ final class UpdLog {
         if (file != null) try (FileWriter w = new FileWriter(file, true)) { w.write(l + "\n"); } catch (Exception ignored) {}
         Listener x = listener;
         if (x != null) x.changed();
+        // 記録シートへも送る(受け口が未設定なら端末に溜めるだけ)
+        Remote.own(t.contains("失敗") || t.contains("不一致") ? "error" : "log", t);
     }
 
     static synchronized List<String> snapshot() { return new ArrayList<>(lines); }

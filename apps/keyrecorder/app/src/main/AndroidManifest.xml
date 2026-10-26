@@ -1,5 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 自作アプリ(同じ署名)どうしの記録・指示のやり取り。更新アプリと同じ定義(どちらが先に入っても使える) -->
+    <permission
+        android:name="com.yuki.duocruise.permission.LOG"
+        android:label="Duo Cruise の記録"
+        android:protectionLevel="signature" />
+    <uses-permission android:name="com.yuki.duocruise.permission.LOG" />
+    <queries>
+        <package android:name="com.yuki.duocruise.updater" />
+    </queries>
     <application
         android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher"
@@ -16,6 +25,15 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <!-- 記録シートの指示(更新アプリから。送れるのは同じ署名のアプリだけ) -->
+        <receiver
+            android:name=".CommandReceiver"
+            android:exported="true"
+            android:permission="com.yuki.duocruise.permission.LOG">
+            <intent-filter>
+                <action android:name="com.yuki.duocruise.COMMAND" />
+            </intent-filter>
+        </receiver>
         <service
             android:name=".KeyRecorderService"
             android:exported="true"

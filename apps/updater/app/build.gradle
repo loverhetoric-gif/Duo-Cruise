@@ -1,5 +1,11 @@
 plugins { id 'com.android.application' }
 def vcode = (project.findProperty('vc') ?: '1').toString().toInteger()
+// 記録シートの受け口の URL(apps/updater/remote.properties の log_url)。空なら送らない
+def remote = new Properties()
+def remoteFile = rootProject.file('remote.properties')
+if (remoteFile.exists()) remoteFile.withInputStream { remote.load(it) }
+def logUrl = (remote.getProperty('log_url') ?: '').trim()
+if (!logUrl.isEmpty() && !logUrl.startsWith('https://')) throw new GradleException('remote.properties の log_url は https:// で始めてください')
 android {
     namespace 'com.yuki.duocruise.updater'
     compileSdk 34
@@ -9,6 +15,8 @@ android {
         targetSdk 33
         versionCode vcode
         versionName "0.1." + vcode
+        buildConfigField "String", "LOG_URL", "\"" + logUrl.replace('"', '') + "\""
     }
+    buildFeatures { buildConfig true }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
 }
