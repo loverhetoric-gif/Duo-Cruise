@@ -95,12 +95,18 @@ class LocalOnlyHotspotManager(context: Context) : WirelessHotspotManager {
                 acquiredMulticastLock = null
             }
 
+            // Duo Cruise: Android は普通のアプリにチャンネルを教えない(0 = 自動)。iPhone に 0 を渡すと
+            // CarPlay 用の Wi-Fi につなぎに来なかったため、口の実際の周波数を Linux から読んで渡す。
+            val frequencyMHz = apInterface?.name?.let { com.yuki.duocruise.carplay.WifiFrequency.frequencyMHz(it) }
+            val channel = if (configuration.channel > 0) configuration.channel
+                else frequencyMHz?.let { com.yuki.duocruise.carplay.WifiFrequency.channelOf(it) } ?: configuration.channel
+
             return WirelessHotspotInfo(
                 ssid = configuration.ssid,
                 passphrase = configuration.passphrase,
                 security = configuration.security,
-                channel = configuration.channel,
-                frequencyMHz = null,
+                channel = channel,
+                frequencyMHz = frequencyMHz,
                 bssid = apInterface?.bssid ?: configuration.bssid,
                 interfaceName = apInterface?.name,
                 hostAddress = apInterface?.hostAddress,
@@ -421,12 +427,20 @@ class LocalOnlyHotspotManager(context: Context) : WirelessHotspotManager {
                 }
             }
         }
-        candidates.firstOrNull { it.name !in preStartInterfaces && it.hotspotAddress() != null }
+        // Duo Cruise: OTTO では SIM の口(rmnet_data*)を選んでしまったため、Wi-Fi の口を先に探し、
+        // 携帯回線・トンネル系の口は候補から外す。
+        val wifiLike = Regex("^(wlan|swlan|softap|ap)\\d*")
+        candidates.firstOrNull { it.name !in preStartInterfaces && wifiLike.containsMatchIn(it.name) && it.hotspotAddress() != null }
+            ?.let { return it }
+        candidates.firstOrNull { it.name !in preStartInterfaces && wifiLike.containsMatchIn(it.name) }
+            ?.let { return it }
+        val cellular = Regex("^(rmnet|ccmni|dummy|tun|ipsec|v4-|radio|ifb|p2p)")
+        candidates.firstOrNull { it.name !in preStartInterfaces && !cellular.containsMatchIn(it.name) && it.hotspotAddress() != null }
             ?.let { return it }
 
         val primaryInterface = connectivityManager?.activeNetwork
             ?.let { connectivityManager.getLinkProperties(it)?.interfaceName }
-        val nonPrimary = candidates.filter { it.name != primaryInterface }
+        val nonPrimary = candidates.filter { it.name != primaryInterface && !cellular.containsMatchIn(it.name) }
         return nonPrimary.firstOrNull { it.hasPrivate192Address() }
             ?: nonPrimary.firstOrNull { it.hasSiteLocalAddress() }
             ?: nonPrimary.firstOrNull { it.hasLinkLocalAddress() }
