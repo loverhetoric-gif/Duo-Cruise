@@ -15,9 +15,9 @@ import java.util.List;
  * 送れるのは同じ署名のアプリだけ(マニフェストで com.yuki.duocruise.permission.LOG を要求)。結果は kind=result で返す。
  *
  * 指示(先頭の「com.yuki.duocruise.main:」は有っても無くてもよい):
- *   state / log / keys / swap / side / panel / keys-reset / car-restart
+ *   state / log / keys / swap / side / panel / keys-reset / car-stop
  *   tv-…       … D の TvPane.command() へ渡す
- *   mfi-probe  … B の部品 MfiProbe.runAndReport(context) を呼ぶだけ(結果は B が kind=result で送る)
+ *   mfi-probe  … 受けない(チップに触れる指示は遠くからは実行しない)
  */
 public class CommandReceiver extends BroadcastReceiver {
     static final String ACTION = "com.yuki.duocruise.COMMAND";
@@ -31,9 +31,9 @@ public class CommandReceiver extends BroadcastReceiver {
         if (cmd.isEmpty()) { DuoLog.result("指示が空です"); return; }
         DuoLog.log("指示を受けました: " + cmd);
 
+        // チップに触れる指示は、遠くからは受けない(本人の承認と、OTTO の画面での操作が要る)
         if (cmd.equals(MfiProbe.COMMAND)) {
-            String err = mfiProbe(c.getApplicationContext());
-            if (err != null) DuoLog.result("mfi-probe: " + err);
+            DuoLog.result("mfi-probe: 遠くからの指示では実行しません(チップに触れるため)");
             return;
         }
         if (cmd.equals("log")) { DuoLog.result("log: " + recent(30)); return; }
@@ -55,7 +55,7 @@ public class CommandReceiver extends BroadcastReceiver {
                 if (a == null) r = cmd.equals("state") ? "画面は閉じています(" + (Store.swapped(c) ? "入れ替え中" : "通常の配置") + ")" : "画面が開いていないため「" + cmd + "」はできません";
                 else {
                     r = a.command(cmd);
-                    if (r == null) r = "知らない指示です。使えるもの: state / log / keys / swap / side / panel / keys-reset / car-restart / tv-… / mfi-probe";
+                    if (r == null) r = "知らない指示です。使えるもの: state / log / keys / swap / side / panel / keys-reset / car-stop / tv-…";
                 }
                 DuoLog.result(cmd + ": " + r);
             } catch (Throwable t) {
@@ -77,15 +77,5 @@ public class CommandReceiver extends BroadcastReceiver {
         StringBuilder b = new StringBuilder();
         for (int i = 0; i < Math.min(n, all.size()); i++) b.append(all.get(i)).append('\n');
         return b.length() == 0 ? "記録なし" : b.toString();
-    }
-
-    /** B の部品を呼ぶだけ(別スレッドで読み、結果は B が kind=result で送る)。呼べなかったときだけ理由を返す。 */
-    private static String mfiProbe(Context c) {
-        try {
-            MfiProbe.runAndReport(c);
-            return null;
-        } catch (Throwable t) {
-            return "失敗: " + DuoLog.why(t);
-        }
     }
 }

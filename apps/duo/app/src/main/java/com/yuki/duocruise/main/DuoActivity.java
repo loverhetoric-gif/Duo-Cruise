@@ -35,6 +35,8 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
 
     private final Handler main = new Handler(Looper.getMainLooper());
     private Pane car, tv;
+    /** 本人が操作盤で CarPlay を開始したか。開いた直後は false(チップに触れない)。 */
+    private boolean carOn;
     private SplitRoot root;
     private PanelView panel;
     private KeyRouter router;
@@ -72,7 +74,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         root.apply(Store.swapped(this), Store.side(this), Store.panelHalf(this));
 
         askPermissions();
-        try { car.start(); } catch (Throwable t) { DuoLog.error("CarPlay を始められません: " + DuoLog.why(t)); }
+        // CarPlay は開いただけでは始めない(チップ・Wi-Fi・Bluetooth に触れない)。操作盤の「CarPlay を開始」でだけ始める
         try { tv.start(); } catch (Throwable t) { DuoLog.error("YouTube を始められません: " + DuoLog.why(t)); }
         boolean asHome = getIntent() != null && getIntent().hasCategory(Intent.CATEGORY_HOME);
         DuoLog.log("Duo Cruise を開きました(版 " + DuoLog.version() + (asHome ? "、ホームとして" : "") + ")");
@@ -108,7 +110,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         }
         if (perms.length == 0) DuoLog.error("権限の許可画面が取り消されました(画面が閉じられた等)");
         else DuoLog.log("権限の結果: " + b.toString().trim());
-        if (any) restartCar(); // 許可が出たら CarPlay を始め直す
+        if (any) DuoLog.log("CarPlay は操作盤の「CarPlay を開始」で始めます");
     }
 
     /** 高さは WindowInsets で求める。上のステータスバーは隠し、残りの余白(下の64など)は避ける。 */
@@ -316,13 +318,27 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         focusActive();
     }
 
-    @Override public void restartCar() {
-        DuoLog.log("CarPlay を再接続します");
+    /** 操作盤の「CarPlay を開始/止める」。CarPlay を始めるのは、本人がこれを押したときだけ。 */
+    @Override public void toggleCar() {
+        if (carOn) stopCar();
+        else {
+            DuoLog.log("CarPlay を開始します(操作盤から)");
+            carOn = true;
+            try { car.start(); } catch (Throwable t) { DuoLog.error("CarPlay を始められません: " + DuoLog.why(t)); }
+            stateChanged();
+        }
+    }
+
+    @Override public boolean carOn() { return carOn; }
+
+    /** 止めて、チップ・Wi-Fi・Bluetooth を手放す。新しい部品に取り替え、次の「開始」まで何もしない。 */
+    void stopCar() {
+        DuoLog.log("CarPlay を止めます");
+        carOn = false;
         try { car.destroy(); } catch (Throwable t) { DuoLog.error("CarPlay を止められません: " + DuoLog.why(t)); }
         car = Panes.car(this);
         root.setPanes(car.view(), tv.view(), panel);
         root.apply(Store.swapped(this), Store.side(this), Store.panelHalf(this));
-        try { car.start(); } catch (Throwable t) { DuoLog.error("CarPlay を始められません: " + DuoLog.why(t)); }
         stateChanged();
     }
 
@@ -488,7 +504,8 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
             case "side": switchSide(); return sideText();
             case "panel": togglePanel(); return "操作盤 " + (panel.getVisibility() == View.VISIBLE ? "表示" : "非表示");
             case "keys-reset": resetKeys(); return "割り当てを初期値に戻しました: " + keyMap.serialize();
-            case "car-restart": restartCar(); return "CarPlay を再接続しました";
+            // 遠くからは「止める」だけ。始めるのは OTTO の画面の操作盤からだけ
+            case "car-stop": if (carOn) stopCar(); return "CarPlay は止まっています";
             default: return null;
         }
     }

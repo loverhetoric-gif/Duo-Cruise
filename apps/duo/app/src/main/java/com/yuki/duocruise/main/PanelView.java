@@ -27,7 +27,8 @@ final class PanelView extends ViewGroup {
         void switchSide();
         void swap();
         void closePanel();
-        void restartCar();
+        void toggleCar();
+        boolean carOn();
         void goHome();
         String otherHomeName();
         void openSettings();
@@ -120,7 +121,9 @@ final class PanelView extends ViewGroup {
             items.add(new Item(() -> "左右を入れ替え", host::layoutText, Theme.MUTED, host::swap));
             items.add(new Item(() -> "2画面に戻る", () -> "操作盤を閉じる", Theme.MUTED, host::closePanel));
             items.add(new Item(() -> "ボタンの割り当て", () -> "長押し・ホーム・タスク", Theme.MUTED, () -> show(KEYS)));
-            items.add(new Item(() -> "CarPlay を再接続", () -> "止めてから、もう一度始める", Theme.MUTED, host::restartCar));
+            items.add(new Item(() -> host.carOn() ? "CarPlay を止める" : "CarPlay を開始",
+                    () -> host.carOn() ? "チップ・Wi-Fi・Bluetooth を手放す" : "MultiPlay を使っていない時だけ",
+                    Theme.MUTED, host::toggleCar));
             items.add(new Item(() -> "記録を見る", () -> "状態・エラー", Theme.MUTED, () -> show(LOG)));
             items.add(new Item(() -> "OTTO のホームを開く", host::otherHomeName, Theme.MUTED, host::goHome));
             items.add(new Item(() -> "設定・その他", () -> "Android の設定・ホームアプリ", Theme.MUTED, () -> show(SYS)));
