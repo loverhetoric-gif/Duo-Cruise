@@ -1,0 +1,102 @@
+name: build-and-release
+
+# main に変更が入ると、アプリを作って署名し、最新リリースとして公開する。
+# 車のオットキャスト(Duo Cruise 更新)が、このリリースを15分ごとに見に行く。
+# PR(変更の提案)のときは、作って署名するところまで確かめるだけで、公開はしない。
+on:
+  push:
+    branches: [main]
+    paths: ['apps/**', 'patches/**', 'tools/**', '.github/workflows/build.yml']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  AIRPLAY_UPSTREAM: https://github.com/jqssun/android-airplay-server
+  AIRPLAY_COMMIT: a46cca0a6a1274e9e33c0e750f0f1c1eb1d881ea
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+
+      - name: Android SDK
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "platforms;android-34" "platforms;android-37.0" "build-tools;34.0.0" \
+            "ndk;27.0.12077973" "cmake;3.22.1" > /dev/null
+
+      - name: 版番号
+        run: echo "VC=$((1000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
+
+      - name: Duo Cruise 更新 を作る
+        working-directory: apps/updater
+        run: |
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          gradle --no-daemon assembleDebug -Pvc=$VC
+
+      - name: Duo Cruise キー記録 を作る
+        working-directory: apps/keyrecorder
+        run: |
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          gradle --no-daemon assembleDebug -Pvc=$VC
+
+      - name: Duo Cruise AirPlay を作る(元のソースに修正を当てる)
+        run: |
+          git clone --recursive "$AIRPLAY_UPSTREAM" airplay-src
+          cd airplay-src
+          git checkout "$AIRPLAY_COMMIT"
+          git submodule update --init --recursive
+          git apply ../patches/airplay.patch
+          sed -i "s/versionCode = [0-9]*/versionCode = $VC/; s/versionName = \"[^\"]*\"/versionName = \"duo.$VC\"/" app/build.gradle.kts
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          ./gradlew --no-daemon assembleDebug
+
+      - name: 署名して、公開用ファイルを作る
+        env:
+          KS_B64: ${{ secrets.DUO_KEYSTORE_B64 }}
+          KS_PASS: ${{ secrets.DUO_KEYSTORE_PASS }}
+        run: |
+          set -e
+          test -n "$KS_B64" -a -n "$KS_PASS"
+          echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/mx.jks"
+          BT="$ANDROID_HOME/build-tools/34.0.0"
+          mkdir -p out
+          sign() { # 入力 出力名
+            "$BT/zipalign" -f -p 4 "$1" "$RUNNER_TEMP/aligned.apk"
+            "$BT/apksigner" sign --ks "$RUNNER_TEMP/mx.jks" --ks-key-alias mx \
+              --ks-pass env:KS_PASS --key-pass env:KS_PASS --v4-signing-enabled false --out "out/$2" "$RUNNER_TEMP/aligned.apk"
+            "$BT/apksigner" verify "out/$2"
+          }
+          sign apps/updater/app/build/outputs/apk/debug/app-debug.apk duo-updater.apk
+          sign apps/keyrecorder/app/build/outputs/apk/debug/app-debug.apk duo-keys.apk
+          sign airplay-src/app/build/outputs/apk/debug/app-debug.apk duo-airplay.apk
+          rm -f "$RUNNER_TEMP/mx.jks" out/*.idsig
+          python3 tools/make_manifest.py out "$BT/aapt2" "$GITHUB_RUN_NUMBER"
+          ls -la out
+          cat out/manifest.json
+
+      - name: リリースを公開する
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "build-$GITHUB_RUN_NUMBER" out/* \
+            --title "build $GITHUB_RUN_NUMBER" \
+            --notes "commit: $GITHUB_SHA" \
+            --latest

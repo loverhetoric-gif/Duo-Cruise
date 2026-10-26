@@ -1,0 +1,94 @@
+diff --git a/app/build.gradle.kts b/app/build.gradle.kts
+index 2f56e62..4a2df30 100644
+--- a/app/build.gradle.kts
++++ b/app/build.gradle.kts
+@@ -11,7 +11,7 @@ val localProps = Properties().apply {
+     rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use(::load)
+ }
+ 
+-val allAbis = listOf("arm64-v8a", "armeabi-v7a", "x86_64")
++val allAbis = listOf("arm64-v8a")
+ 
+ android {
+     namespace = "io.github.jqssun.airplay"
+@@ -30,7 +30,7 @@ android {
+     }
+ 
+     defaultConfig {
+-        applicationId = "io.github.jqssun.airplay"
++        applicationId = "com.yuki.duocruise.airplay"
+         minSdk = 23
+         targetSdk = 37
+         versionCode = 36
+diff --git a/app/src/main/cpp/CMakeLists.txt b/app/src/main/cpp/CMakeLists.txt
+index 4787360..8ac5888 100644
+--- a/app/src/main/cpp/CMakeLists.txt
++++ b/app/src/main/cpp/CMakeLists.txt
+@@ -17,6 +17,8 @@ string(REGEX MATCH "[0-9]+" AIRPLAY_ANDROID_API "${ANDROID_PLATFORM}")
+ set(OPENSSL_PARAMS "-D__ANDROID_API__=${AIRPLAY_ANDROID_API}" CACHE STRING "" FORCE)
+ set(FORWARD_ANDROID_NDK_ROOT "${ANDROID_NDK}" CACHE STRING "" FORCE) # CI
+ 
++# MX: OTTO本体の同名libcrypto.soとの衝突を避けるため静的リンクにする
++set(OPENSSL_USE_STATIC_LIBS ON CACHE BOOL "" FORCE)
+ list(PREPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
+ add_subdirectory(third_party/openssl-cmake)
+ 
+diff --git a/app/src/main/cpp/native_bridge.cpp b/app/src/main/cpp/native_bridge.cpp
+index 5d34c3a..3a3c95b 100644
+--- a/app/src/main/cpp/native_bridge.cpp
++++ b/app/src/main/cpp/native_bridge.cpp
+@@ -127,8 +127,14 @@ Java_io_github_jqssun_airplay_bridge_NativeBridge_nativeStart(
+     unsigned short port = (unsigned short)(requestedPort > 0 ? requestedPort : 7000);
+     int ret = raop_start_httpd(ctx->raop, &port);
+     if (ret < 0) {
+-        LOGE("raop_start_httpd failed: %d", ret);
+-        return -1;
++        /* MX: 指定の番号が他のアプリ(OTTO本体のAirReceiver等)で使用中なら、空き番号に自動で逃がす */
++        LOGE("raop_start_httpd failed on port %d: %d, retrying with a free port", (int)port, ret);
++        port = 0;
++        ret = raop_start_httpd(ctx->raop, &port);
++        if (ret < 0) {
++            LOGE("raop_start_httpd failed: %d", ret);
++            return -1;
++        }
+     }
+     /* raop_start_httpd doesn't record the bound port; without this the hls
+        proxy urls are built with port 0 */
+diff --git a/app/src/main/kotlin/io/github/jqssun/airplay/Prefs.kt b/app/src/main/kotlin/io/github/jqssun/airplay/Prefs.kt
+index dfa7492..07fe23c 100644
+--- a/app/src/main/kotlin/io/github/jqssun/airplay/Prefs.kt
++++ b/app/src/main/kotlin/io/github/jqssun/airplay/Prefs.kt
+@@ -72,7 +72,7 @@ object Prefs {
+ 
+     fun forced(v: String) = when (v) { ON -> true; OFF -> false; else -> null }
+ 
+-    val SERVER_NAME = str("server_name", "Android AirPlay", restart = true)
++    val SERVER_NAME = str("server_name", "MX-30", restart = true)
+     val SERVER_PORT = int("server_port", 7000, 1..65535, restart = true)
+     val AUTO_START = bool("auto_start", true)
+     val BOOT_AUTO_START = bool("boot_auto_start", true)
+diff --git a/app/src/main/kotlin/io/github/jqssun/airplay/service/AirPlayService.kt b/app/src/main/kotlin/io/github/jqssun/airplay/service/AirPlayService.kt
+index 974c5c2..7419a2b 100644
+--- a/app/src/main/kotlin/io/github/jqssun/airplay/service/AirPlayService.kt
++++ b/app/src/main/kotlin/io/github/jqssun/airplay/service/AirPlayService.kt
+@@ -436,7 +436,7 @@ class AirPlayService : LifecycleService(), RaopCallbackHandler, LogListener {
+         val requestedPort = prefs[Prefs.SERVER_PORT]
+         val port = NativeBridge.nativeStart(nativeHandle, requestedPort)
+         if (port < 0) {
+-            log("Failed to start on port $requestedPort")
++            log("Failed to start on port $requestedPort (no free port)")
+             _failStart()
+             return
+         }
+diff --git a/app/src/main/res/values/strings.xml b/app/src/main/res/values/strings.xml
+index 8d28437..2368d98 100644
+--- a/app/src/main/res/values/strings.xml
++++ b/app/src/main/res/values/strings.xml
+@@ -1,6 +1,6 @@
+ <?xml version="1.0" encoding="utf-8"?>
+ <resources>
+-    <string name="app_name">AirPlay Server</string>
++    <string name="app_name">Duo Cruise AirPlay</string>
+ 
+     <!-- Notification -->
+     <string name="notification_channel">AirPlay Service</string>
