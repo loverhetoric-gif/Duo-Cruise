@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Duo Cruise</string>
+    <string name="tv_name">Duo Cruise TV</string>
+    <string name="svc_desc">コマンダーのボタンを、いま操作している側(左か右)へ届けます。長押しで操作する側を切り替え、枠で表示します。</string>
+</resources>
