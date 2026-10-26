@@ -23,6 +23,12 @@ import java.security.MessageDigest;
 /** GitHubの最新リリースを見て、入っているアプリより新しければ、取得して入れる。 */
 final class UpdateEngine {
     static final String RELEASE_API = "https://api.github.com/repos/loverhetoric-gif/Duo-Cruise/releases/latest";
+    /** テスト版(変更の提案の段階で作ったもの)も含めた、新しい順の一覧。 */
+    static final String RELEASES_API = "https://api.github.com/repos/loverhetoric-gif/Duo-Cruise/releases?per_page=5";
+
+    /** true のとき、テスト版も受け取る。 */
+    static boolean testChannel(Context c) { return c.getSharedPreferences("upd", Context.MODE_PRIVATE).getBoolean("test", false); }
+    static void setTestChannel(Context c, boolean v) { c.getSharedPreferences("upd", Context.MODE_PRIVATE).edit().putBoolean("test", v).apply(); }
     static final String ACTION = "com.yuki.duocruise.updater.INSTALL_RESULT";
     /** この時刻まで、ユーザー補助がインストール確認を自動で押す。 */
     static volatile long autoConfirmUntil = 0;
@@ -58,7 +64,15 @@ final class UpdateEngine {
 
     /** 最新の一覧を取得する(入れはしない)。 */
     static java.util.List<Item> fetch(Context c) throws Exception {
-        JSONObject rel = new JSONObject(new String(get(RELEASE_API, 1 << 20), "UTF-8"));
+        JSONObject rel;
+        if (testChannel(c)) {
+            JSONArray list = new JSONArray(new String(get(RELEASES_API, 4 << 20), "UTF-8"));
+            if (list.length() == 0) throw new Exception("リリースがありません");
+            rel = list.getJSONObject(0);
+            UpdLog.add("テスト版も含めて確認: " + rel.optString("name", "?"));
+        } else {
+            rel = new JSONObject(new String(get(RELEASE_API, 1 << 20), "UTF-8"));
+        }
         JSONArray assets = rel.getJSONArray("assets");
         String manifestUrl = null;
         for (int i = 0; i < assets.length(); i++) {
