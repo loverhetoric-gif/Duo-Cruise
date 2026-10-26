@@ -6,6 +6,7 @@ out, aapt2, build = sys.argv[1], sys.argv[2], sys.argv[3]
 LABELS = {
     "duo-updater.apk": "Duo Cruise 更新",
     "duo-keys.apk": "Duo Cruise キー記録",
+    "duo-main.apk": "Duo Cruise",
     "duo-airplay.apk": "Duo Cruise AirPlay",
 }
 apps = []
