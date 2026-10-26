@@ -71,11 +71,44 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         setupInsets();
         root.apply(Store.swapped(this), Store.side(this), Store.panelHalf(this));
 
+        askPermissions();
         try { car.start(); } catch (Throwable t) { DuoLog.error("CarPlay を始められません: " + DuoLog.why(t)); }
         try { tv.start(); } catch (Throwable t) { DuoLog.error("YouTube を始められません: " + DuoLog.why(t)); }
         boolean asHome = getIntent() != null && getIntent().hasCategory(Intent.CATEGORY_HOME);
         DuoLog.log("Duo Cruise を開きました(版 " + DuoLog.version() + (asHome ? "、ホームとして" : "") + ")");
         stateChanged();
+    }
+
+    // ───────── 権限(CarPlay: Bluetooth・近くの Wi-Fi 機器・マイク) ─────────
+
+    private static final int REQ_PERMS = 1;
+    private final Runnable permWatch = () -> DuoLog.error(
+            "権限の許可画面が30秒操作されていません。ダイヤルで押せない・縦に収まらない可能性(タッチで許可するか、設定のアプリ情報から許可)");
+
+    private void askPermissions() {
+        java.util.List<String> missing = new java.util.ArrayList<>();
+        for (String p : Panes.carPermissions())
+            if (checkSelfPermission(p) != android.content.pm.PackageManager.PERMISSION_GRANTED) missing.add(p);
+        if (missing.isEmpty()) return;
+        DuoLog.log("権限の許可画面を出します: " + missing);
+        requestPermissions(missing.toArray(new String[0]), REQ_PERMS);
+        main.postDelayed(permWatch, 30_000);
+    }
+
+    @Override public void onRequestPermissionsResult(int code, String[] perms, int[] results) {
+        super.onRequestPermissionsResult(code, perms, results);
+        if (code != REQ_PERMS) return;
+        main.removeCallbacks(permWatch);
+        StringBuilder b = new StringBuilder();
+        boolean any = false;
+        for (int i = 0; i < perms.length && i < results.length; i++) {
+            boolean ok = results[i] == android.content.pm.PackageManager.PERMISSION_GRANTED;
+            any |= ok;
+            b.append(perms[i].substring(perms[i].lastIndexOf('.') + 1)).append(ok ? "=許可 " : "=拒否 ");
+        }
+        if (perms.length == 0) DuoLog.error("権限の許可画面が取り消されました(画面が閉じられた等)");
+        else DuoLog.log("権限の結果: " + b.toString().trim());
+        if (any) restartCar(); // 許可が出たら CarPlay を始め直す
     }
 
     /** 高さは WindowInsets で求める。上のステータスバーは隠し、残りの余白(下の64など)は避ける。 */
@@ -172,6 +205,8 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
                 panel.rotate(v > 0 ? 1 : v < 0 ? -1 : 0);
                 return true;
             }
+            try { if (active().onGenericMotion(e)) return true; }
+            catch (Throwable t) { DuoLog.error(active().name() + " へ回転を渡せません: " + DuoLog.why(t)); }
             return active().view().dispatchGenericMotionEvent(e);
         }
         return super.dispatchGenericMotionEvent(e);

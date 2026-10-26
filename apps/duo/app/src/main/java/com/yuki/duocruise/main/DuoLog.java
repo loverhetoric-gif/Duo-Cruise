@@ -88,13 +88,18 @@ public final class DuoLog {
         }, 3000);
     }
 
-    private static void add(String kind, String t) {
+    /** 画面の記録と logcat にだけ残す(更新アプリへは送らない。ほかの部品が送り済みのもの用)。 */
+    static void local(String kind, String t) { add(kind, t, false); }
+
+    private static void add(String kind, String t) { add(kind, t, true); }
+
+    private static void add(String kind, String t, boolean broadcast) {
         synchronized (DuoLog.class) {
             lines.add(0, F.format(new Date()) + "  " + ("error".equals(kind) ? "✕ " : "") + t);
             while (lines.size() > 200) lines.remove(lines.size() - 1);
         }
         if ("error".equals(kind)) Log.w(TAG, t); else Log.i(TAG, kind + ": " + t);
-        send(kind, t);
+        if (broadcast) send(kind, t);
         Listener l = listener;
         if (l != null) MAIN.post(l::changed);
     }

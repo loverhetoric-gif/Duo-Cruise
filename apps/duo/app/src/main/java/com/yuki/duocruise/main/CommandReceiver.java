@@ -16,7 +16,7 @@ import java.util.List;
  * 指示(先頭の「com.yuki.duocruise.main:」は有っても無くてもよい):
  *   state / log / keys / swap / side / panel / keys-reset / car-restart
  *   tv-…       … D の TvPane.command() へ渡す
- *   mfi-probe  … B の部品(com.yuki.duocruise.carplay.MfiProbe の static String run(Context))を呼ぶだけ
+ *   mfi-probe  … B の部品 MfiProbe.runAndReport(context) を呼ぶだけ(結果は B が kind=result で送る)
  */
 public class CommandReceiver extends BroadcastReceiver {
     static final String ACTION = "com.yuki.duocruise.COMMAND";
@@ -32,11 +32,8 @@ public class CommandReceiver extends BroadcastReceiver {
         DuoLog.log("指示を受けました: " + cmd);
 
         if (cmd.equals("mfi-probe")) {
-            PendingResult pr = goAsync();
-            new Thread(() -> {
-                try { DuoLog.result("mfi-probe: " + mfiProbe(c.getApplicationContext())); }
-                finally { pr.finish(); }
-            }, "duo-mfi-probe").start();
+            String err = mfiProbe(c.getApplicationContext());
+            if (err != null) DuoLog.result("mfi-probe: " + err);
             return;
         }
         if (cmd.equals("log")) { DuoLog.result("log: " + recent(30)); return; }
@@ -82,17 +79,17 @@ public class CommandReceiver extends BroadcastReceiver {
         return b.length() == 0 ? "記録なし" : b.toString();
     }
 
-    /** B の部品を呼ぶだけ(読み取りの中身は B が持つ)。部品がまだ無ければ、そう返す。 */
+    /** B の部品を呼ぶだけ(別スレッドで読み、結果は B が送る)。呼べなかったときだけ理由を返す。 */
     private static String mfiProbe(Context c) {
         try {
             Class<?> k = Class.forName(MFI_CLASS);
-            Method m = k.getMethod("run", Context.class);
-            Object r = m.invoke(null, c);
-            return r == null ? "(結果なし)" : String.valueOf(r);
+            Method m = k.getMethod("runAndReport", Context.class);
+            m.invoke(null, c);
+            return null;
         } catch (ClassNotFoundException e) {
             return "B の部品(" + MFI_CLASS + ")が未着です";
         } catch (NoSuchMethodException e) {
-            return "B の部品に static String run(Context) がありません";
+            return "B の部品に runAndReport(Context) がありません";
         } catch (Throwable t) {
             return "失敗: " + DuoLog.why(t);
         }

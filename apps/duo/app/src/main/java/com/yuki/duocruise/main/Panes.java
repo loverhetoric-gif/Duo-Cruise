@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.content.Context;
 import android.view.Gravity;
 import android.view.KeyEvent;
+import android.view.MotionEvent;
 import android.view.View;
 import android.widget.TextView;
 
@@ -58,7 +59,25 @@ final class Panes {
         return new StubTvPane(a);
     }
 
-    /** CarPlayPane からの知らせは、中身を問わず記録に残し、状態を送り直す。 */
+    /**
+     * CarPlayPane が求める実行時の権限(static requiredPermissions())。部品が無ければ空。
+     */
+    static String[] carPermissions() {
+        try {
+            Object r = Class.forName(CAR_CLASS).getMethod("requiredPermissions").invoke(null);
+            return r instanceof String[] ? (String[]) r : new String[0];
+        } catch (ClassNotFoundException e) {
+            return new String[0];
+        } catch (Throwable t) {
+            DuoLog.error("CarPlay の権限一覧を読めません: " + DuoLog.why(t));
+            return new String[0];
+        }
+    }
+
+    /**
+     * CarPlayPane からの知らせ(Listener.onStatus / onRecord)。
+     * onRecord は画面表示用(更新アプリへは CarPlayPane が送り済み)なので、ここからは送らない。
+     */
     private static InvocationHandler carListener() {
         return (proxy, m, args) -> {
             String name = m.getName();
@@ -67,9 +86,13 @@ final class Panes {
                 if (name.equals("equals")) return proxy == (args == null ? null : args[0]);
                 if (name.equals("toString")) return "CarPlayListener";
             }
-            String text = "CarPlay: " + name + (args == null ? "" : " " + Arrays.toString(args));
-            if (name.toLowerCase(java.util.Locale.ROOT).contains("error") || name.toLowerCase(java.util.Locale.ROOT).contains("fail")) DuoLog.error(text);
-            else DuoLog.log(text);
+            if (name.equals("onRecord") && args != null && args.length == 2) {
+                DuoLog.local(String.valueOf(args[0]), "CarPlay: " + args[1]);
+            } else if (name.equals("onStatus") && args != null && args.length == 1) {
+                DuoLog.local("state", "CarPlay の状態: " + args[0]);
+            } else {
+                DuoLog.local("log", "CarPlay: " + name + (args == null ? "" : " " + Arrays.toString(args)));
+            }
             DuoActivity.stateChanged();
             Class<?> r = m.getReturnType();
             if (r == boolean.class) return false;
@@ -125,6 +148,11 @@ final class Panes {
 
         @Override public boolean onKey(KeyEvent e) {
             Object r = call("onKey", new Class<?>[]{KeyEvent.class}, e);
+            return r instanceof Boolean && (Boolean) r;
+        }
+
+        @Override public boolean onGenericMotion(MotionEvent e) {
+            Object r = call("onGenericMotion", new Class<?>[]{MotionEvent.class}, e);
             return r instanceof Boolean && (Boolean) r;
         }
 

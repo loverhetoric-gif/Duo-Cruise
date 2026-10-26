@@ -1,6 +1,7 @@
 package com.yuki.duocruise.main;
 
 import android.view.KeyEvent;
+import android.view.MotionEvent;
 import android.view.View;
 
 /**
@@ -18,6 +19,8 @@ interface Pane {
     void destroy();
     /** 操作中のとき、キーが届く。扱ったら true。 */
     boolean onKey(KeyEvent e);
+    /** ダイヤルの回転が「スクロール」で届いたとき(操作中のときだけ)。扱ったら true。 */
+    boolean onGenericMotion(MotionEvent e);
     String status();
     /** 記録シートの指示(例「tv-status」)。結果の1行を返す。扱わない部品は null。 */
     String command(String cmd);

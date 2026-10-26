@@ -4,6 +4,7 @@ import android.content.Context;
 import android.graphics.Typeface;
 import android.view.Gravity;
 import android.view.KeyEvent;
+import android.view.MotionEvent;
 import android.view.View;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -45,11 +46,17 @@ final class StubCarPane implements Pane {
         root.addView(keyLine);
     }
 
+    /** B の CarPlayPane と同じ名前。仮の部品は権限が要らない。 */
+    static String[] requiredPermissions() { return new String[0]; }
+
+    /** B の CarPlayPane と同じ名前(仮の部品では何もしない)。 */
+    void stop() {}
+
     @Override public View view() { return root; }
     @Override public void start() { DuoLog.log("CarPlay(仮): 開始"); }
     @Override public void resume() {}
     @Override public void pause() {}
-    @Override public void destroy() {}
+    @Override public void destroy() { stop(); }
 
     @Override public boolean onKey(KeyEvent e) {
         if (e.getAction() != KeyEvent.ACTION_DOWN || e.getRepeatCount() > 0) return true;
@@ -58,6 +65,7 @@ final class StubCarPane implements Pane {
         return true;
     }
 
+    @Override public boolean onGenericMotion(MotionEvent e) { return false; }
     @Override public String status() { return "仮の部品(届いたキー " + count + " 回)"; }
     @Override public String command(String cmd) { return null; }
     @Override public String name() { return "CarPlay"; }

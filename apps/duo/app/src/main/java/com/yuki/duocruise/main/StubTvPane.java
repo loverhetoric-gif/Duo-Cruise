@@ -5,6 +5,7 @@ import android.app.Activity;
 import android.graphics.Color;
 import android.os.SystemClock;
 import android.view.KeyEvent;
+import android.view.MotionEvent;
 import android.view.View;
 import android.webkit.CookieManager;
 import android.webkit.WebChromeClient;
@@ -78,6 +79,7 @@ final class StubTvPane implements Pane {
         return web.dispatchKeyEvent(k);
     }
 
+    @Override public boolean onGenericMotion(MotionEvent e) { return false; }
     @Override public String status() { return "仮の部品(" + state + ")"; }
     /** 仮の部品では tv-status と tv-reload だけ。 */
     @Override public String command(String cmd) {
