@@ -36,7 +36,7 @@ final class UpdateEngine {
     static final String REPO_API = "https://api.github.com/repos/loverhetoric-gif/Duo-Cruise";
     static final String RELEASE_API = REPO_API + "/releases/latest";
     /** テスト版(変更の提案の段階で作ったもの)も含めた、新しい順の一覧。 */
-    static final String RELEASES_API = REPO_API + "/releases?per_page=10";
+    static final String RELEASES_API = REPO_API + "/releases?per_page=50";
     static final String ACTION = "com.yuki.duocruise.updater.INSTALL_RESULT";
 
     /** true のとき、テスト版も受け取る。 */
@@ -100,10 +100,14 @@ final class UpdateEngine {
     static Release release(Context c, boolean test) throws Exception {
         JSONObject rel = null;
         if (test) {
+            // GitHub の一覧は公開の新しい順に並ばない(正式版が先に来る)ので、公開時刻で一番新しいものを選ぶ
             JSONArray list = new JSONArray(new String(get(RELEASES_API, 4 << 20), "UTF-8"));
+            String newest = "";
             for (int i = 0; i < list.length(); i++) {
                 JSONObject o = list.getJSONObject(i);
-                if (!o.optBoolean("draft", false)) { rel = o; break; }
+                if (o.optBoolean("draft", false)) continue;
+                String at = o.optString("published_at", "");
+                if (rel == null || at.compareTo(newest) > 0) { rel = o; newest = at; }
             }
             if (rel == null) throw new Exception("リリースがありません");
         } else {
