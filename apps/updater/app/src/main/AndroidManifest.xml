@@ -5,12 +5,22 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- 指示 updater:packages(入っているアプリの一覧を読むだけ)のため -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
+    <!-- 自作アプリ(同じ署名)どうしの記録・指示のやり取り。同じ署名のアプリだけが持てる -->
+    <permission
+        android:name="com.yuki.duocruise.permission.LOG"
+        android:label="Duo Cruise の記録"
+        android:protectionLevel="signature" />
+    <uses-permission android:name="com.yuki.duocruise.permission.LOG" />
     <queries>
         <package android:name="com.yuki.duocruise.airplay" />
         <package android:name="com.yuki.duocruise.keys" />
         <package android:name="com.yuki.duocruise.updater" />
+        <package android:name="com.yuki.duocruise.main" />
     </queries>
     <application
+        android:name=".App"
         android:label="Duo Cruise 更新"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher"
@@ -27,6 +37,15 @@
             </intent-filter>
         </activity>
         <receiver android:name=".InstallReceiver" android:exported="false" />
+        <!-- 自作アプリからの記録(送れるのは権限 LOG を持つ同じ署名のアプリだけ) -->
+        <receiver
+            android:name=".LogReceiver"
+            android:exported="true"
+            android:permission="com.yuki.duocruise.permission.LOG">
+            <intent-filter>
+                <action android:name="com.yuki.duocruise.updater.LOG" />
+            </intent-filter>
+        </receiver>
         <receiver android:name=".BootReceiver" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />

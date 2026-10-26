@@ -19,19 +19,48 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.security.MessageDigest;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
+import java.util.Locale;
 
-/** GitHubの最新リリースを見て、入っているアプリより新しければ、取得して入れる。 */
+/**
+ * GitHub のリリースを見て、入っているアプリより新しければ、取得して入れる。
+ * ・ふだんは正式版(latest)だけを見る
+ * ・「テスト版を受け取る」がオンなら、テスト版(prerelease)も含めた一番新しいものを見る
+ * ・「1つ前の版に戻す」は、正式版に付いている「1つ前の版を同じ版番号で作り直したもの」を入れる
+ *   (Android は版番号を下げられないため、版番号は今と同じにして中身だけ1つ前にする)
+ */
 final class UpdateEngine {
-    static final String RELEASE_API = "https://api.github.com/repos/loverhetoric-gif/Duo-Cruise/releases/latest";
+    static final String REPO_API = "https://api.github.com/repos/loverhetoric-gif/Duo-Cruise";
+    static final String RELEASE_API = REPO_API + "/releases/latest";
+    /** テスト版(変更の提案の段階で作ったもの)も含めた、新しい順の一覧。 */
+    static final String RELEASES_API = REPO_API + "/releases?per_page=10";
     static final String ACTION = "com.yuki.duocruise.updater.INSTALL_RESULT";
+
+    /** true のとき、テスト版も受け取る。 */
+    static boolean testChannel(Context c) { return prefs(c).getBoolean("test", false); }
+    static void setTestChannel(Context c, boolean v) { prefs(c).edit().putBoolean("test", v).apply(); }
+    private static android.content.SharedPreferences prefs(Context c) { return c.getSharedPreferences("upd", Context.MODE_PRIVATE); }
+
     /** この時刻まで、ユーザー補助がインストール確認を自動で押す。 */
     static volatile long autoConfirmUntil = 0;
+    /** 最後の確認の時刻と結果(状態の報告用)。 */
+    static volatile String lastResult = "まだ確認していません";
+    static volatile String lastRelease = "";
     private static final Object LOCK = new Object();
 
     static final class Item {
         String pkg, label, file, sha256, url;
         long versionCode, installed = -1, size;
         boolean needsUpdate() { return installed >= 0 && versionCode > installed; }
+    }
+
+    static final class Release {
+        String name;
+        JSONArray assets;
+        JSONObject manifest;
     }
 
     static long installedVersion(Context c, String pkg) {
@@ -56,19 +85,45 @@ final class UpdateEngine {
         }
     }
 
-    /** 最新の一覧を取得する(入れはしない)。 */
-    static java.util.List<Item> fetch(Context c) throws Exception {
-        JSONObject rel = new JSONObject(new String(get(RELEASE_API, 1 << 20), "UTF-8"));
-        JSONArray assets = rel.getJSONArray("assets");
-        String manifestUrl = null;
+    private static String assetUrl(JSONArray assets, String name) throws Exception {
         for (int i = 0; i < assets.length(); i++) {
             JSONObject a = assets.getJSONObject(i);
-            if ("manifest.json".equals(a.getString("name"))) manifestUrl = a.getString("browser_download_url");
+            if (name.equals(a.getString("name"))) {
+                String u = a.getString("browser_download_url");
+                return u.startsWith("https://") ? u : null;
+            }
         }
+        return null;
+    }
+
+    /** 見に行くリリースを1つ決めて、manifest.json まで読む。test=true ならテスト版も含めて一番新しいもの。 */
+    static Release release(Context c, boolean test) throws Exception {
+        JSONObject rel = null;
+        if (test) {
+            JSONArray list = new JSONArray(new String(get(RELEASES_API, 4 << 20), "UTF-8"));
+            for (int i = 0; i < list.length(); i++) {
+                JSONObject o = list.getJSONObject(i);
+                if (!o.optBoolean("draft", false)) { rel = o; break; }
+            }
+            if (rel == null) throw new Exception("リリースがありません");
+        } else {
+            rel = new JSONObject(new String(get(RELEASE_API, 1 << 20), "UTF-8"));
+        }
+        Release r = new Release();
+        r.name = rel.optString("tag_name", rel.optString("name", "?")) + (rel.optBoolean("prerelease", false) ? "(テスト版)" : "");
+        r.assets = rel.getJSONArray("assets");
+        String manifestUrl = assetUrl(r.assets, "manifest.json");
         if (manifestUrl == null) throw new Exception("manifest.json が見つかりません");
-        JSONObject m = new JSONObject(new String(get(manifestUrl, 1 << 20), "UTF-8"));
-        JSONArray apps = m.getJSONArray("apps");
-        java.util.List<Item> out = new java.util.ArrayList<>();
+        r.manifest = new JSONObject(new String(get(manifestUrl, 1 << 20), "UTF-8"));
+        return r;
+    }
+
+    /** manifest の一覧(apps または rollback)を Item にする。自分自身(更新アプリ)は最後に回す。 */
+    static List<Item> items(Context c, Release r, String key) throws Exception {
+        List<Item> out = new ArrayList<>();
+        Item self = null;
+        JSONArray apps = r.manifest.optJSONArray(key);
+        if (apps == null) return out;
         for (int i = 0; i < apps.length(); i++) {
             JSONObject o = apps.getJSONObject(i);
             Item it = new Item();
@@ -76,21 +131,30 @@ final class UpdateEngine {
             it.label = o.optString("label", it.pkg);
             it.versionCode = o.getLong("versionCode");
             it.file = o.getString("file");
-            it.sha256 = o.getString("sha256").toLowerCase();
+            it.sha256 = o.getString("sha256").toLowerCase(Locale.ROOT);
             it.size = o.optLong("size", 0);
-            for (int k = 0; k < assets.length(); k++) {
-                JSONObject a = assets.getJSONObject(k);
-                if (it.file.equals(a.getString("name"))) it.url = a.getString("browser_download_url");
-            }
+            it.url = assetUrl(r.assets, it.file);
             if (it.url == null) continue;
-            if (!it.url.startsWith("https://")) continue;
             it.installed = installedVersion(c, it.pkg);
-            out.add(it);
+            // 自分を入れると、その場でこのアプリが止まる。ほかを先に入れる
+            if (it.pkg.equals(c.getPackageName())) self = it; else out.add(it);
         }
+        if (self != null) out.add(self);
         return out;
     }
 
-    /** 確認して、新しいものを入れる。入れた数を返す。 */
+    /** 最新の一覧を取得する(入れはしない)。 */
+    static List<Item> fetch(Context c) throws Exception {
+        boolean test = testChannel(c);
+        Release r = release(c, test);
+        lastRelease = r.name;
+        if (test) UpdLog.add("テスト版も含めて確認: " + r.name);
+        return items(c, r, "apps");
+    }
+
+    private static String now() { return new SimpleDateFormat("MM/dd HH:mm", Locale.JAPAN).format(new Date()); }
+
+    /** 確認して、新しいものを入れる。入れ始めた数を返す。 */
     static int checkAndInstall(Context c, boolean includeMissing) {
         synchronized (LOCK) {
             UpdLog.init(c);
@@ -114,8 +178,45 @@ final class UpdateEngine {
                     started++;
                 }
                 UpdLog.add("確認を終了しました(インストール開始 " + started + " 件)");
+                lastResult = now() + " " + lastRelease + " を確認、インストール開始 " + started + " 件";
             } catch (Exception e) {
                 UpdLog.add("失敗: " + e.getMessage());
+                lastResult = now() + " 失敗: " + e.getMessage();
+            }
+            return started;
+        }
+    }
+
+    /**
+     * 1つ前の正式版に戻す。正式版の manifest の rollback(1つ前の中身・今と同じ版番号)を入れる。
+     * 今の正式版が入っているアプリだけが対象(テスト版が入っているもの・古いものは触らない)。
+     */
+    static int rollback(Context c) {
+        synchronized (LOCK) {
+            UpdLog.init(c);
+            int started = 0;
+            try {
+                Release r = release(c, false);
+                String of = r.manifest.optString("rollbackOf", "");
+                List<Item> list = items(c, r, "rollback");
+                if (list.isEmpty()) {
+                    UpdLog.add("戻せる版がありません(" + r.name + " には1つ前の版が付いていません)");
+                    return 0;
+                }
+                UpdLog.add("1つ前の版(" + (of.isEmpty() ? "?" : of) + ")に戻します");
+                for (Item it : list) {
+                    if (it.installed != it.versionCode) {
+                        UpdLog.add(it.label + ": 今の正式版(v" + it.versionCode + ")ではないので戻しません (入っているのは v" + it.installed + ")");
+                        continue;
+                    }
+                    File f = download(c, it);
+                    UpdLog.add(it.label + ": 1つ前の版を取得・照合OK。入れ直します");
+                    install(c, f, it);
+                    started++;
+                }
+                UpdLog.add("戻す処理を終了しました(インストール開始 " + started + " 件)");
+            } catch (Exception e) {
+                UpdLog.add("戻す処理に失敗: " + e.getMessage());
             }
             return started;
         }
