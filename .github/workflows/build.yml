@@ -16,6 +16,8 @@ on:
 
 permissions:
   contents: write
+  # 終わったことを Issue「自動ビルドの知らせ」に書き、本人に @ で知らせる(GitHub からメールが届く)
+  issues: write
 
 env:
   AIRPLAY_UPSTREAM: https://github.com/jqssun/android-airplay-server
@@ -189,3 +191,24 @@ jobs:
             --title "test PR#$PR_NUMBER build $GITHUB_RUN_NUMBER" \
             --notes "PR #$PR_NUMBER のテスト版。commit: $HEAD_SHA。「テスト版を受け取る」がオンの端末だけが入れます。" \
             --prerelease --latest=false
+
+      # 成功でも失敗でも必ず動く。本人(リポジトリの持ち主)を @ で呼ぶので、GitHub の通知とメールが届く
+      - name: 終わったことを知らせる
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESULT: ${{ job.status }}
+          OWNER: ${{ github.repository_owner }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          KIND: ${{ github.event_name == 'pull_request' && format('PR #{0} のテスト版', github.event.pull_request.number) || '正式版' }}
+        run: |
+          TITLE="自動ビルドの知らせ"
+          N=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "$TITLE in:title" --json number,title \
+            --jq "map(select(.title == \"$TITLE\"))[0].number // empty")
+          if [ -z "$N" ]; then
+            N=$(gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" \
+              --body "自動ビルドが終わるたびに、ここに結果を書きます(持ち主に通知が届きます)。" | grep -o '[0-9]*$')
+          fi
+          case "$RESULT" in success) R="成功" ;; failure) R="失敗" ;; cancelled) R="中止" ;; *) R="$RESULT" ;; esac
+          gh issue comment "$N" --repo "$GITHUB_REPOSITORY" --body "@$OWNER 自動ビルド $GITHUB_RUN_NUMBER($KIND): **$R**
+          $RUN_URL"
