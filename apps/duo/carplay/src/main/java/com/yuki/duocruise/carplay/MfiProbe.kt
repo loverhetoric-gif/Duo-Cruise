@@ -176,6 +176,7 @@ object MfiProbe {
         repeat(RETRIES) {
             try {
                 transport.transaction(address, select, 0)
+                Thread.sleep(10) // 指定から読み取りまで待たないと OTTO のチップは答えない
                 val data = transport.transaction(address, ByteArray(0), length)
                 if (data.size == length) return data
             } catch (error: Exception) {

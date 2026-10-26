@@ -146,6 +146,9 @@ class MfiAuthenticationClient(
             // not surface that I2C NACK separately, so retry the complete select/read pair; a
             // retry of only the pure-read half can otherwise keep reading the old register.
             selectRegisterOnce(register)
+            // Duo Cruise: OTTO のチップは、読む場所の指定から読み取りまで待たないと答えない
+            // (実測：0.5ms では失敗、5ms・20ms では毎回読めた)。
+            sleepMillis(SELECT_TO_READ_DELAY_MILLIS)
             val result = transport.transaction(address7Bit, ByteArray(0), length)
             if (result.size != length) {
                 throw MfiInvalidDataException(
@@ -240,6 +243,7 @@ class MfiAuthenticationClient(
         private const val MAXIMUM_CHALLENGE_BYTES = 128
         private const val IO_RETRY_TIMEOUT_MILLIS = 2_000L
         private const val IO_RETRY_DELAY_MICROS = 20_000L
+        private const val SELECT_TO_READ_DELAY_MILLIS = 10L
         private const val INITIAL_AUTH_DELAY_MILLIS = 10L
         private const val AUTH_POLL_MILLIS = 10L
         private const val AUTH_TIMEOUT_MILLIS = 3_000L

@@ -844,6 +844,8 @@ class CarPlayController(
         length: Int,
     ): Int {
         transport.transaction(address7Bit, byteArrayOf(register.toByte()), 0)
+        // Duo Cruise: OTTO のチップは指定から読み取りまで待たないと答えない(MfiAuthenticationClient と同じ)
+        Thread.sleep(10)
         var value = 0
         for (byte in transport.transaction(address7Bit, ByteArray(0), length)) {
             value = (value shl 8) or (byte.toInt() and 0xff)
