@@ -200,7 +200,7 @@ jobs:
           RESULT: ${{ job.status }}
           OWNER: ${{ github.repository_owner }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          KIND: ${{ github.event_name == 'pull_request' && format('PR #{0} のテスト版', github.event.pull_request.number) || '正式版' }}
+          KIND: "${{ github.event_name == 'pull_request' && format('PR #{0} のテスト版', github.event.pull_request.number) || '正式版' }}"
         run: |
           TITLE="自動ビルドの知らせ"
           N=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "$TITLE in:title" --json number,title \
