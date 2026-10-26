@@ -427,20 +427,17 @@ class LocalOnlyHotspotManager(context: Context) : WirelessHotspotManager {
                 }
             }
         }
-        // Duo Cruise: OTTO では SIM の口(rmnet_data*)を選んでしまったため、Wi-Fi の口を先に探し、
-        // 携帯回線・トンネル系の口は候補から外す。
-        val wifiLike = Regex("^(wlan|swlan|softap|ap)\\d*")
-        candidates.firstOrNull { it.name !in preStartInterfaces && wifiLike.containsMatchIn(it.name) && it.hotspotAddress() != null }
+        // Duo Cruise: OTTO では SIM の口(rmnet_data0)や Bluetooth の口(bt-pan)を選んでしまった。
+        // アクセスポイントは必ず Wi-Fi の口(wlan* など)なので、それ以外は候補にしない(見つかるまで待つ)。
+        val wifiLike = Regex("^(wlan|swlan|softap|ap)\\d+$")
+        candidates.firstOrNull { it.name !in preStartInterfaces && wifiLike.matches(it.name) && it.hotspotAddress() != null }
             ?.let { return it }
-        candidates.firstOrNull { it.name !in preStartInterfaces && wifiLike.containsMatchIn(it.name) }
-            ?.let { return it }
-        val cellular = Regex("^(rmnet|ccmni|dummy|tun|ipsec|v4-|radio|ifb|p2p)")
-        candidates.firstOrNull { it.name !in preStartInterfaces && !cellular.containsMatchIn(it.name) && it.hotspotAddress() != null }
+        candidates.firstOrNull { it.name !in preStartInterfaces && wifiLike.matches(it.name) }
             ?.let { return it }
 
         val primaryInterface = connectivityManager?.activeNetwork
             ?.let { connectivityManager.getLinkProperties(it)?.interfaceName }
-        val nonPrimary = candidates.filter { it.name != primaryInterface && !cellular.containsMatchIn(it.name) }
+        val nonPrimary = candidates.filter { it.name != primaryInterface && wifiLike.matches(it.name) }
         return nonPrimary.firstOrNull { it.hasPrivate192Address() }
             ?: nonPrimary.firstOrNull { it.hasSiteLocalAddress() }
             ?: nonPrimary.firstOrNull { it.hasLinkLocalAddress() }
