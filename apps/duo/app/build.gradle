@@ -1,14 +1,22 @@
-plugins { id 'com.android.application' }
+plugins { alias(libs.plugins.android.application) }
 def vcode = (project.findProperty('vc') ?: '1').toString().toInteger()
 android {
-    namespace 'com.yuki.duocruise.main'
-    compileSdk 34
+    namespace = 'com.yuki.duocruise.main'
+    compileSdk = 37
+    ndkVersion = '28.2.13676358'
     defaultConfig {
-        applicationId "com.yuki.duocruise.main"
-        minSdk 26
-        targetSdk 33
-        versionCode vcode
-        versionName "0.1." + vcode
+        applicationId = "com.yuki.duocruise.main"
+        // carplay モジュール(xcertplay)の下限に合わせる。OTTO は Android 13
+        minSdk = 28
+        targetSdk = 33
+        versionCode = vcode
+        versionName = "0.1." + vcode
     }
-    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+}
+dependencies {
+    implementation project(':carplay')
 }
