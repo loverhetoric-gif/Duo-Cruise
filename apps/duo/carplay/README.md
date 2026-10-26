@@ -5,8 +5,8 @@ Duo Cruise の左枠に iPhone の CarPlay を映す部品。担当 B。
 ## 元のソースと著作権（GPL-3.0）
 
 - 元：xcertplay — https://github.com/shilapi/xcertplay
-  - Copyright (C) 2026 shilapi and the xcertplay contributors
-  - GNU General Public License v3.0（全文はリポジトリ直下の `LICENSE`）
+  - 作者：shilapi と xcertplay の貢献者（元のリポジトリには、著作権者名と年を書いた行が無い。README に「GPL v3.0 で公開」とだけある）
+  - GNU General Public License v3.0（全文はリポジトリ直下の `LICENSE`。元の LICENSE と同じ文）
 - 取り込んだ版：1.4.2（commit `1298fb35e29ee30e7bd849cb0e751b52aa22a13f`）の `shared/src/main`
 - このため Duo Cruise 本体（apps/duo）も GPL-3.0 で公開する
 
