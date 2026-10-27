@@ -398,7 +398,23 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         else startCar("操作盤から");
     }
 
+    /** iPhone の Bluetooth の一覧で分かりやすいよう、OTTO の Bluetooth の名前を「Duo Cruise」にする。 */
+    static final String BT_NAME = "Duo Cruise";
+
+    @android.annotation.SuppressLint("MissingPermission")
+    private void nameBluetooth() {
+        try {
+            android.bluetooth.BluetoothManager bm = (android.bluetooth.BluetoothManager) getSystemService(BLUETOOTH_SERVICE);
+            android.bluetooth.BluetoothAdapter ad = bm == null ? null : bm.getAdapter();
+            if (ad == null || BT_NAME.equals(ad.getName())) return;
+            DuoLog.log("Bluetooth の名前を「" + BT_NAME + "」にします(前: " + ad.getName() + ") " + (ad.setName(BT_NAME) ? "OK" : "できません"));
+        } catch (Throwable t) {
+            DuoLog.error("Bluetooth の名前を変えられません: " + DuoLog.why(t));
+        }
+    }
+
     private void startCar(String why) {
+        nameBluetooth();
         DuoLog.log("CarPlay を開始します(" + why + ")");
         carOn = true;
         carRetryMs = CAR_RETRY_MIN_MS;
