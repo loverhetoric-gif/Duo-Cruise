@@ -23,6 +23,15 @@ public class InstallReceiver extends BroadcastReceiver {
             try { c.startActivity(confirm); } catch (Exception e) { notifyUser(c, label, confirm); }
         } else if (st == PackageInstaller.STATUS_SUCCESS) {
             UpdLog.add(label + ": インストール成功");
+            // 本体は入れ替えで閉じるので、すぐ開き直す(ホームが別のアプリでも、CarPlay・YouTube が戻るように)
+            if ("com.yuki.duocruise.main".equals(i.getStringExtra(PackageInstaller.EXTRA_PACKAGE_NAME))) {
+                try {
+                    Intent open = new Intent().setClassName("com.yuki.duocruise.main", "com.yuki.duocruise.main.DuoActivity")
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    c.startActivity(open);
+                    UpdLog.add(label + ": 開き直しました");
+                } catch (Exception e) { UpdLog.add(label + ": 開き直せません " + e.getMessage()); }
+            }
         } else {
             UpdLog.add(label + ": インストール失敗 (" + st + ") " + msg);
         }

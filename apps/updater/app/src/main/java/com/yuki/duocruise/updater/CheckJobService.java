@@ -22,7 +22,7 @@ public class CheckJobService extends JobService {
 
     @Override public boolean onStartJob(final JobParameters p) {
         new Thread(() -> {
-            UpdateEngine.checkAndInstall(getApplicationContext(), false);
+            UpdateEngine.checkAndInstall(getApplicationContext(), false, true);
             jobFinished(p, false);
         }).start();
         return true;
