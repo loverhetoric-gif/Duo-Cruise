@@ -149,6 +149,11 @@ class Iap2LinkEngine(
      * 受け取りの返事をしないことがある(実機：16秒であきらめた後に「接続」を押して接続エラー)。
      * 相手の再送回数(例 4回×4秒)より長く、約2分は待つ。
      */
+    /** Duo Cruise: 詰まりの場所を調べるため、送受信を1つずつ記録する(Android の記録 DuoIap2Link)。 */
+    private fun linkLog(message: String) {
+        try { android.util.Log.i("DuoIap2Link", message) } catch (_: Throwable) {}
+    }
+
     private val retryLimit: Int
         get() = maxOf(peerSynchronization.maxRetransmissions, IPHONE_PROMPT_RETRIES)
 
@@ -291,6 +296,9 @@ class Iap2LinkEngine(
             if (receive.size < payloadWithChecksumBytes) return false
             val payloadWithChecksum = receive.take(payloadWithChecksumBytes)
             awaitingPayload = null
+            if (!checksumValid(payloadWithChecksum)) {
+                linkLog("RX 破損(本文の検査値が合わない) ctl=0x${pending.control.toString(16)} seq=${pending.sequence} len=${pending.length} → 捨てた")
+            }
             if (checksumValid(payloadWithChecksum)) {
                 processFrame(
                     pending,
@@ -306,10 +314,14 @@ class Iap2LinkEngine(
             receive.discard(1)
             discarded = true
         }
+        if (discarded) linkLog("RX 区切り待ちで余分なバイトを捨てた")
         if (receive.size < HEADER_BYTES) return discarded
         val rawHeader = receive.take(HEADER_BYTES)
         val header = parseHeader(rawHeader)
-        if (header == null || header.length < HEADER_BYTES) return true
+        if (header == null || header.length < HEADER_BYTES) {
+            linkLog("RX 破損(頭の検査値が合わない) → 捨てた")
+            return true
+        }
         if (header.length > MAX_WIRE_FRAME_BYTES) {
             die("iAP2 frame length ${header.length} exceeds $MAX_WIRE_FRAME_BYTES")
             return false
@@ -332,6 +344,7 @@ class Iap2LinkEngine(
     }
 
     private fun processFrame(header: Header, payload: ByteArray?, nowMillis: Long) {
+        linkLog("RX ctl=0x${header.control.toString(16)} seq=${header.sequence} ack=${header.acknowledgement} sess=${header.sessionId} len=${header.length} | 未返事=${unacknowledged.map { it.sequence }} 待ち=${queued.size}")
         if ((header.control and CONTROL_RESET) != 0) {
             die("peer sent iAP2 reset")
             return
@@ -522,6 +535,7 @@ class Iap2LinkEngine(
 
     private fun writePacket(payload: ByteArray?, sequence: Int, control: Int, sessionId: Int) {
         if (state == State.DEAD) return
+        linkLog("TX ctl=0x${control.toString(16)} seq=$sequence ack=$lastReceivedInOrder sess=$sessionId len=${(payload?.size ?: 0)}")
         accumulatedAcknowledgements = 0
         val length = payload?.size?.plus(HEADER_BYTES + CHECKSUM_BYTES) ?: HEADER_BYTES
         val header = ByteArray(HEADER_BYTES)

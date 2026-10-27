@@ -42,6 +42,7 @@ class BluetoothRfcommDuplexStream(
             try {
                 output.write(data)
                 output.flush()
+                try { android.util.Log.i("DuoIap2Link", "BT 送信 ${data.size} バイト") } catch (_: Throwable) {}
             } catch (io: IOException) {
                 fail(io)
                 throw io
@@ -122,7 +123,10 @@ class BluetoothRfcommDuplexStream(
                 }
 
                 val buffer = ByteArray(readSize)
-                when (val count = input.read(buffer)) {
+                val count = input.read(buffer)
+                // Duo Cruise: Bluetooth から実際にバイトが届いているかを記録する
+                try { android.util.Log.i("DuoIap2Link", "BT 受信 ${count} バイト") } catch (_: Throwable) {}
+                when (count) {
                     -1 -> {
                         synchronized(lock) {
                             peerEnded = true
