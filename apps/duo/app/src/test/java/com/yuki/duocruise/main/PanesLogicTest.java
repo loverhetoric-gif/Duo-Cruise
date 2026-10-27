@@ -86,11 +86,12 @@ public final class PanesLogicTest {
 
     static void keymap() {
         KeyMap d = KeyMap.defaults();
-        ok(d.find(KeyMap.BACK, KeyMap.DOUBLE) == KeyMap.Action.SWITCH_SIDE, "初期値: 戻る2回=切替");
-        ok(d.find(KeyMap.BACK, KeyMap.TRIPLE) == KeyMap.Action.SWAP, "初期値: 戻る3回=入替");
-        ok(d.find(KeyMap.BACK, 4) == KeyMap.Action.PANEL, "初期値: 戻る4回=操作盤");
+        ok(d.find(KeyMap.DPAD_CENTER, KeyMap.DOUBLE) == KeyMap.Action.SWITCH_SIDE, "初期値: 押し込み2回=切替");
+        ok(d.find(KeyMap.DPAD_CENTER, KeyMap.TRIPLE) == KeyMap.Action.SWAP, "初期値: 押し込み3回=入替");
+        ok(d.find(KeyMap.DPAD_CENTER, 4) == KeyMap.Action.PANEL, "初期値: 押し込み4回=操作盤");
+        ok(d.maxTaps(KeyMap.BACK) == 1 && d.find(KeyMap.BACK, KeyMap.SHORT) == null, "初期値: 戻るは割り当て無し");
         ok(d.find(KeyMap.HOME, KeyMap.SHORT) == KeyMap.Action.PANEL, "初期値: ホーム=操作盤");
-        ok(d.find(KeyMap.BACK, KeyMap.SHORT) == null && d.maxTaps(KeyMap.BACK) == 4, "初期値: 戻る1回は割り当て無し");
+        ok(d.find(KeyMap.DPAD_CENTER, KeyMap.SHORT) == null && d.maxTaps(KeyMap.DPAD_CENTER) == 4, "初期値: 押し込み1回は割り当て無し");
         ok(KeyMap.parse(d.serialize()).serialize().equals(d.serialize()), "回数も保存して読み直して同じ");
         ok(KeyMap.parse("SWAP=4:9").serialize().isEmpty(), "多すぎる回数は捨てる");
         KeyMap m = KeyMap.parse(OLD);
@@ -127,38 +128,40 @@ public final class PanesLogicTest {
     /** 長押しを使う旧い割り当て(長押しの仕組みが壊れていないかを確かめる用)。 */
     static final String OLD = "SWITCH_SIDE=23:L,66:L,187:S;SWAP=4:L;PANEL=3:S";
 
-    /** 戻るの回数(車のコマンダー: 押す と 離す が 10〜25ms で続けて届く)。 */
+    /** 押し込みの回数(車のコマンダー: 押す と 離す が 10〜25ms で続けて届く)。 */
     static void taps() {
         FakeTimer t = new FakeTimer();
         Rec r = new Rec();
         KeyRouter k = new KeyRouter(KeyMap.defaults(), 600, r, t);
-        int B = KeyMap.BACK, R = KeyMap.DPAD_RIGHT;
+        int B = KeyMap.DPAD_CENTER, R = KeyMap.DPAD_RIGHT;
+        k.onKey(KeyMap.BACK, 0, 0, t.now, false, "raw"); k.onKey(KeyMap.BACK, 1, 0, t.now, false, "raw");
+        ok(r.s().equals("渡4押,渡4離"), "戻るは遅れずそのまま");
         Runnable press = () -> { k.onKey(B, 0, 0, t.now, false, null); t.advance(15); k.onKey(B, 1, 0, t.now, false, null); };
 
         press.run();
-        ok(r.s().isEmpty(), "戻る1回はすぐには届かない(数えている)");
+        ok(r.s().isEmpty(), "押し込み1回はすぐには届かない(数えている)");
         t.advance(500);
-        ok(r.s().equals("渡4押作,渡4離作"), "戻る1回は待ったあと普通の戻る");
+        ok(r.s().equals("渡23押作,渡23離作"), "押し込み1回は待ったあと普通の決定");
 
         press.run(); t.advance(150); press.run();
-        ok(r.s().isEmpty(), "戻る2回: 3回目を待つ");
+        ok(r.s().isEmpty(), "押し込み2回: 3回目を待つ");
         t.advance(500);
-        ok(r.s().equals("動SWITCH_SIDE"), "戻る2回で切替");
+        ok(r.s().equals("動SWITCH_SIDE"), "押し込み2回で切替");
 
         press.run(); t.advance(150); press.run(); t.advance(150); press.run(); t.advance(500);
-        ok(r.s().equals("動SWAP"), "戻る3回で入替");
+        ok(r.s().equals("動SWAP"), "押し込み3回で入替");
 
         press.run(); t.advance(150); press.run(); t.advance(150); press.run(); t.advance(150); press.run();
-        ok(r.s().equals("動PANEL"), "戻る4回で操作盤(待たずに)");
+        ok(r.s().equals("動PANEL"), "押し込み4回で操作盤(待たずに)");
         t.advance(500);
         ok(r.s().isEmpty(), "4回のあとに余計なものは届かない");
 
         press.run(); t.advance(150); k.onKey(R, 0, 0, t.now, false, "raw");
-        ok(r.s().equals("渡4押作,渡4離作,渡22押"), "数えている途中で別のキー → 戻る1回で確定");
+        ok(r.s().equals("渡23押作,渡23離作,渡22押"), "数えている途中で別のキー → 押し込み1回で確定");
         k.onKey(R, 1, 0, t.now, false, "raw"); r.s();
 
         press.run(); t.advance(700); press.run(); t.advance(500);
-        ok(r.s().equals("渡4押作,渡4離作,渡4押作,渡4離作"), "間があけば別々の戻る");
+        ok(r.s().equals("渡23押作,渡23離作,渡23押作,渡23離作"), "間があけば別々の決定");
     }
 
     static void router() {

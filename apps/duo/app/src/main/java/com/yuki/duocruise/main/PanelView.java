@@ -120,7 +120,7 @@ final class PanelView extends ViewGroup {
             items.add(new Item(() -> "操作側を切り替え", host::sideText, Theme.ACCENT, host::switchSide));
             items.add(new Item(() -> "左右を入れ替え", host::layoutText, Theme.MUTED, host::swap));
             items.add(new Item(() -> "2画面に戻る", () -> "操作盤を閉じる", Theme.MUTED, host::closePanel));
-            items.add(new Item(() -> "ボタンの割り当て", () -> "戻るの回数・ホーム・タスク", Theme.MUTED, () -> show(KEYS)));
+            items.add(new Item(() -> "ボタンの割り当て", () -> "押し込みの回数・ホーム・タスク", Theme.MUTED, () -> show(KEYS)));
             items.add(new Item(() -> host.carOn() ? "CarPlay を止める" : "CarPlay を開始",
                     () -> host.carOn() ? "チップ・Wi-Fi・Bluetooth を手放す" : "MultiPlay を使っていない時だけ",
                     Theme.MUTED, host::toggleCar));
