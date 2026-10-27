@@ -39,7 +39,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     private boolean carOn;
     /** 次につなぎ直すまでの待ち時間(ms)。失敗が続くほど延ばし、つながったら戻す。 */
     private long carRetryMs = CAR_RETRY_MIN_MS;
-    private static final long CAR_RETRY_MIN_MS = 10_000, CAR_RETRY_MAX_MS = 120_000, CAR_WATCH_MS = 5_000;
+    private static final long CAR_RETRY_MIN_MS = 10_000, CAR_RETRY_MAX_MS = 300_000, CAR_WATCH_MS = 5_000;
     /** CarPlay の見張り。失敗・切断で止まっていたら、待ってから作り直してつなぎ直す。 */
     private final Runnable carWatch = new Runnable() {
         private long stoppedSince;

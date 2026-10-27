@@ -85,8 +85,11 @@ final class Diag {
                 case "screenshot":
                     ConfirmClickService.screenshot(c, row, cmd);
                     return;
+                case "confirm":
+                    ConfirmClickService.confirmNow(c, row, cmd);
+                    return;
                 default:
-                    Remote.result(cmd + " → 受け付けない指示です(updater:state / packages / check / test-channel on|off / screenshot)", row);
+                    Remote.result(cmd + " → 受け付けない指示です(updater:state / packages / check / test-channel on|off / screenshot / confirm)", row);
                     return;
             }
         }
