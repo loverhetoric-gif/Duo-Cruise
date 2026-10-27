@@ -29,5 +29,21 @@ final class SplitGeometry {
         return halfOnly ? half(w, h, side) : new int[]{0, 0, w, h};
     }
 
+    /**
+     * 1画面のときの、出す側の枠。YouTube は横いっぱい。
+     * CarPlay は iPhone と決めた大きさ(半分の幅)のまま真ん中に置く(引き伸ばすと絵がゆがむため)。
+     */
+    static int[] single(int w, int h, boolean tv) {
+        if (tv) return new int[]{0, 0, w, h};
+        int hw = w / 2, left = (w - hw) / 2;
+        return new int[]{left, 0, left + hw, h};
+    }
+
+    /**
+     * 1画面のときの、出さない側の置き場所(画面の右の外)。大きさは半分のまま変えない。
+     * 隠す(INVISIBLE)と CarPlay の映像の面が消えて作り直しになるため、外へ出すだけにする。YouTube の再生も止めない。
+     */
+    static int[] offscreen(int w, int h) { return new int[]{w, 0, w + w / 2, h}; }
+
     static String str(int[] r) { return (r[2] - r[0]) + "×" + (r[3] - r[1]) + "@" + r[0] + "," + r[1]; }
 }

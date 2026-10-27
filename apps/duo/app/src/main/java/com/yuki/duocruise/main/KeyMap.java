@@ -28,7 +28,8 @@ final class KeyMap {
     enum Action {
         SWITCH_SIDE("操作側の切り替え"),
         SWAP("左右の入れ替え"),
-        PANEL("操作盤を出す・閉じる");
+        PANEL("操作盤を出す・閉じる"),
+        SINGLE("1画面と2画面の切り替え");
         final String label;
         Action(String l) { label = l; }
     }
@@ -45,10 +46,11 @@ final class KeyMap {
      * ・コマンダーの押し込み(決定)を2回 → 操作側の切り替え(タスクキーの短押しでも)
      * ・戻るを2回 → 左右の入れ替え
      * ・押し込みを3回 → 操作盤(ホームの短押しでも。Duo Cruise が前面のときだけ。ユーザー補助で横取り)
+     * ・戻るを3回 → 1画面と2画面の切り替え(1画面のときは操作中の側だけを出す)
      * ・押し込み・戻るを1回 → いつもの「決定」「戻る」として操作中の側へ(回数を数えるため少し遅れて届く)
      * 操作盤の「ボタンの割り当て」で、押す回数(1〜4回)や長押しごとに変えられる。
      */
-    static final String DEFAULTS = "SWITCH_SIDE=23:2,187:S;SWAP=4:2;PANEL=23:3,3:S";
+    static final String DEFAULTS = "SWITCH_SIDE=23:2,187:S;SWAP=4:2;PANEL=23:3,3:S;SINGLE=4:3";
 
     /** 長押しとみなす時間(ms)。 */
     static final long DEFAULT_LONG_MS = 600;

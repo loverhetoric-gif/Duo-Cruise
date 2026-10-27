@@ -22,6 +22,9 @@ public final class PanesLogicTest {
 
     public static void main(String[] a) {
         geometry();
+        single();
+        grid(1480, 416, 7, "割り当て 1480×416(動作4つ)");
+        grid(740, 416, 7, "割り当て 740×416(動作4つ)");
         grid(1480, 416, 8, "主ページ 1480×416");
         grid(740, 416, 8, "主ページ 740×416");
         grid(1480, 416, 6, "割り当て 1480×416");
@@ -34,6 +37,15 @@ public final class PanesLogicTest {
         taps();
         System.out.println(fails == 0 ? "すべて合格(" + checks + " 件)" : fails + " 件 不合格 / " + checks);
         if (fails != 0) System.exit(1);
+    }
+
+    static void single() {
+        int[] t = SplitGeometry.single(1480, 480, true), c = SplitGeometry.single(1480, 480, false), o = SplitGeometry.offscreen(1480, 480);
+        ok(t[0] == 0 && t[2] == 1480 && t[3] == 480, "1画面 YouTube は横いっぱい");
+        ok(c[0] == 370 && c[2] == 1110 && c[3] == 480, "1画面 CarPlay は 740 幅のまま真ん中");
+        ok(o[0] == 1480 && o[2] - o[0] == 740, "出さない側は画面の外、大きさは半分のまま");
+        int[] c7 = SplitGeometry.single(741, 480, false);
+        ok(c7[0] >= 0 && c7[2] <= 741, "奇数幅でもはみ出さない");
     }
 
     static void geometry() {
@@ -89,6 +101,7 @@ public final class PanesLogicTest {
         ok(d.find(KeyMap.DPAD_CENTER, KeyMap.DOUBLE) == KeyMap.Action.SWITCH_SIDE, "初期値: 押し込み2回=切替");
         ok(d.find(KeyMap.BACK, KeyMap.DOUBLE) == KeyMap.Action.SWAP, "初期値: 戻る2回=入替");
         ok(d.find(KeyMap.DPAD_CENTER, KeyMap.TRIPLE) == KeyMap.Action.PANEL, "初期値: 押し込み3回=操作盤");
+        ok(d.find(KeyMap.BACK, KeyMap.TRIPLE) == KeyMap.Action.SINGLE, "初期値: 戻る3回=1画面");
         ok(d.find(KeyMap.HOME, KeyMap.SHORT) == KeyMap.Action.PANEL, "初期値: ホーム=操作盤");
         ok(d.find(KeyMap.DPAD_CENTER, KeyMap.SHORT) == null && d.maxTaps(KeyMap.DPAD_CENTER) == 3, "初期値: 押し込み1回は割り当て無し");
         ok(KeyMap.parse(d.serialize()).serialize().equals(d.serialize()), "回数も保存して読み直して同じ");
@@ -154,7 +167,12 @@ public final class PanesLogicTest {
         k.onKey(K, 0, 0, t.now, false, null); t.advance(15); k.onKey(K, 1, 0, t.now, false, null);
         t.advance(150);
         k.onKey(K, 0, 0, t.now, false, null); t.advance(15); k.onKey(K, 1, 0, t.now, false, null);
-        ok(r.s().equals("動SWAP"), "戻る2回で入替(待たずに)");
+        ok(r.s().isEmpty(), "戻る2回: 3回目を待つ");
+        t.advance(500);
+        ok(r.s().equals("動SWAP"), "戻る2回で入替");
+        for (int i = 0; i < 3; i++) { k.onKey(K, 0, 0, t.now, false, null); t.advance(15); k.onKey(K, 1, 0, t.now, false, null); t.advance(150); }
+        ok(r.s().equals("動SINGLE"), "戻る3回で1画面(待たずに)");
+        t.advance(500); r.s();
         k.onKey(K, 0, 0, t.now, false, null); t.advance(15); k.onKey(K, 1, 0, t.now, false, null); t.advance(500);
         ok(r.s().equals("渡4押作,渡4離作"), "戻る1回は待ったあと普通の戻る");
 

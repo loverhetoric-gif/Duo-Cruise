@@ -17,9 +17,13 @@ final class Store {
     static int side(Context c) { return p(c).getInt("side", SplitGeometry.SIDE_LEFT); }
     static void setSide(Context c, int v) { p(c).edit().putInt("side", v).apply(); }
 
-    /** ボタンの割り当て(KeyMap の文字列)。未設定なら初期値。keymap3＝車での実測後の初期値(長押しの頃の keymap2 は使わない)。 */
-    static KeyMap keyMap(Context c) { return KeyMap.parse(p(c).getString("keymap3", KeyMap.DEFAULTS)); }
-    static void setKeyMap(Context c, KeyMap m) { p(c).edit().putString("keymap3", m.serialize()).apply(); }
+    /** ボタンの割り当て(KeyMap の文字列)。未設定なら初期値。keymap4＝1画面の切り替えを足した初期値(それより前の保存は使わない)。 */
+    static KeyMap keyMap(Context c) { return KeyMap.parse(p(c).getString("keymap4", KeyMap.DEFAULTS)); }
+    static void setKeyMap(Context c, KeyMap m) { p(c).edit().putString("keymap4", m.serialize()).apply(); }
+
+    /** true のとき1画面(操作中の側だけを出す)。 */
+    static boolean single(Context c) { return p(c).getBoolean("single", false); }
+    static void setSingle(Context c, boolean v) { p(c).edit().putBoolean("single", v).apply(); }
 
     /** 長押しとみなす時間(ms)。 */
     static long longMs(Context c) { return p(c).getLong("longMs", KeyMap.DEFAULT_LONG_MS); }

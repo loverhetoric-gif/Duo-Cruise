@@ -30,7 +30,7 @@ final class SplitRoot extends ViewGroup {
     private final Frame frame;
     View car, tv;
     PanelView panel;
-    boolean swapped, panelHalf;
+    boolean swapped, panelHalf, single;
     int side;
     private String lastSizes = "";
     /** 入れ替えの動き: 並べ直す前の左端。並べ直した後、ここから新しい場所へ動かす。 */
@@ -58,6 +58,27 @@ final class SplitRoot extends ViewGroup {
     }
 
     /** 並べ直す(入れ替え・操作側・操作盤の場所が変わったとき)。 */
+    /** 1画面にするか。apply の前に呼ぶ。 */
+    void setSingle(boolean v) { single = v; }
+
+    /** 1画面のとき YouTube を出しているか。 */
+    private boolean tvShown() { return SplitGeometry.tvOn(side, swapped); }
+
+    private int[] carRect(int w, int h) {
+        if (!single) return SplitGeometry.car(w, h, swapped);
+        return tvShown() ? SplitGeometry.offscreen(w, h) : SplitGeometry.single(w, h, false);
+    }
+
+    private int[] tvRect(int w, int h) {
+        if (!single) return SplitGeometry.tv(w, h, swapped);
+        return tvShown() ? SplitGeometry.single(w, h, true) : SplitGeometry.offscreen(w, h);
+    }
+
+    /** 操作している枠(線と光を描く場所)。 */
+    int[] activeRect(int w, int h) {
+        return single ? SplitGeometry.single(w, h, tvShown()) : SplitGeometry.half(w, h, side);
+    }
+
     void apply(boolean swapped, int side, boolean panelHalf) {
         if (swapped != this.swapped && car != null && tv != null && car.getWidth() > 0) {
             swapFromCar = car.getLeft();
@@ -122,10 +143,10 @@ final class SplitRoot extends ViewGroup {
     @Override protected void onMeasure(int wSpec, int hSpec) {
         setMeasuredDimension(MeasureSpec.getSize(wSpec), MeasureSpec.getSize(hSpec));
         int w = contentW(), h = contentH();
-        measureTo(car, SplitGeometry.car(w, h, swapped));
-        measureTo(tv, SplitGeometry.tv(w, h, swapped));
+        measureTo(car, carRect(w, h));
+        measureTo(tv, tvRect(w, h));
         measureTo(frame, new int[]{0, 0, w, h});
-        if (panel != null) measureTo(panel, SplitGeometry.panel(w, h, panelHalf, side));
+        if (panel != null) measureTo(panel, SplitGeometry.panel(w, h, panelHalf && !single, side));
     }
 
     private static void measureTo(View v, int[] r) {
@@ -141,11 +162,11 @@ final class SplitRoot extends ViewGroup {
 
     @Override protected void onLayout(boolean changed, int l, int t, int r, int b) {
         int w = contentW(), h = contentH();
-        int[] c = SplitGeometry.car(w, h, swapped), v = SplitGeometry.tv(w, h, swapped);
+        int[] c = carRect(w, h), v = tvRect(w, h);
         layoutTo(car, c);
         layoutTo(tv, v);
         layoutTo(frame, new int[]{0, 0, w, h});
-        if (panel != null) layoutTo(panel, SplitGeometry.panel(w, h, panelHalf, side));
+        if (panel != null) layoutTo(panel, SplitGeometry.panel(w, h, panelHalf && !single, side));
         if (swapFromCar != Integer.MIN_VALUE) startSwapAnimation();
         String sizes = w + "×" + h + " car=" + SplitGeometry.str(c) + " tv=" + SplitGeometry.str(v);
         if (!sizes.equals(lastSizes)) {
@@ -240,7 +261,7 @@ final class SplitRoot extends ViewGroup {
 
         @Override protected void onDraw(Canvas cv) {
             int w = getWidth(), h = getHeight();
-            int[] r = SplitGeometry.half(w, h, side);
+            int[] r = activeRect(w, h);
             float s = line.getStrokeWidth() / 2;
             if ((panel == null || panel.getVisibility() != VISIBLE) && !moving) {
                 RectF box = new RectF(r[0] + s, r[1] + s, r[2] - s, r[3] - s);

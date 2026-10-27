@@ -92,7 +92,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         root.setPanes(car.view(), tv.view(), panel);
         setContentView(root);
         setupInsets();
-        root.apply(Store.swapped(this), Store.side(this), Store.panelHalf(this));
+        applyLayout();
 
         askPermissions();
         // CarPlay は開いたら自動で始め、失敗・切断したら見張りがつなぎ直す
@@ -259,6 +259,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
             case SWITCH_SIDE: switchSide(); break;
             case SWAP: swap(); break;
             case PANEL: togglePanel(); break;
+            case SINGLE: toggleSingle(); break;
         }
     }
 
@@ -300,7 +301,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     }
 
     private void relayout() {
-        root.apply(Store.swapped(this), Store.side(this), Store.panelHalf(this));
+        applyLayout();
         if (panel.getVisibility() == View.VISIBLE) panel.refresh();
         stateChanged();
     }
@@ -319,7 +320,24 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         DuoLog.log("操作する側: " + sideText());
     }
 
+    /** 並べ方(入れ替え・操作側・1画面・操作盤の場所)を土台に伝えて並べ直す。 */
+    private void applyLayout() {
+        root.setSingle(Store.single(this));
+        root.apply(Store.swapped(this), Store.side(this), Store.panelHalf(this));
+    }
+
+    /** 1画面と2画面の切り替え。1画面では操作中の側だけを出し、押し込み2回で YouTube だけ⇔マップだけになる。 */
+    void toggleSingle() {
+        Store.setSingle(this, !Store.single(this));
+        relayout();
+        focusActive();
+        root.showLabel(Store.single(this) ? active().name() + " だけ" : "2画面");
+        root.glow();
+        DuoLog.log("表示: " + (Store.single(this) ? "1画面 " + active().name() : "2画面"));
+    }
+
     @Override public void swap() {
+        if (Store.single(this)) { DuoLog.log("入れ替え: 1画面のときは何もしない"); return; }
         Store.setSwapped(this, !Store.swapped(this));
         // 操作している「中身」はそのまま(YouTube を操作中なら、入れ替え後も YouTube)
         Store.setSide(this, Store.side(this) == SplitGeometry.SIDE_LEFT ? SplitGeometry.SIDE_RIGHT : SplitGeometry.SIDE_LEFT);
@@ -337,13 +355,13 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     void openPanel() {
         panel.show(PanelView.MAIN);
         panel.setVisibility(View.VISIBLE);
-        root.apply(Store.swapped(this), Store.side(this), Store.panelHalf(this));
+        applyLayout();
     }
 
     @Override public void closePanel() {
         cancelLearn();
         panel.setVisibility(View.GONE);
-        root.apply(Store.swapped(this), Store.side(this), Store.panelHalf(this));
+        applyLayout();
         focusActive();
     }
 
@@ -374,7 +392,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         try { car.destroy(); } catch (Throwable t) { DuoLog.error("CarPlay を止められません: " + DuoLog.why(t)); }
         car = Panes.car(this);
         root.setPanes(car.view(), tv.view(), panel);
-        root.apply(Store.swapped(this), Store.side(this), Store.panelHalf(this));
+        applyLayout();
         try { car.start(); } catch (Throwable t) { DuoLog.error("CarPlay を始められません: " + DuoLog.why(t)); }
         stateChanged();
     }
@@ -390,7 +408,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         try { car.destroy(); } catch (Throwable t) { DuoLog.error("CarPlay を止められません: " + DuoLog.why(t)); }
         car = Panes.car(this);
         root.setPanes(car.view(), tv.view(), panel);
-        root.apply(Store.swapped(this), Store.side(this), Store.panelHalf(this));
+        applyLayout();
         stateChanged();
     }
 
@@ -473,6 +491,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     }
 
     @Override public String layoutText() {
+        if (Store.single(this)) return "1画面 " + active().name() + " だけ";
         return Store.swapped(this) ? "左 YouTube ／ 右 CarPlay" : "左 CarPlay ／ 右 YouTube";
     }
 
