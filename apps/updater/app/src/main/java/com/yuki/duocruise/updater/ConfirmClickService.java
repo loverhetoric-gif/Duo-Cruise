@@ -24,12 +24,6 @@ import java.util.concurrent.Executors;
  */
 public class ConfirmClickService extends AccessibilityService {
     private static final String[] OK = {"更新", "インストール", "Update", "Install", "続行", "Continue"};
-    /**
-     * Play プロテクトの「アプリのスキャンをおすすめします」で押すボタン(安全を確かめる側だけ)。
-     * この画面は縦に長く、OTTO の 480 の高さに収まらず、ボタンが画面の外にあって人には押せなかった(2026-10-27)。
-     * 「スキャンせずにインストール」のように安全の確認を省く側は、決して押さない。
-     */
-    private static final String[] SCAN = {"アプリをスキャン", "Scan app"};
     private static volatile ConfirmClickService instance;
     private static final Executor SHOT = Executors.newSingleThreadExecutor();
     private long lastClick = 0;
@@ -51,7 +45,6 @@ public class ConfirmClickService extends AccessibilityService {
     }
 
     @Override public void onAccessibilityEvent(AccessibilityEvent e) {
-        if (e.getPackageName() != null && e.getPackageName().toString().equals("com.android.vending")) { pressScan(); return; }
         if (System.currentTimeMillis() > UpdateEngine.autoConfirmUntil) return;
         if (System.currentTimeMillis() - lastClick < 1500) return;
         pressConfirm();
@@ -86,31 +79,6 @@ public class ConfirmClickService extends AccessibilityService {
             }
         }
         return false;
-    }
-
-    /** Play プロテクトの画面で「アプリをスキャン」を押す(押すのはこれだけ)。 */
-    private void pressScan() {
-        if (System.currentTimeMillis() - lastClick < 1500) return;
-        try {
-            for (AccessibilityWindowInfo w : getWindows()) {
-                AccessibilityNodeInfo r = w.getRoot();
-                if (r == null || r.getPackageName() == null || !r.getPackageName().toString().equals("com.android.vending")) continue;
-                if (r.findAccessibilityNodeInfosByText("Play プロテクト").isEmpty() && r.findAccessibilityNodeInfosByText("Play Protect").isEmpty()) continue;
-                for (String t : SCAN) {
-                    for (AccessibilityNodeInfo n : r.findAccessibilityNodeInfosByText(t)) {
-                        if (n.getText() == null || !n.getText().toString().equals(t)) continue; // 文字が完全に一致するものだけ
-                        AccessibilityNodeInfo b = n;
-                        while (b != null && !b.isClickable()) b = b.getParent();
-                        if (b == null || !b.isEnabled()) continue;
-                        UpdLog.init(this);
-                        UpdLog.add("Play プロテクトの「" + t + "」を自動で押しました(安全を確かめてから入れる側)");
-                        lastClick = System.currentTimeMillis();
-                        b.performAction(AccessibilityNodeInfo.ACTION_CLICK);
-                        return;
-                    }
-                }
-            }
-        } catch (Throwable ignored) {}
     }
 
     /** 指示「updater:confirm」: 今出ているインストール確認を押す(そのあと3分間は自動で押す)。 */
