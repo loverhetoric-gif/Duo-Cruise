@@ -21,7 +21,6 @@ targets:
       properties:
         CFBundleDisplayName: Duo Pad
         UILaunchScreen: {}
-        UIStatusBarHidden: true
         UIRequiresFullScreen: true
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         NSLocalNetworkUsageDescription: 車の中の Wi-Fi で Duo Cruise(OTTO)に直接つないで、タッチパッドとして操作するために使います。

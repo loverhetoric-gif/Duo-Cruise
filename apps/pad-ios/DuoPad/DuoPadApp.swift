@@ -10,8 +10,6 @@ struct DuoPadApp: App {
         WindowGroup {
             PadScreen()
                 .environmentObject(link)
-                .preferredColorScheme(.dark)
-                .persistentSystemOverlays(.hidden)
                 .onAppear { link.start(); UIApplication.shared.isIdleTimerDisabled = true }
                 .onChange(of: phase) { _, p in
                     // 前面に戻ったらすぐつなぎ直す。使っている間は画面を消さない
@@ -22,43 +20,72 @@ struct DuoPadApp: App {
     }
 }
 
+/// 昼・夜の配色。
+/// 昼: 日差しの下でも読めるよう、明るい面に濃い記号(強いコントラスト)。
+/// 夜: 車内で眩しくないよう、ほぼ黒の面に暗めの記号(明るさを抑え、運転の邪魔をしない)。
+struct Palette {
+    let bg, pad, padEdge, key, icon: Color
+    static let day = Palette(bg: Color(white: 0.86), pad: Color(white: 0.97), padEdge: Color(white: 0.70),
+                             key: Color(white: 0.78), icon: Color(white: 0.08))
+    static let night = Palette(bg: .black, pad: Color(white: 0.07), padEdge: Color(white: 0.16),
+                               key: Color(white: 0.12), icon: Color(white: 0.55))
+}
+
 struct PadScreen: View {
     @EnvironmentObject var link: PadLink
     @AppStorage("sensitivity") private var sensitivity = 1.0
     @AppStorage("acceleration") private var acceleration = 1.0
+    /// 配色: 0＝自動(iPhone の昼・夜に合わせる)、1＝昼、2＝夜。
+    @AppStorage("theme") private var theme = 0
+    @Environment(\.colorScheme) private var scheme
     @State private var typing = false
     @State private var settings = false
 
+    private var night: Bool { theme == 2 || (theme == 0 && scheme == .dark) }
+    private var c: Palette { night ? .night : .day }
+
     var body: some View {
-        VStack(spacing: 10) {
-            status
+        VStack(spacing: 6) {
             Surface(sensitivity: sensitivity, acceleration: acceleration, screenWidth: link.screen.width) { link.send($0) }
-                .background(RoundedRectangle(cornerRadius: 22).fill(Color(white: 0.11)))
-                .overlay(RoundedRectangle(cornerRadius: 22).stroke(Color(white: 0.22), lineWidth: 1))
+                .background(RoundedRectangle(cornerRadius: 26).fill(c.pad))
+                .overlay(RoundedRectangle(cornerRadius: 26).stroke(c.padEdge, lineWidth: 1))
+                .overlay(alignment: .topTrailing) { corner.padding(.top, topInset) }
             KeyField(active: $typing) { link.send($0) }
                 .frame(width: 1, height: 1).opacity(0.01)
-            HStack(spacing: 10) {
-                key("arrow.uturn.backward", "戻る") { link.send("k b") }
-                key("house", "ホーム") { link.send("k h") }
-                key("square.on.square", "タスク") { link.send("k r") }
-                key(typing ? "keyboard.chevron.compact.down" : "keyboard", "文字") { typing.toggle() }
+            HStack(spacing: 6) {
+                key("arrow.uturn.backward") { link.send("k b") }
+                key("house") { link.send("k h") }
+                key("square.on.square") { link.send("k r") }
+                key(typing ? "keyboard.chevron.compact.down" : "keyboard") { typing.toggle() }
             }
-            .frame(height: 64)
-        }
-        .padding(12)
-        .background(Color.black.ignoresSafeArea())
-        .sheet(isPresented: $settings) { SettingsSheet(sensitivity: $sensitivity, acceleration: $acceleration) }
-    }
-
-    private var status: some View {
-        HStack {
-            Circle().fill(dotColor).frame(width: 9, height: 9)
-            Text(statusText).font(.footnote).foregroundStyle(.secondary).lineLimit(1)
-            Spacer()
-            Button { settings = true } label: { Image(systemName: "slider.horizontal.3") }
-                .foregroundStyle(.secondary)
+            .frame(height: 50)
         }
         .padding(.horizontal, 6)
+        .padding(.top, 6)    // 時計・ステータスバーは残し、その下まで面を伸ばして重ねる
+        .padding(.bottom, 4) // 下は伸ばさない(iPhone のホームに戻る操作とぶつかるため)
+        .ignoresSafeArea(.container, edges: .top)
+        .background(c.bg.ignoresSafeArea())
+        .preferredColorScheme(theme == 1 ? .light : theme == 2 ? .dark : nil)
+        .sheet(isPresented: $settings) { SettingsSheet(sensitivity: $sensitivity, acceleration: $acceleration, theme: $theme) }
+    }
+
+    /// 時計・ステータスバーの高さ。設定ボタンはその下(右上)に置く。
+    private var topInset: CGFloat {
+        (UIApplication.shared.connectedScenes.first as? UIWindowScene)?.keyWindow?.safeAreaInsets.top ?? 44
+    }
+
+    /// 右上の隅(ステータスバーのすぐ下): つながりの点(緑＝接続中、黄＝探し中、赤＝切れた)と設定。文字は出さない。
+    private var corner: some View {
+        Button { settings = true } label: {
+            HStack(spacing: 8) {
+                Circle().fill(dotColor).frame(width: 8, height: 8).opacity(night ? 0.55 : 1)
+                Image(systemName: "slider.horizontal.3").font(.system(size: 13, weight: .medium))
+            }
+            .foregroundStyle(c.icon.opacity(0.7))
+            .padding(12)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(statusText)
     }
 
     private var dotColor: Color {
@@ -78,20 +105,18 @@ struct PadScreen: View {
         }
     }
 
-    private func key(_ icon: String, _ label: String, _ action: @escaping () -> Void) -> some View {
+    private func key(_ icon: String, _ action: @escaping () -> Void) -> some View {
         Button {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
             action()
         } label: {
-            VStack(spacing: 4) {
-                Image(systemName: icon).font(.system(size: 20, weight: .medium))
-                Text(label).font(.caption2)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(RoundedRectangle(cornerRadius: 16).fill(Color(white: 0.16)))
+            Image(systemName: icon).font(.system(size: 21, weight: .semibold))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(RoundedRectangle(cornerRadius: 16).fill(c.key))
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .foregroundStyle(.white)
+        .foregroundStyle(c.icon)
     }
 }
 
@@ -153,6 +178,7 @@ struct SettingsSheet: View {
     @EnvironmentObject var link: PadLink
     @Binding var sensitivity: Double
     @Binding var acceleration: Double
+    @Binding var theme: Int
     @State private var host = UserDefaults.standard.string(forKey: "host") ?? ""
     @Environment(\.dismiss) private var dismiss
 
@@ -168,6 +194,12 @@ struct SettingsSheet: View {
                         Text("加速 \(String(format: "%.1f", acceleration))(0＝加速なし)")
                         Slider(value: $acceleration, in: 0...3, step: 0.1)
                     }
+                }
+                Section("配色") {
+                    Picker("配色", selection: $theme) {
+                        Text("自動").tag(0); Text("昼").tag(1); Text("夜").tag(2)
+                    }
+                    .pickerStyle(.segmented)
                 }
                 Section {
                     TextField("空欄なら自動で探す(例 192.168.43.1)", text: $host)
