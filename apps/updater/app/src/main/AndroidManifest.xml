@@ -3,6 +3,9 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- 自分が入れたアプリ(と自分自身)を、確認画面なしで更新する(Android 12 以上)。
+         これが無いと毎回確認画面が出て、Duo Cruise(ホーム)の後ろに隠れて止まっていた(2026-10-27) -->
+    <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- 指示 updater:packages(入っているアプリの一覧を読むだけ)のため -->
