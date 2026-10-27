@@ -315,6 +315,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         relayout();
         focusActive();
         root.showLabel("操作: " + active().name());
+        root.glow();
         DuoLog.log("操作する側: " + sideText());
     }
 
