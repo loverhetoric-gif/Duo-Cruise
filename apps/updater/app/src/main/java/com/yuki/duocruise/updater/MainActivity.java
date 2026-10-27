@@ -48,7 +48,7 @@ public class MainActivity extends Activity {
 
     private TextView versionLine;
     private ArrayAdapter<String> adapter;
-    private Button checkBtn, allBtn, rollbackBtn, installBtn, selfA11yBtn, keysBtn, mainBtn, sendBtn;
+    private Button checkBtn, allBtn, rollbackBtn, installBtn, selfA11yBtn, mainBtn, sendBtn;
     private Switch testSwitch;
     private long rollbackArmedUntil = 0;
     private boolean busy = false;
@@ -161,13 +161,12 @@ public class MainActivity extends Activity {
         });
         installBtn = tile(v -> openInstallPermission());
         selfA11yBtn = tile(v -> openA11y(getPackageName()));
-        keysBtn = tile(v -> openA11y(Diag.KEYS));
         mainBtn = tile(v -> openA11y(Diag.MAIN));
         sendBtn = tile(v -> { Remote.kick(); UpdLog.add("記録の送信と指示の確認を、今すぐ行います"); });
 
         GridLayout grid = new GridLayout(this);
         grid.setColumnCount(3);
-        View[] tiles = {checkBtn, allBtn, rollbackBtn, testSwitch, installBtn, selfA11yBtn, keysBtn, mainBtn, sendBtn};
+        View[] tiles = {checkBtn, allBtn, rollbackBtn, testSwitch, installBtn, selfA11yBtn, mainBtn, sendBtn};
         for (int i = 0; i < tiles.length; i++) {
             GridLayout.LayoutParams lp = new GridLayout.LayoutParams(
                     GridLayout.spec(i / 3), GridLayout.spec(i % 3, 1f));
@@ -293,7 +292,7 @@ public class MainActivity extends Activity {
         if (checkBtn == null) return;
         boolean test = UpdateEngine.testChannel(this);
         versionLine.setText("更新 " + ver(getPackageName()) + "  /  本体 " + ver(Diag.MAIN)
-                + "  /  キー記録 " + ver(Diag.KEYS) + "  /  AirPlay " + ver(Diag.AIRPLAY)
+                + "  /  AirPlay " + ver(Diag.AIRPLAY)
                 + "   " + (test ? "テスト版も受け取る" : "正式版のみ") + "・15分ごとに自動で確認");
 
         setTile(checkBtn, busy ? "処理中…" : "今すぐ確認\nして更新", ACCENT, !busy);
@@ -311,7 +310,6 @@ public class MainActivity extends Activity {
         boolean selfOn = A11y.enabled(this, self);
         setTile(selfA11yBtn, selfOn ? "自動確認(更新)\nON" : "自動確認 OFF\n押して設定を開く", selfOn ? GREEN : AMBER, true);
 
-        a11yTile(keysBtn, "キー記録", Diag.KEYS);
         a11yTile(mainBtn, "本体", Diag.MAIN);
 
         String send = !Remote.configured() ? "記録の送信\n受け口が未設定(溜めるだけ)"

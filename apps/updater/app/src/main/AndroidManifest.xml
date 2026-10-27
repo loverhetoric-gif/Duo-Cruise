@@ -15,7 +15,6 @@
     <uses-permission android:name="com.yuki.duocruise.permission.LOG" />
     <queries>
         <package android:name="com.yuki.duocruise.airplay" />
-        <package android:name="com.yuki.duocruise.keys" />
         <package android:name="com.yuki.duocruise.updater" />
         <package android:name="com.yuki.duocruise.main" />
     </queries>

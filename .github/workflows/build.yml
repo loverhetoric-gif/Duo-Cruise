@@ -78,12 +78,6 @@ jobs:
           echo "sdk.dir=$ANDROID_HOME" > local.properties
           gradle --no-daemon assembleDebug -Pvc=$VC
 
-      - name: Duo Cruise キー記録 を作る
-        working-directory: apps/keyrecorder
-        run: |
-          echo "sdk.dir=$ANDROID_HOME" > local.properties
-          gradle --no-daemon assembleDebug -Pvc=$VC
-
       - name: Duo Cruise 本体 を作る(apps/duo があるときだけ)
         if: env.HAS_DUO == '1'
         working-directory: apps/duo
@@ -123,7 +117,7 @@ jobs:
           echo "1つ前の正式版: $PREV_TAG ($PREV_SHA)"
           git worktree add -f prev-src "$PREV_SHA"
           mkdir -p prev-out
-          for app in updater keyrecorder duo; do
+          for app in updater duo; do
             [ -d "prev-src/apps/$app" ] || { echo "$app: 1つ前にはないので省きます"; continue; }
             [ -d "apps/$app" ] || continue
             if git diff --quiet "$PREV_SHA" HEAD -- "apps/$app"; then
@@ -157,11 +151,9 @@ jobs:
             "$BT/apksigner" verify "out/$2"
           }
           sign apps/updater/app/build/outputs/apk/debug/app-debug.apk duo-updater.apk
-          sign apps/keyrecorder/app/build/outputs/apk/debug/app-debug.apk duo-keys.apk
           if [ "$HAS_DUO" = 1 ]; then sign apps/duo/app/build/outputs/apk/debug/app-debug.apk duo-main.apk; fi
           sign airplay-src/app/build/outputs/apk/debug/app-debug.apk duo-airplay.apk
           [ -f prev-out/updater.apk ] && sign prev-out/updater.apk prev-duo-updater.apk
-          [ -f prev-out/keyrecorder.apk ] && sign prev-out/keyrecorder.apk prev-duo-keys.apk
           [ -f prev-out/duo.apk ] && sign prev-out/duo.apk prev-duo-main.apk
           rm -f "$RUNNER_TEMP/mx.jks" out/*.idsig
           python3 tools/make_manifest.py out "$ANDROID_HOME/build-tools/$BT_READ/aapt2" "$GITHUB_RUN_NUMBER" "${PREV_TAG:-}"
