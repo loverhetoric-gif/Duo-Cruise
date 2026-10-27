@@ -109,9 +109,11 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         // CarPlay は開いたら自動で始め、失敗・切断したら見張りがつなぎ直す
         startCar("開いたので自動で");
         main.postDelayed(carWatch, CAR_WATCH_MS);
-        padServer = PadServer.shared(this, pad);
+        // タッチパッドは、アプリごとにモードを切り替えるルーターに通す
+        // (Duo Cruise 前面＝この窓を操作、それ以外＝ユーザー補助で全体を操作)
+        PadRouter.get(this).setDuoSink(pad);
+        padServer = PadRouter.get(this).server();
         padServer.setState(Store.single(this) ? "s F" : Store.side(this) == SplitGeometry.SIDE_LEFT ? "s L" : "s R");
-        padServer.start();
         try { tv.start(); } catch (Throwable t) { DuoLog.error("YouTube を始められません: " + DuoLog.why(t)); }
         boolean asHome = getIntent() != null && getIntent().hasCategory(Intent.CATEGORY_HOME);
         DuoLog.log("Duo Cruise を開きました(版 " + DuoLog.version() + (asHome ? "、ホームとして" : "") + ")");
@@ -205,6 +207,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
 
         try { car.destroy(); } catch (Throwable t) { DuoLog.error("CarPlay の終了で失敗: " + DuoLog.why(t)); }
         try { tv.destroy(); } catch (Throwable t) { DuoLog.error("YouTube の終了で失敗: " + DuoLog.why(t)); }
+        PadRouter.get(this).setDuoSink(null);
         super.onDestroy();
     }
 

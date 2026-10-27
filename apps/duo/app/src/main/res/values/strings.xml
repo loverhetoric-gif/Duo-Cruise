@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Duo Cruise</string>
-    <string name="svc_desc">Duo Cruise が前面のときだけ、ホーム・タスクのボタンを受け取り、割り当てた操作(操作盤・操作側の切り替えなど)にします。ほかのアプリの画面では何もしません。</string>
+    <string name="svc_desc">Duo Pad(手元のタッチパッド)で、Duo Cruise だけでなく、ホーム画面やほかのアプリも操作できるようにします。画面にカーソルを出し、あなたが動かした所を押します。自分で操作するためのものです。</string>
 </resources>
