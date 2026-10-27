@@ -69,6 +69,12 @@ class CarPlayPane(context: Context, private val listener: Listener?) {
         const val HEIGHT = 416
         private const val SCREEN_TYPE_MAIN = 110
         private const val FPS = 60
+        /**
+         * CarPlay の映像の口。iPhone へは iAP2 と Bonjour で番号を伝えるので、何番でもよい。
+         * 既定の 7000 は AirPlay 受信アプリ(com.yuki.duocruise.airplay、YouTube を iPhone から受ける)も使うため、
+         * 両方が動いていると CarPlay が「bind failed: EADDRINUSE」で止まっていた(2026-10-28 実機)。ずらして両立させる。
+         */
+        private const val AIRPLAY_PORT = 7200
 
         private val running = AtomicInteger(0)
 
@@ -168,6 +174,16 @@ class CarPlayPane(context: Context, private val listener: Listener?) {
         // 回線(SIM・テザリング・Wi-Fi)と無線 CarPlay がぶつかりそうかを先に記録する
         record(DuoRecord.KIND_STATE, "CarPlay 開始前の回線: " + network.describe())
         network.conflictBeforeStart()?.let { record(DuoRecord.KIND_ERROR, "取り合いの可能性(Wi-Fi): $it") }
+        if (network.portInUse(AIRPLAY_PORT)) {
+            record(DuoRecord.KIND_ERROR, "取り合い: CarPlay の映像の口 $AIRPLAY_PORT 番を、ほかのアプリが使っています")
+        }
+        if (network.ottoTetheringOn() == true) {
+            record(
+                DuoRecord.KIND_ERROR,
+                "取り合いの可能性(Wi-Fi): OTTO 本体のテザリングが開いています(本体の操作パネル com.cartizan.ctzpanel が自動で開く)。" +
+                    "iPhone には別の Wi-Fi として見えます。選ぶとパスワードを聞かれるので、選ばないでください",
+            )
+        }
         record(DuoRecord.KIND_LOG, "キー対応表: " + CarPlayKeyMap.describe())
 
         try {
@@ -341,6 +357,7 @@ class CarPlayPane(context: Context, private val listener: Listener?) {
             ),
             // 日本の右ハンドル車(MX-30)
             rightHandDrive = true,
+            port = AIRPLAY_PORT,
             hevc = false,
             microphone = microphone,
             manufacturer = "Duo Cruise",

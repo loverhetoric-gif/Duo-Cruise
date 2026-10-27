@@ -64,6 +64,32 @@ internal class CarPlayNetworkCheck(private val context: Context) {
         else -> null
     }
 
+    /**
+     * CarPlay の映像の口([port])を、ほかのアプリが先に使っていないか。
+     * 使われていると、iPhone が Wi-Fi に移った後に「bind failed: EADDRINUSE」で止まる
+     * (2026-10-28 実機：AirPlay 受信アプリ com.yuki.duocruise.airplay が 7000 番を使っていた)。
+     */
+    fun portInUse(port: Int): Boolean = try {
+        java.net.ServerSocket().use { it.bind(java.net.InetSocketAddress(port)) }
+        false
+    } catch (_: java.io.IOException) {
+        true
+    } catch (_: Exception) {
+        false
+    }
+
+    /**
+     * OTTO 本体のテザリング(SSID「OttoAibox-…」)が開いているか。分からなければ null。
+     * 本体の操作パネル(com.cartizan.ctzpanel)が「本体の CarPlay 中でなければ」起動のたびに自動で開く
+     * (2026-10-28 実機の記録)。iPhone の一覧に別の Wi-Fi が出て、選ぶとパスワードを聞かれる原因。
+     */
+    fun ottoTetheringOn(): Boolean? = try {
+        val wm = context.getSystemService(WifiManager::class.java)
+        wm.javaClass.getMethod("isWifiApEnabled").invoke(wm) as? Boolean
+    } catch (_: Throwable) {
+        null
+    }
+
     /** MultiPlay(本体の CarPlay)の様子の手がかり。値の意味は未確認(推測)。 */
     fun multiPlayHints(): String {
         val keys = listOf("persist.ctz.hotspot_status", "ly.bt.connected")
