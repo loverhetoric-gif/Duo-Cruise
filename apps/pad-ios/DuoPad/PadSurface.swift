@@ -11,6 +11,8 @@ import UIKit
 final class PadSurface: UIView {
     /// 1行ずつ送る先。
     var send: (String) -> Void = { _ in }
+    /// 指が触れている場所(縁の光が指を追うため)。離したら nil。
+    var onTouch: (CGPoint?) -> Void = { _ in }
     /// 感度(1＝標準)と加速の強さ(0＝なし)。
     var sensitivity: Double = 1.0
     var acceleration: Double = 1.0
@@ -47,6 +49,7 @@ final class PadSurface: UIView {
             return
         }
         guard let t = touches.first else { return }
+        onTouch(t.location(in: self))
         first = t
         firstStart = t.location(in: self)
         firstStartTime = t.timestamp
@@ -64,6 +67,7 @@ final class PadSurface: UIView {
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
         if twoActive { moveTwo(event); return }
         guard let f = first, touches.contains(f) else { return }
+        onTouch(f.location(in: self))
         let samples = event?.coalescedTouches(for: f) ?? [f]
         var dx = 0.0, dy = 0.0
         for s in samples {
@@ -89,6 +93,8 @@ final class PadSurface: UIView {
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) { end(touches, event) }
 
     private func end(_ touches: Set<UITouch>, _ event: UIEvent?) {
+        let left = event?.allTouches?.filter { $0.phase != .ended && $0.phase != .cancelled }.count ?? 0
+        if left == 0 { onTouch(nil) }
         for t in touches { last.removeValue(forKey: ObjectIdentifier(t)) }
         if twoActive {
             let left = event?.allTouches?.filter { $0.phase != .ended && $0.phase != .cancelled }.count ?? 0
