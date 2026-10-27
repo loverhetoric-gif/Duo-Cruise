@@ -499,16 +499,16 @@ public final class TvPane {
 
     private final AudioManager.OnAudioFocusChangeListener focusListener = change -> main.post(() -> {
         switch (change) {
+            // 止めない: 再生を始めると WebView 自身が音の主導権を取るため、ここで止めると
+            // 「再生して2秒で止まる」を繰り返していた(2026-10-27 車で確認)。
+            // ナビ・電話のときの音量は Duo Cruise が自分で下げる(DuoActivity.applyDuck)
             case AudioManager.AUDIOFOCUS_LOSS:
                 hasFocus = false;
                 pausedForFocus = false;
-                pauseVideo();
-                TvLog.state(TvPane.this.app, "音を他のアプリに渡したので一時停止");
+                TvLog.state(TvPane.this.app, "音の主導権が他へ(止めずに再生を続ける)");
                 break;
             case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT:
-                pausedForFocus = playing;
-                pauseVideo();
-                TvLog.state(TvPane.this.app, "音を一時的に他へ(電話・案内等)。一時停止");
+                TvLog.state(TvPane.this.app, "音の主導権が一時的に他へ(止めずに再生を続ける)");
                 break;
             case AudioManager.AUDIOFOCUS_GAIN:
                 hasFocus = true;

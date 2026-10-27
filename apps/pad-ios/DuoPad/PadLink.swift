@@ -1,5 +1,6 @@
 import Foundation
 import Network
+import QuartzCore
 
 /// OTTO の Duo Cruise とのつながり。
 ///
@@ -199,7 +200,14 @@ final class PadLink: ObservableObject {
     }
 }
 
+#if canImport(UIKit)
 import UIKit
 enum UIDeviceName {
     @MainActor static var name: String { UIDevice.current.name.replacingOccurrences(of: " ", with: "_") }
 }
+#else
+import AppKit
+enum UIDeviceName {
+    @MainActor static var name: String { (Host.current().localizedName ?? "Mac").replacingOccurrences(of: " ", with: "_") }
+}
+#endif
