@@ -292,7 +292,6 @@ public class MainActivity extends Activity {
         if (checkBtn == null) return;
         boolean test = UpdateEngine.testChannel(this);
         versionLine.setText("更新 " + ver(getPackageName()) + "  /  本体 " + ver(Diag.MAIN)
-                + "  /  AirPlay " + ver(Diag.AIRPLAY)
                 + "   " + (test ? "テスト版も受け取る" : "正式版のみ") + "・15分ごとに自動で確認");
 
         setTile(checkBtn, busy ? "処理中…" : "今すぐ確認\nして更新", ACCENT, !busy);
