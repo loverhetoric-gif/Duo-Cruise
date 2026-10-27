@@ -58,8 +58,10 @@ struct PadScreen: View {
     /// 指が触れている場所(画面の座標)と、その光の強さ。
     @State private var touch: CGPoint?
     @State private var touchGlow = 0.0
-    /// 操作している側を切り替えた時刻(光が縁を流れる演出の始まり)。
+    /// 操作している側を切り替えた時刻(白い光が縁を流れる演出の始まり)。
     @State private var flashAt: Date?
+    /// Duo Cruise につながった時刻(緑の光が縁を流れる演出の始まり)。
+    @State private var upAt: Date?
 
     private var night: Bool { theme == 2 || (theme == 0 && scheme == .dark) }
     private var c: Palette { night ? .night : .day }
@@ -75,12 +77,12 @@ struct PadScreen: View {
             c.surface
             Surface(sensitivity: sensitivity, acceleration: acceleration, screenWidth: link.screen.width,
                     send: { link.send($0) }, onTouch: touched)
-            Lights(c: c, target: link.target, touch: touch, touchGlow: touchGlow, flashAt: flashAt)
+            Lights(c: c, conn: conn, target: link.target, touch: touch, touchGlow: touchGlow, flashAt: flashAt, upAt: upAt)
                 .allowsHitTesting(false)
             VStack {
-                HStack { Spacer(); corner }
+                HStack { Spacer(); statusLabel }
                     .padding(.top, ins.top)
-                    .padding(.trailing, 14)
+                    .padding(.trailing, 18)
                 Spacer()
                 HStack(spacing: 8) {
                     key("arrow.uturn.backward") { link.send("k b") }
@@ -97,6 +99,7 @@ struct PadScreen: View {
         }
         .ignoresSafeArea()
         .onChange(of: link.switches) { _, _ in flashAt = Date() }
+        .onChange(of: conn) { _, now in if now == .up { upAt = Date() } }
         .sheet(isPresented: $settings) { SettingsSheet(sensitivity: $sensitivity, acceleration: $acceleration, theme: $theme) }
     }
 
@@ -109,26 +112,23 @@ struct PadScreen: View {
         }
     }
 
-    /// 右上(ステータスバーのすぐ下): つながりの点(緑＝接続中、黄＝探し中、赤＝切れた)と設定。文字は出さない。
-    private var corner: some View {
+    /// つながりの状態: 縁の色で表す(青＝つないでいる途中、緑＝Duo Cruise とつながった、赤＝切れている)。
+    private var conn: Conn {
+        switch link.state {
+        case .connected: return .up
+        case .connecting: return .linking
+        case .searching, .failed: return .down
+        }
+    }
+
+    /// 右上(ステータスバーのすぐ下): 縁の光と同じ色・同じ動きの文字だけ。押すと設定。
+    private var statusLabel: some View {
         Button { settings = true } label: {
-            HStack(spacing: 8) {
-                Circle().fill(dotColor).frame(width: 7, height: 7).opacity(night ? 0.55 : 0.9)
-                Image(systemName: "slider.horizontal.3").font(.system(size: 13, weight: .medium))
-            }
-            .foregroundStyle(c.icon.opacity(0.6))
-            .padding(10)
+            StatusText(c: c, conn: conn, upAt: upAt)
+                .padding(.vertical, 8).padding(.horizontal, 4)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(statusText)
-    }
-
-    private var dotColor: Color {
-        switch link.state {
-        case .connected: return .green
-        case .connecting, .searching: return .yellow
-        case .failed: return .red
-        }
     }
 
     private var statusText: String {
@@ -140,32 +140,107 @@ struct PadScreen: View {
         }
     }
 
-    /// 角丸の四角のボタン。面とほぼ同じ色で、縁取りはしない(周りに溶け込む)。
+    /// 角丸の四角のボタン。塗りは無く、縁と同じ細い線だけ(面に溶け込む)。押している間だけ、ほのかに明るくなる。
     private func key(_ icon: String, _ action: @escaping () -> Void) -> some View {
         Button {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
             action()
         } label: {
-            Image(systemName: icon).font(.system(size: 20, weight: .medium))
+            Image(systemName: icon).font(.system(size: 19, weight: .regular))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(c.key))
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .foregroundStyle(c.icon)
+        .buttonStyle(KeyStyle(c: c))
     }
+}
+
+struct KeyStyle: ButtonStyle {
+    let c: Palette
+    func makeBody(configuration: Configuration) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
+        configuration.label
+            .foregroundStyle(c.icon.opacity(configuration.isPressed ? 1 : 0.75))
+            .background(shape.fill(c.key.opacity(configuration.isPressed ? 1 : 0)))
+            .overlay(shape.stroke(c.edge, lineWidth: 1))
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
+
+/// つながりの状態の文字。縁の光と同じ色で、同じように動く。
+/// - 赤・青: 縁と同じ速さで、息をするように明るさが変わる
+/// - つながった直後: 緑の光が文字の上を流れ、縁の光が白に戻るのに合わせて白へ移る
+/// - 状態が変わると、ふわっと入れ替わる
+struct StatusText: View {
+    let c: Palette
+    let conn: Conn
+    let upAt: Date?
+
+    var body: some View {
+        TimelineView(.animation) { ctx in
+            let t = ctx.date.timeIntervalSinceReferenceDate
+            let (color, level, sweep) = look(ctx.date, t)
+            Text(conn == .up ? "Duo Cruise" : conn == .linking ? "接続中…" : "未接続")
+                .font(.system(size: 12, weight: .semibold))
+                .kerning(0.6)
+                .foregroundStyle(color.opacity(0.35 + 0.65 * level))
+                .overlay {
+                    if let x = sweep { // 流れる光(つながった直後)
+                        LinearGradient(colors: [.clear, .white.opacity(0.9), .clear],
+                                       startPoint: UnitPoint(x: x - 0.3, y: 0.5), endPoint: UnitPoint(x: x + 0.3, y: 0.5))
+                            .mask(Text(conn == .up ? "Duo Cruise" : "").font(.system(size: 12, weight: .semibold)).kerning(0.6))
+                    }
+                }
+                .shadow(color: color.opacity(0.55 * level), radius: 6)
+                .id(conn)
+                .transition(.opacity.combined(with: .scale(scale: 0.94)).combined(with: .offset(y: 3)))
+        }
+        .animation(.easeInOut(duration: 0.45), value: conn)
+    }
+
+    /// 縁の光と同じ色・明るさ。sweep は流れる光の位置(0〜1)。
+    private func look(_ now: Date, _ t: Double) -> (Color, Double, Double?) {
+        switch conn {
+        case .down, .linking:
+            return (conn.color, conn.breath(t), nil)
+        case .up:
+            guard let at = upAt else { return (c.glow, 0.7, nil) }
+            let e = now.timeIntervalSince(at)
+            if e >= Lights.flashSeconds { return (c.glow, 0.7, nil) }
+            let k = min(1, e / Lights.flashSeconds)
+            // 緑から白へ、縁の光と同じ時間で移る
+            return (k < 0.6 ? conn.color : c.glow, 1 - 0.3 * k, -0.3 + 1.6 * k)
+        }
+    }
+}
+
+/// つながりの状態と、その色。
+enum Conn: Equatable {
+    case down, linking, up
+    var color: Color {
+        switch self {
+        case .down: return Color(red: 1.0, green: 0.33, blue: 0.33)
+        case .linking: return Color(red: 0.30, green: 0.58, blue: 1.0)
+        case .up: return Color(red: 0.30, green: 0.86, blue: 0.48)
+        }
+    }
+    /// 赤・青の「息をする」明るさ(0〜1)。縁と文字で同じ値を使う。つないでいる途中は少し速く。
+    func breath(_ t: Double) -> Double { 0.5 + 0.5 * sin(t * (self == .linking ? 3.0 : 1.6)) }
 }
 
 /// 縁と光。すべて控えめで柔らかく(太い・ぼかした線を重ねて、にじむように灯す)。
 /// - 左右の光量: 操作している側の半分を明るく、反対側を暗く(1画面のときは左右同じ)
 /// - 触れている間: 指に近い縁がふわっと灯り、指を追う(Siri のように反応する)
 /// - 切り替えた直後: 白い光が縁を一周するように流れて、ゆっくり消える
+/// - つながり: 赤(切れている)・青(つないでいる途中)は、ゆっくり息をするように灯り続ける。
+///   緑(Duo Cruise とつながった)は、緑の光が縁を流れて消え、いつもの白い光に戻る
 struct Lights: View {
     let c: Palette
+    let conn: Conn
     let target: String
     let touch: CGPoint?
     let touchGlow: Double
     let flashAt: Date?
+    let upAt: Date?
     static let inset: CGFloat = 5
     static let flashSeconds = 1.6
 
@@ -175,28 +250,40 @@ struct Lights: View {
             let shape = RoundedRectangle(cornerRadius: max(Screen.cornerRadius - Self.inset, 20), style: .continuous)
             ZStack {
                 shape.stroke(c.edge, lineWidth: 1)
-                soft(shape, sideGradient, strength: 1)
-                    .animation(.easeInOut(duration: 0.6), value: target)
+                if conn == .up {
+                    soft(shape, sideGradient, strength: 1)
+                        .animation(.easeInOut(duration: 0.6), value: target)
+                } else {
+                    TimelineView(.animation) { ctx in
+                        let t = ctx.date.timeIntervalSinceReferenceDate
+                        soft(shape, conn.color, strength: 0.25 + 0.35 * conn.breath(t)) // 文字と同じ速さで息をする
+                    }
+                    .transition(.opacity)
+                }
+                if let at = upAt { flow(shape, conn.color, at: at) }
                 if let t = touch, touchGlow > 0 {
                     soft(shape, RadialGradient(colors: [c.glow.opacity(0.55), c.glow.opacity(0)],
                                                center: UnitPoint(x: t.x / max(size.width, 1), y: t.y / max(size.height, 1)),
                                                startRadius: 0, endRadius: 240), strength: touchGlow)
                 }
-                if let at = flashAt {
-                    TimelineView(.animation) { ctx in
-                        let e = ctx.date.timeIntervalSince(at)
-                        if e < Self.flashSeconds {
-                            let env = e < 0.25 ? e / 0.25 : max(0, 1 - (e - 0.25) / (Self.flashSeconds - 0.25))
-                            soft(shape, AngularGradient(gradient: Gradient(colors: [
-                                c.glow.opacity(0), c.glow, c.glow.opacity(0.15), c.glow.opacity(0.85), c.glow.opacity(0)]),
-                                center: .center, angle: .degrees(e * 260)), strength: env)
-                        }
-                    }
-                }
+                if let at = flashAt { flow(shape, c.glow, at: at) }
             }
             .padding(Self.inset)
         }
         .ignoresSafeArea()
+    }
+
+    /// 光が縁を流れて、ゆっくり消える(切り替え・つながった直後)。
+    private func flow(_ shape: RoundedRectangle, _ color: Color, at: Date) -> some View {
+        TimelineView(.animation) { ctx in
+            let e = ctx.date.timeIntervalSince(at)
+            if e < Self.flashSeconds {
+                let env = e < 0.25 ? e / 0.25 : max(0, 1 - (e - 0.25) / (Self.flashSeconds - 0.25))
+                soft(shape, AngularGradient(gradient: Gradient(colors: [
+                    color.opacity(0), color, color.opacity(0.15), color.opacity(0.85), color.opacity(0)]),
+                    center: .center, angle: .degrees(e * 260)), strength: env)
+            }
+        }
     }
 
     /// 左右の光量。操作している側の半分を明るく。真ん中はなめらかにつなぐ。
