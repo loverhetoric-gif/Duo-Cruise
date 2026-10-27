@@ -11,6 +11,11 @@ import AppKit
 @main
 struct DuoPadMacApp: App {
     @StateObject private var link = PadLink()
+    /// Mac が省電力でアプリを眠らせる(App Nap)と、「生きているか」の合図が数秒止まり、
+    /// OTTO が切れたとみなして往復 11 秒・つなぎ直し 25 回になっていた(2026-10-27)。動いている間は眠らせない。
+    private let awake = ProcessInfo.processInfo.beginActivity(
+        options: [.userInitiated, .latencyCritical, .idleSystemSleepDisabled],
+        reason: "Duo Pad: OTTO をタッチパッドで操作中")
 
     var body: some Scene {
         WindowGroup("Duo Pad") {
