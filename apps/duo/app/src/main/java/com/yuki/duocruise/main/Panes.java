@@ -87,6 +87,8 @@ final class Panes {
         @Override public String status() { return p.status(); }
         @Override public String command(String cmd) { return p.command(cmd); }
         @Override public void duck(float level) { p.setDuck(level); }
+        @Override public void typeText(String text) { p.typeText(text); }
+        @Override public void typeKey(int keyCode) { p.typeKey(keyCode); }
         @Override public String name() { return "YouTube"; }
         @Override public boolean real() { return true; }
     }

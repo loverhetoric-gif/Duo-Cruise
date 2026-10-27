@@ -26,7 +26,7 @@ import android.view.WindowManager;
  * ・操作側の切り替え・枠線・キーの振り分けは、この画面の中で行う(KeyRouter)
  * ・ホーム・タスクは、この画面が前面のときだけユーザー補助(PaneService)が横取りしてここへ渡す
  */
-public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.Host, SplitRoot.Listener {
+public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.Host, SplitRoot.Listener, PadInput.Host {
 
     /** 前面にいるときだけ入る(ユーザー補助がホーム等を渡す先)。 */
     static volatile DuoActivity front;
@@ -63,6 +63,9 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     private KeyRouter router;
     private KeyMap keyMap;
     private KeyMap.Action learnAction;
+    /** iPhone のタッチパッド(Duo Pad)。 */
+    private PadInput pad;
+    private PadServer padServer;
     private PaneService service;
     private String sizes = "-", insets = "-";
     private final Runnable learnTimeout = () -> {
@@ -89,6 +92,8 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         panel = new PanelView(this, this);
         panel.setVisibility(View.GONE);
         root = new SplitRoot(this, this);
+        pad = new PadInput(this, this);
+        root.cursor = pad.cursorView();
         root.setPanes(car.view(), tv.view(), panel);
         setContentView(root);
         setupInsets();
@@ -98,6 +103,8 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         // CarPlay は開いたら自動で始め、失敗・切断したら見張りがつなぎ直す
         startCar("開いたので自動で");
         main.postDelayed(carWatch, CAR_WATCH_MS);
+        padServer = new PadServer(this, pad);
+        padServer.start();
         try { tv.start(); } catch (Throwable t) { DuoLog.error("YouTube を始められません: " + DuoLog.why(t)); }
         boolean asHome = getIntent() != null && getIntent().hasCategory(Intent.CATEGORY_HOME);
         DuoLog.log("Duo Cruise を開きました(版 " + DuoLog.version() + (asHome ? "、ホームとして" : "") + ")");
@@ -188,6 +195,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         if (live == this) live = null;
         DuoLog.listener = null;
         main.removeCallbacksAndMessages(null);
+        if (padServer != null) padServer.stop();
         try { car.destroy(); } catch (Throwable t) { DuoLog.error("CarPlay の終了で失敗: " + DuoLog.why(t)); }
         try { tv.destroy(); } catch (Throwable t) { DuoLog.error("YouTube の終了で失敗: " + DuoLog.why(t)); }
         super.onDestroy();
@@ -532,6 +540,27 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         DuoLog.log("枠の大きさ: " + sizes + " / " + insets);
     }
 
+    // ───────── タッチパッド(PadInput.Host) ─────────
+
+    @Override public View root() { return root; }
+
+    @Override public boolean touch(MotionEvent e) { return root.dispatchTouchEvent(e); }
+
+    /** 戻る: 押した回数を数えずに、すぐ操作中の側(または操作盤)へ。 */
+    @Override public void back() {
+        long t = SystemClock.uptimeMillis();
+        deliver(KeyEvent.KEYCODE_BACK, KeyEvent.ACTION_DOWN, t, null);
+        deliver(KeyEvent.KEYCODE_BACK, KeyEvent.ACTION_UP, t, null);
+    }
+
+    @Override public void globalAction(int action) {
+        if (!PaneService.global(action)) DuoLog.log("タッチパッド: ホーム・タスクはユーザー補助がオフのため使えません");
+    }
+
+    @Override public void typeText(String text) { tv.typeText(text); }
+
+    @Override public void typeKey(int keyCode) { tv.typeKey(keyCode); }
+
     @Override public void touched(int side) {
         if (side != Store.side(this)) setSide(side);
     }
@@ -544,6 +573,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         b.append(" | 操作盤 ").append(panel.getVisibility() == View.VISIBLE ? "表示" : "非表示");
         b.append(" | ").append(sizes).append(" | ").append(insets);
         b.append(" | ユーザー補助 ").append(accessOn() ? "ON" : "OFF");
+        if (padServer != null) b.append(" | ").append(padServer.status());
         b.append(" | ホームアプリ ").append(isDefaultHome() ? "Duo Cruise" : "ほか");
         b.append(" | 割り当て ").append(keyMap.serialize()).append(" 長押し").append(Store.longMs(this)).append("ms");
         b.append(" | CarPlay").append(car.real() ? "" : "(作れず)").append(": ").append(safeStatus(car));

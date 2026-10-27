@@ -29,6 +29,8 @@ final class SplitRoot extends ViewGroup {
     private final Listener listener;
     private final Frame frame;
     View car, tv;
+    /** タッチパッドのカーソル(いちばん上に置く)。 */
+    View cursor;
     PanelView panel;
     boolean swapped, panelHalf, single;
     int side;
@@ -55,6 +57,7 @@ final class SplitRoot extends ViewGroup {
         addView(tv);
         addView(frame);
         addView(panel);
+        if (cursor != null) { if (cursor.getParent() != null) ((ViewGroup) cursor.getParent()).removeView(cursor); addView(cursor); }
     }
 
     /** 並べ直す(入れ替え・操作側・操作盤の場所が変わったとき)。 */
@@ -147,6 +150,7 @@ final class SplitRoot extends ViewGroup {
         measureTo(tv, tvRect(w, h));
         measureTo(frame, new int[]{0, 0, w, h});
         if (panel != null) measureTo(panel, SplitGeometry.panel(w, h, panelHalf && !single, side));
+        if (cursor != null) cursor.measure(MeasureSpec.UNSPECIFIED, MeasureSpec.UNSPECIFIED);
     }
 
     private static void measureTo(View v, int[] r) {
@@ -167,6 +171,8 @@ final class SplitRoot extends ViewGroup {
         layoutTo(tv, v);
         layoutTo(frame, new int[]{0, 0, w, h});
         if (panel != null) layoutTo(panel, SplitGeometry.panel(w, h, panelHalf && !single, side));
+        if (cursor != null) cursor.layout(getPaddingLeft(), getPaddingTop(),
+                getPaddingLeft() + cursor.getMeasuredWidth(), getPaddingTop() + cursor.getMeasuredHeight());
         if (swapFromCar != Integer.MIN_VALUE) startSwapAnimation();
         String sizes = w + "×" + h + " car=" + SplitGeometry.str(c) + " tv=" + SplitGeometry.str(v);
         if (!sizes.equals(lastSizes)) {

@@ -120,6 +120,28 @@ public final class TvPane {
         return true;
     }
 
+    /**
+     * タッチパッドの iPhone のキーボードで確定した文字を打つ。英数字は1文字ずつキーとして、
+     * キーにできない文字(日本語など)はまとめて1つの「文字の出来事」として、ページへ渡す。
+     */
+    public void typeText(String text) {
+        if (web == null || destroyed || text.isEmpty()) return;
+        if (!web.hasFocus()) web.requestFocus();
+        android.view.KeyCharacterMap map = android.view.KeyCharacterMap.load(android.view.KeyCharacterMap.VIRTUAL_KEYBOARD);
+        KeyEvent[] keys = map.getEvents(text.toCharArray());
+        if (keys != null) { for (KeyEvent k : keys) web.dispatchKeyEvent(k); return; }
+        web.dispatchKeyEvent(new KeyEvent(SystemClock.uptimeMillis(), text, android.view.KeyCharacterMap.VIRTUAL_KEYBOARD, 0));
+    }
+
+    /** タッチパッドからの1つのキー(消す・改行など)を、そのままページへ渡す。 */
+    public void typeKey(int code) {
+        if (web == null || destroyed) return;
+        if (!web.hasFocus()) web.requestFocus();
+        long t = SystemClock.uptimeMillis();
+        web.dispatchKeyEvent(new KeyEvent(t, t, KeyEvent.ACTION_DOWN, code, 0));
+        web.dispatchKeyEvent(new KeyEvent(t, SystemClock.uptimeMillis(), KeyEvent.ACTION_UP, code, 0));
+    }
+
     public void onResume() {
         if (web == null) return;
         web.onResume();

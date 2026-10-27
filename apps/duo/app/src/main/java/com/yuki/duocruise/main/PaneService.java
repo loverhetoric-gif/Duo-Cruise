@@ -45,6 +45,12 @@ public class PaneService extends AccessibilityService {
         }
     }
 
+    /** タッチパッドの「ホーム」「タスク」。ユーザー補助がオフなら false。 */
+    static boolean global(int action) {
+        PaneService s = live;
+        return s != null && s.performGlobalAction(action);
+    }
+
     /** 横取りしたキーを、システム本来の動作で実行する。 */
     void systemDefault(int code) {
         switch (code) {
