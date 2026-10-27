@@ -979,6 +979,17 @@ class CarPlayController(
                     backend = hotspotInfo.backend.label,
                 ),
             )
+            // Duo Cruise: OTTO は家の Wi-Fi と同じ 5GHz の DFS チャンネル(52〜144)にアクセスポイントを立てることがあり、
+            // その場合は電波を出してよいかの確認(DFS-CAC、60秒)が終わるまで iPhone が参加できない。
+            // iPhone に Wi-Fi の情報を渡す前に、確認が終わるのを待つ。
+            if (hotspotInfo.channel in 52..144) {
+                debugLog("wireless hotspot on DFS channel ${hotspotInfo.channel}; waiting ${DFS_CAC_WAIT_MILLIS}ms for CAC")
+                val until = System.nanoTime() + DFS_CAC_WAIT_MILLIS * 1_000_000L
+                while (System.nanoTime() < until) {
+                    if (isStaleWirelessRun(generation)) return
+                    Thread.sleep(500)
+                }
+            }
             onStatus(CarPlayStatus.WaitingForPairedIphone)
 
             val adapter = bluetoothAdapter
@@ -2037,6 +2048,8 @@ class CarPlayController(
     }
 
     companion object {
+        /** DFS の確認(CAC)は 60 秒。少し余裕を足す。 */
+        private const val DFS_CAC_WAIT_MILLIS = 65_000L
         private const val NOW_PLAYING_UPDATE = 0x5001
         private const val MEDIA_REMOTE_SEND_TIMEOUT_MILLIS = 2_000L
         private const val HID_REPORT_HOLD_MILLIS = 50L
