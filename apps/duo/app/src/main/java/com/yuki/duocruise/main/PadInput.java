@@ -22,6 +22,7 @@ import android.view.View;
  *   p d sx sy        … 2本指の始まり。2本目の指は1本目(カーソル)から (sx, sy) ずれた場所
  *   p m ax ay bx by  … 2本指それぞれの動き(スクロール・ピンチ)
  *   p u              … 2本指を離す
+ *   w dx dy / w end  … スクロール(Mac の2本指・ホイール)。カーソルの場所で指を置いて動かしたのと同じ形にする
  *   k b|h|r          … 戻る / ホーム / タスク
  *   t 文字           … 文字を打つ(iPhone のキーボードで確定した文字)
  *   x / e            … 1文字消す / 改行(決定)
@@ -94,6 +95,7 @@ final class PadInput implements PadServer.Sink {
             case "d": show(); if (!dragging) { dragging = true; send(MotionEvent.ACTION_DOWN); } break;
             case "u": if (dragging) { dragging = false; send(MotionEvent.ACTION_UP); } break;
             case "p": two(a); break;
+            case "w": wheel(a); break;
             case "k":
                 switch (a[1]) {
                     case "b": host.back(); break;
@@ -145,6 +147,44 @@ final class PadInput implements PadServer.Sink {
                 if (two) endTwo();
                 break;
         }
+    }
+
+    // ── スクロール: 指を置いて(カーソルの場所)、動かした分だけずらし、止まったら離す ──
+    private boolean scrolling;
+    private float wx, wy;
+    private long wheelDown;
+    private final Runnable wheelEnd = this::endWheel;
+
+    private void wheel(String[] a) {
+        if (a[1].equals("end")) { endWheel(); return; }
+        if (dragging || two) return;
+        int[] wh = screen();
+        if (!scrolling) {
+            show();
+            scrolling = true;
+            wx = x; wy = y;
+            wheelDown = SystemClock.uptimeMillis();
+            touchAt(MotionEvent.ACTION_DOWN, wheelDown, wx, wy);
+        }
+        wx = clamp(wx + f(a[1]), 0, wh[0] - 1);
+        wy = clamp(wy + f(a[2]), 0, wh[1] - 1);
+        touchAt(MotionEvent.ACTION_MOVE, wheelDown, wx, wy);
+        main.removeCallbacks(wheelEnd);
+        main.postDelayed(wheelEnd, 150);
+    }
+
+    private void endWheel() {
+        main.removeCallbacks(wheelEnd);
+        if (!scrolling) return;
+        scrolling = false;
+        touchAt(MotionEvent.ACTION_UP, wheelDown, wx, wy);
+    }
+
+    private void touchAt(int action, long down, float px, float py) {
+        MotionEvent e = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, px, py, 0);
+        e.setSource(InputDevice.SOURCE_TOUCHSCREEN);
+        host.touch(e);
+        e.recycle();
     }
 
     private void endTwo() {

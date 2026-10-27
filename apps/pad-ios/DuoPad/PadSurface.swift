@@ -1,3 +1,4 @@
+#if os(iOS)
 import UIKit
 
 /// 指の動きを読むタッチパッドの面。
@@ -143,3 +144,4 @@ final class PadSurface: UIView {
         send(String(format: "p m %.2f %.2f %.2f %.2f", ax, ay, bx, by))
     }
 }
+#endif
