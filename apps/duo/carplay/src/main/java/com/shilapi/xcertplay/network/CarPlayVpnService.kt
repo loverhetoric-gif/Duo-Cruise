@@ -173,8 +173,22 @@ class CarPlayVpnService : VpnService() {
         generation: Int,
         replacement: AirPlayAttachment,
     ) {
+        // つなぎ直しのとき、前の口の片付け(別スレッド)が終わる前に開こうとして EADDRINUSE で失敗していた
+        // (2026-10-27 車)。前の口を閉じ、口の再利用を許し、少し待って数回やり直す
+        serverSocket?.close()
+        serverSocket = null
         val server = ServerSocket()
-        server.bind(InetSocketAddress(replacement.bindAddress, replacement.config.port))
+        server.reuseAddress = true
+        var tries = 0
+        while (true) {
+            try {
+                server.bind(InetSocketAddress(replacement.bindAddress, replacement.config.port))
+                break
+            } catch (e: java.net.BindException) {
+                if (++tries >= 10) { server.close(); throw e }
+                Thread.sleep(300)
+            }
+        }
         Log.i(TAG, "airplay listener bound=${server.localSocketAddress}")
         attachment = replacement
         serverSocket = server

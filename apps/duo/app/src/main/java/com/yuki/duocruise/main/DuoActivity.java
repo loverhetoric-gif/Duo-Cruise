@@ -78,6 +78,12 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
         DuoLog.init(this);
+        // 二重に開かれたら、前の画面を閉じる(CarPlay の Wi-Fi・Bluetooth とタッチパッドの口を取り合わないように)
+        DuoActivity old = live;
+        if (old != null && old != this && !old.isFinishing()) {
+            DuoLog.log("前の Duo Cruise の画面が残っていたので閉じます");
+            old.finish();
+        }
         live = this;
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
@@ -103,7 +109,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         // CarPlay は開いたら自動で始め、失敗・切断したら見張りがつなぎ直す
         startCar("開いたので自動で");
         main.postDelayed(carWatch, CAR_WATCH_MS);
-        padServer = new PadServer(this, pad);
+        padServer = PadServer.shared(this, pad);
         padServer.setState(Store.single(this) ? "s F" : Store.side(this) == SplitGeometry.SIDE_LEFT ? "s L" : "s R");
         padServer.start();
         try { tv.start(); } catch (Throwable t) { DuoLog.error("YouTube を始められません: " + DuoLog.why(t)); }
@@ -196,7 +202,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         if (live == this) live = null;
         DuoLog.listener = null;
         main.removeCallbacksAndMessages(null);
-        if (padServer != null) padServer.stop();
+
         try { car.destroy(); } catch (Throwable t) { DuoLog.error("CarPlay の終了で失敗: " + DuoLog.why(t)); }
         try { tv.destroy(); } catch (Throwable t) { DuoLog.error("YouTube の終了で失敗: " + DuoLog.why(t)); }
         super.onDestroy();
@@ -305,8 +311,18 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     private void focusActive() {
         if (panel.getVisibility() == View.VISIBLE) return;
         View v = active().view();
+        noFocusHighlight(v);
         v.setFocusable(true);
         v.requestFocus();
+    }
+
+    /** 操作中の枠に Android が重ねる「選んでいる印」(薄い白)を出さない(本人: 邪魔)。中の部品にも。 */
+    private static void noFocusHighlight(View v) {
+        if (Build.VERSION.SDK_INT >= 26) v.setDefaultFocusHighlightEnabled(false);
+        if (v instanceof android.view.ViewGroup) {
+            android.view.ViewGroup g = (android.view.ViewGroup) v;
+            for (int i = 0; i < g.getChildCount(); i++) noFocusHighlight(g.getChildAt(i));
+        }
     }
 
     private void relayout() {

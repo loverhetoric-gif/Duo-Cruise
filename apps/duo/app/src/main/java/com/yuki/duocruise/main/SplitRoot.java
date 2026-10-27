@@ -38,7 +38,7 @@ final class SplitRoot extends ViewGroup {
     /** 入れ替えの動き: 並べ直す前の左端。並べ直した後、ここから新しい場所へ動かす。 */
     private int swapFromCar = Integer.MIN_VALUE, swapFromTv = Integer.MIN_VALUE;
     private ValueAnimator swapAnim;
-    static final long SWAP_MS = 450, GLOW_MS = 700;
+    static final long SWAP_MS = 380, GLOW_MS = 700;
 
     SplitRoot(Context c, Listener l) {
         super(c);
@@ -111,26 +111,29 @@ final class SplitRoot extends ViewGroup {
         final View back = car, front = tv;
         swapAnim = ValueAnimator.ofFloat(0f, 1f);
         swapAnim.setDuration(SWAP_MS);
-        swapAnim.setInterpolator(new AccelerateDecelerateInterpolator());
+        swapAnim.setInterpolator(new android.view.animation.DecelerateInterpolator(1.6f));
         swapAnim.addUpdateListener(a -> {
             float f = (float) a.getAnimatedValue();
             float arc = (float) Math.sin(Math.PI * f); // 真ん中で一番ふくらむ
+            // 移動だけ(拡大縮小は CarPlay の映像面と YouTube の描き直しが重く、カクついた)。
+            // すれ違う感じは、手前を通る側を少しだけ上へ逃がして出す
             back.setTranslationX(dCar * (1 - f));
             front.setTranslationX(dTv * (1 - f));
-            back.setScaleX(1 - 0.18f * arc); back.setScaleY(1 - 0.18f * arc);
-            front.setScaleX(1 + 0.06f * arc); front.setScaleY(1 + 0.06f * arc);
+            front.setTranslationY(-6 * dp * arc);
             frame.moving = f < 1f;
-            frame.invalidate();
         });
         swapAnim.addListener(new android.animation.AnimatorListenerAdapter() {
             @Override public void onAnimationEnd(android.animation.Animator a) {
-                for (View v : new View[]{back, front}) { v.setTranslationX(0); v.setScaleX(1); v.setScaleY(1); }
+                for (View v : new View[]{back, front}) { v.setTranslationX(0); v.setTranslationY(0); }
+                front.setLayerType(View.LAYER_TYPE_NONE, null);
                 frame.moving = false;
                 frame.invalidate();
             }
         });
+        front.setLayerType(View.LAYER_TYPE_HARDWARE, null); // 動く間は描き直さず、絵として動かす
         front.bringToFront();
         frame.bringToFront();
+        if (cursor != null) cursor.bringToFront();
         if (panel != null) panel.bringToFront();
         swapAnim.start();
     }
@@ -269,9 +272,9 @@ final class SplitRoot extends ViewGroup {
             int w = getWidth(), h = getHeight();
             int[] r = activeRect(w, h);
             float s = line.getStrokeWidth() / 2;
+            // 操作側の太い線は常には描かない(本人: 邪魔)。切り替えた直後の虹色の光だけ
             if ((panel == null || panel.getVisibility() != VISIBLE) && !moving) {
                 RectF box = new RectF(r[0] + s, r[1] + s, r[2] - s, r[3] - s);
-                cv.drawRoundRect(box, 6 * dp, 6 * dp, line);
                 drawGlow(cv, box);
             }
             if (alpha > 0 && !label.isEmpty()) {
