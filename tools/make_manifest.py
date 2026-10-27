@@ -12,12 +12,11 @@ import hashlib, json, os, re, subprocess, sys
 out, aapt2, build = sys.argv[1], sys.argv[2], sys.argv[3]
 prev_tag = sys.argv[4] if len(sys.argv) > 4 else ""
 LABELS = {
-    "duo-updater.apk": "Duo Cruise 更新",
-    "duo-keys.apk": "Duo Cruise キー記録",
+    "duo-updater.apk": "Duo Cruise Market",
     "duo-main.apk": "Duo Cruise",
     "duo-airplay.apk": "Duo Cruise AirPlay",
 }
-REQUIRED = {"duo-updater.apk", "duo-keys.apk", "duo-airplay.apk"}
+REQUIRED = {"duo-updater.apk", "duo-airplay.apk"}
 
 
 def entry(name, label):

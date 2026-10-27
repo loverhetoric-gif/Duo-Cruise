@@ -15,13 +15,12 @@
     <uses-permission android:name="com.yuki.duocruise.permission.LOG" />
     <queries>
         <package android:name="com.yuki.duocruise.airplay" />
-        <package android:name="com.yuki.duocruise.keys" />
         <package android:name="com.yuki.duocruise.updater" />
         <package android:name="com.yuki.duocruise.main" />
     </queries>
     <application
         android:name=".App"
-        android:label="Duo Cruise 更新"
+        android:label="Duo Cruise Market"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher"
         android:theme="@android:style/Theme.DeviceDefault.NoActionBar"

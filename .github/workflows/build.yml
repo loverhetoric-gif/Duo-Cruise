@@ -1,7 +1,7 @@
 name: build-and-release
 
 # main に変更が入ると、アプリを作って署名し、正式版(latest)として公開する。
-#   車のオットキャスト(Duo Cruise 更新)が、この正式版を15分ごとに見に行く。
+#   車のオットキャスト(Duo Cruise Market)が、この正式版を15分ごとに見に行く。
 #   正式版には「1つ前の正式版の中身を、今と同じ版番号で作り直したもの」(prev-*.apk)も付ける。
 #   Android は版番号を下げて入れられないため、更新アプリの「1つ前の版に戻す」はこれを入れる。
 # PR(変更の提案)のときは、作って署名し、テスト版(prerelease「test-番号」)として公開する。
@@ -72,14 +72,8 @@ jobs:
             echo "apps/duo がないので、本体は作りません"
           fi
 
-      - name: Duo Cruise 更新 を作る
+      - name: Duo Cruise Market を作る
         working-directory: apps/updater
-        run: |
-          echo "sdk.dir=$ANDROID_HOME" > local.properties
-          gradle --no-daemon assembleDebug -Pvc=$VC
-
-      - name: Duo Cruise キー記録 を作る
-        working-directory: apps/keyrecorder
         run: |
           echo "sdk.dir=$ANDROID_HOME" > local.properties
           gradle --no-daemon assembleDebug -Pvc=$VC
@@ -123,7 +117,7 @@ jobs:
           echo "1つ前の正式版: $PREV_TAG ($PREV_SHA)"
           git worktree add -f prev-src "$PREV_SHA"
           mkdir -p prev-out
-          for app in updater keyrecorder duo; do
+          for app in updater duo; do
             [ -d "prev-src/apps/$app" ] || { echo "$app: 1つ前にはないので省きます"; continue; }
             [ -d "apps/$app" ] || continue
             if git diff --quiet "$PREV_SHA" HEAD -- "apps/$app"; then
@@ -157,11 +151,9 @@ jobs:
             "$BT/apksigner" verify "out/$2"
           }
           sign apps/updater/app/build/outputs/apk/debug/app-debug.apk duo-updater.apk
-          sign apps/keyrecorder/app/build/outputs/apk/debug/app-debug.apk duo-keys.apk
           if [ "$HAS_DUO" = 1 ]; then sign apps/duo/app/build/outputs/apk/debug/app-debug.apk duo-main.apk; fi
           sign airplay-src/app/build/outputs/apk/debug/app-debug.apk duo-airplay.apk
           [ -f prev-out/updater.apk ] && sign prev-out/updater.apk prev-duo-updater.apk
-          [ -f prev-out/keyrecorder.apk ] && sign prev-out/keyrecorder.apk prev-duo-keys.apk
           [ -f prev-out/duo.apk ] && sign prev-out/duo.apk prev-duo-main.apk
           rm -f "$RUNNER_TEMP/mx.jks" out/*.idsig
           python3 tools/make_manifest.py out "$ANDROID_HOME/build-tools/$BT_READ/aapt2" "$GITHUB_RUN_NUMBER" "${PREV_TAG:-}"

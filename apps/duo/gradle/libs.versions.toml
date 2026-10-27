@@ -1,0 +1,18 @@
+# ビルド道具と部品の版（xcertplay 1.4.2 に合わせる）
+[versions]
+agp = "9.3.0"
+androidxCore = "1.19.0"
+bouncycastle = "1.79"
+concentus = "1.0.0"
+media3 = "1.11.1"
+
+[libraries]
+androidx-core = { group = "androidx.core", name = "core", version.ref = "androidxCore" }
+bouncycastle = { group = "org.bouncycastle", name = "bcprov-jdk18on", version.ref = "bouncycastle" }
+concentus = { group = "com.plasmoverse", name = "concentus", version.ref = "concentus" }
+androidx-media3-container = { group = "androidx.media3", name = "media3-container", version.ref = "media3" }
+androidx-media3-session = { group = "androidx.media3", name = "media3-session", version.ref = "media3" }
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+android-library = { id = "com.android.library", version.ref = "agp" }

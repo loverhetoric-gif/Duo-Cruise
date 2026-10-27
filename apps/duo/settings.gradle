@@ -1,0 +1,13 @@
+pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
+plugins {
+    // Java 25 の道具(toolchain)が無い時に自動で取ってくる
+    id 'org.gradle.toolchains.foojay-resolver-convention' version '1.0.0'
+}
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories { google(); mavenCentral() }
+}
+rootProject.name = "duo-main"
+include ':app'
+// 自作 CarPlay(xcertplay の shared を取り込んだもの。GPL-3.0)
+include ':carplay'

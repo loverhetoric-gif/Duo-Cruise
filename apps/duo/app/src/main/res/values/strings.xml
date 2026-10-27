@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Duo Cruise</string>
+    <string name="svc_desc">Duo Cruise が前面のときだけ、ホーム・タスクのボタンを受け取り、割り当てた操作(操作盤・操作側の切り替えなど)にします。ほかのアプリの画面では何もしません。</string>
+</resources>

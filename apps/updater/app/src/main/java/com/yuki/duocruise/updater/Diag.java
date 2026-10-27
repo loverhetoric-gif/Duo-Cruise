@@ -24,13 +24,12 @@ import java.util.regex.Pattern;
 /**
  * 記録シートの「指示」から来る診断。受け付けるのは決まった一覧だけ(任意のコマンドは実行しない)。
  *   updater:state / updater:packages / updater:check / updater:test-channel on|off / updater:screenshot
- *   com.yuki.duocruise.keys:〜 / com.yuki.duocruise.main:〜 … そのアプリへブロードキャストで渡すだけ
+ *   com.yuki.duocruise.main:〜 … 本体へブロードキャスト(キー記録は 2026-10-27 に片付けた)で渡すだけ
  * 結果は kind=result で記録に返す。
  */
 final class Diag {
     static final String PERM = "com.yuki.duocruise.permission.LOG";
     static final String ACTION_COMMAND = "com.yuki.duocruise.COMMAND";
-    static final String KEYS = "com.yuki.duocruise.keys";
     static final String MAIN = "com.yuki.duocruise.main";
     static final String AIRPLAY = "com.yuki.duocruise.airplay";
     /** 自作アプリへ渡す指示の中身として許す文字(英数字と - _ . = : 空白、80文字まで)。 */
@@ -91,7 +90,7 @@ final class Diag {
                     return;
             }
         }
-        if (KEYS.equals(target) || MAIN.equals(target)) {
+        if (MAIN.equals(target)) {
             if (!SAFE.matcher(arg).matches()) {
                 Remote.result(cmd + " → 受け付けない指示です(使えない文字・長すぎ)", row);
                 return;
@@ -145,7 +144,6 @@ final class Diag {
         sb.append("端末: ").append(Remote.device()).append(" / Android ").append(Build.VERSION.RELEASE)
                 .append(" (SDK ").append(Build.VERSION.SDK_INT).append(")\n");
         sb.append("版: 更新 ").append(v(c, BuildConfig.APPLICATION_ID))
-                .append(" / キー記録 ").append(v(c, KEYS))
                 .append(" / 本体 ").append(v(c, MAIN))
                 .append(" / AirPlay ").append(v(c, AIRPLAY)).append('\n');
         sb.append("画面: ").append(screen(c)).append('\n');
@@ -155,7 +153,6 @@ final class Diag {
                 .append(" / インストール許可 ").append(can ? "済" : "未")
                 .append(" / 最後の確認 ").append(UpdateEngine.lastResult).append('\n');
         sb.append("ユーザー補助: 更新 ").append(onOff(c, BuildConfig.APPLICATION_ID))
-                .append(" / キー記録 ").append(onOff(c, KEYS))
                 .append(" / 本体 ").append(onOff(c, MAIN)).append('\n');
         sb.append("送信: 送信待ち ").append(Remote.pending()).append(" 件 / 捨てた ").append(Remote.dropped)
                 .append(" 件 / ").append(Remote.lastSend).append(" / 指示 ").append(Remote.lastPoll).append('\n');
