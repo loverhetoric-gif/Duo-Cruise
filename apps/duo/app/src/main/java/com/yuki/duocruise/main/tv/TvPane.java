@@ -82,6 +82,8 @@ public final class TvPane {
     private boolean playing;
     private long lastQualityLog;
     private boolean destroyed;
+    /** CarPlay の音(ナビなど)に合わせて下げている音量。1＝そのまま。 */
+    private float duck = 1f;
 
     private final AudioManager audio;
     private AudioFocusRequest focusRequest;
@@ -438,6 +440,9 @@ public final class TvPane {
         @Override public void run() {
             if (destroyed) return;
             if (web != null) web.evaluateJavascript(POLL_JS, TvPane.this::onPoll);
+            // 動画が切り替わると音量が戻ることがあるので、下げている間は5秒ごとにかけ直す
+            if (web != null && duck < 1f) web.evaluateJavascript(
+                    "(function(){var v=document.querySelector('video');if(v&&!window.__duoFade)v.volume=" + duck + ";})()", null);
             main.postDelayed(this, POLL_MS);
         }
     };
@@ -511,6 +516,22 @@ public final class TvPane {
         if (!hasFocus || audio == null || focusRequest == null) return;
         audio.abandonAudioFocusRequest(focusRequest);
         hasFocus = false;
+    }
+
+    /**
+     * YouTube の音量を level へ、約0.3秒かけてなめらかに変える(Apple の機器でナビが割り込むときと同じ動き)。
+     * 再生は止めない。端末の音量ではなく、ページの動画の音量だけを変える。
+     */
+    public void setDuck(float level) {
+        level = Math.max(0f, Math.min(1f, level));
+        if (level == duck) return;
+        duck = level;
+        TvLog.state(app, level >= 1f ? "音量を戻した" : "CarPlay の音のため音量を " + Math.round(level * 100) + "% に下げた");
+        if (web == null) return;
+        web.evaluateJavascript("(function(t){var v=document.querySelector('video');if(!v)return;"
+                + "clearInterval(window.__duoFade);var s=v.volume,n=0;"
+                + "window.__duoFade=setInterval(function(){n++;v.volume=s+(t-s)*Math.min(1,n/10);"
+                + "if(n>=10){clearInterval(window.__duoFade);window.__duoFade=0;}},30);})(" + level + ")", null);
     }
 
     private void pauseVideo() {

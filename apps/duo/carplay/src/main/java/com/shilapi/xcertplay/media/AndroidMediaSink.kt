@@ -52,7 +52,10 @@ class AndroidMediaSink(
     private val mediaTap: MediaTap? = null,
     private val onClosed: () -> Unit = {},
     private val audioFocus: AudioFocusSession? = null,
+    /** 音の流れが始まった/終わった(audioType と、始まったら true)。Duo Cruise が YouTube の音量を下げるのに使う。 */
+    private val onAudioActive: ((String, Boolean) -> Unit)? = null,
 ) : MediaSink {
+    private val audioTypes = ConcurrentHashMap<Int, String>()
     private val closed = java.util.concurrent.atomic.AtomicBoolean(false)
     private val defaultSurface = surface
     @Volatile private var screenStreamActiveChanged = onScreenStreamActiveChanged
@@ -162,6 +165,8 @@ class AndroidMediaSink(
 
     override fun onAudioStarted(type: Int, format: AudioFormat, firstSample: Int) {
         audioRenderer(type, format).start()
+        audioTypes[type] = format.audioType
+        onAudioActive?.invoke(format.audioType, true)
     }
 
     override fun onAudioRtp(type: Int, format: AudioFormat, rtp: ByteArray, sample: Int) {
@@ -169,6 +174,7 @@ class AndroidMediaSink(
     }
 
     override fun onAudioStopped(type: Int) {
+        audioTypes.remove(type)?.let { onAudioActive?.invoke(it, false) }
         audioRenderers.remove(type)?.close()
         mediaTap?.onAudioStopped(type)
     }

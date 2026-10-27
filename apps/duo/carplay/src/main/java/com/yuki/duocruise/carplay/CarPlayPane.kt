@@ -58,6 +58,9 @@ class CarPlayPane(context: Context, private val listener: Listener?) {
 
         /** 記録した内容(画面に出す用。更新アプリへは送信済み)。 */
         fun onRecord(kind: String, text: String)
+
+        /** CarPlay の音の流れが始まった/終わった(audioType: media・default(ナビ)・alert・telephony・speechrecognition)。 */
+        fun onAudio(audioType: String, active: Boolean)
     }
 
     companion object {
@@ -178,6 +181,14 @@ class CarPlayPane(context: Context, private val listener: Listener?) {
                 videoSizes = mapOf(SCREEN_TYPE_MAIN to (WIDTH to HEIGHT)),
                 onScreenStreamActiveChanged = { _, active ->
                     main.post { if (myGeneration == generation) label.visibility = if (active) View.GONE else View.VISIBLE }
+                },
+                onAudioActive = { audioType, active ->
+                    main.post {
+                        if (myGeneration == generation) {
+                            record(DuoRecord.KIND_STATE, "CarPlay の音: $audioType " + if (active) "開始" else "終了")
+                            listener?.onAudio(audioType.lowercase(), active)
+                        }
+                    }
                 },
             )
             sink = renderer

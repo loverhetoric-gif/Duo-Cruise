@@ -369,6 +369,8 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
 
     /** 部品を作り直して、もう一度始める(前の Wi-Fi・Bluetooth・チップは手放してから)。 */
     private void restartCar() {
+        carSounds.clear();
+        applyDuck();
         try { car.destroy(); } catch (Throwable t) { DuoLog.error("CarPlay を止められません: " + DuoLog.why(t)); }
         car = Panes.car(this);
         root.setPanes(car.view(), tv.view(), panel);
@@ -383,6 +385,8 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     void stopCar() {
         DuoLog.log("CarPlay を止めます");
         carOn = false;
+        carSounds.clear();
+        applyDuck();
         try { car.destroy(); } catch (Throwable t) { DuoLog.error("CarPlay を止められません: " + DuoLog.why(t)); }
         car = Panes.car(this);
         root.setPanes(car.view(), tv.view(), panel);
@@ -530,6 +534,38 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
 
     private static String safeStatus(Pane p) {
         try { return p.status(); } catch (Throwable t) { return "状態を読めません " + DuoLog.why(t); }
+    }
+
+    /** いま鳴っている CarPlay の音の種類(audioType)。 */
+    private final java.util.Set<String> carSounds = new java.util.HashSet<>();
+    private final Runnable applyDuck = this::applyDuck;
+    /** ナビ音声のあいだ YouTube を下げる音量。 */
+    static final float DUCK_NAV = 0.2f;
+
+    /** CarPlay の音が始まった/終わった(メインスレッド)。 */
+    static void carAudio(String audioType, boolean active) {
+        DuoActivity a = live;
+        if (a == null) return;
+        if (active) a.carSounds.add(audioType); else a.carSounds.remove(audioType);
+        a.main.removeCallbacks(a.applyDuck);
+        // 下げるのはすぐ、戻すのは1秒待ってから(ナビの言葉の切れ目で上がったり下がったりしないように)
+        if (active) a.applyDuck(); else a.main.postDelayed(a.applyDuck, 1000);
+    }
+
+    /**
+     * Apple の機器と同じ考え方: 基本は YouTube。CarPlay の
+     * ・ナビの声・通知音(default/alert/compatibility) → YouTube を 20% に下げて重ねる
+     * ・電話・Siri(telephony/speechrecognition) → YouTube を消す(再生は止めない)
+     * ・音楽(media) → 何もしない
+     * 鳴り終わったら元の音量に戻す。
+     */
+    private void applyDuck() {
+        float level = 1f;
+        for (String t : carSounds) {
+            if (t.equals("telephony") || t.equals("speechrecognition")) level = 0f;
+            else if (!t.equals("media")) level = Math.min(level, DUCK_NAV);
+        }
+        tv.duck(level);
     }
 
     /** 状態が変わったら、少し待ってまとめて1回送る。 */

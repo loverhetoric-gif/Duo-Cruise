@@ -23,6 +23,8 @@ interface Pane {
     String status();
     /** 記録シートの指示(例「tv-status」)。結果の1行を返す。扱わない部品は null。 */
     String command(String cmd);
+    /** 音量を下げる(1＝そのまま、0.2＝小さく、0＝消す)。音を出す部品だけが使う。 */
+    default void duck(float level) {}
     /** 「CarPlay」「YouTube」。 */
     String name();
     /** 本物の部品なら true、仮の部品なら false。 */

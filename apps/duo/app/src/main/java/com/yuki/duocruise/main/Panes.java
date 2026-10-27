@@ -31,6 +31,11 @@ final class Panes {
                 @Override public void onRecord(String kind, String text) {
                     DuoLog.local(kind, "CarPlay: " + text);
                 }
+
+                /** CarPlay の音。ナビ・電話・Siri のときに YouTube の音量を下げる。 */
+                @Override public void onAudio(String audioType, boolean active) {
+                    DuoActivity.carAudio(audioType, active);
+                }
             }));
         } catch (Throwable t) {
             DuoLog.error("CarPlay の部品を作れません: " + DuoLog.why(t));
@@ -81,6 +86,7 @@ final class Panes {
         @Override public boolean onGenericMotion(MotionEvent e) { return false; }
         @Override public String status() { return p.status(); }
         @Override public String command(String cmd) { return p.command(cmd); }
+        @Override public void duck(float level) { p.setDuck(level); }
         @Override public String name() { return "YouTube"; }
         @Override public boolean real() { return true; }
     }
