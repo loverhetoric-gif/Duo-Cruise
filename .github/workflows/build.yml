@@ -1,7 +1,7 @@
 name: build-and-release
 
 # main に変更が入ると、アプリを作って署名し、正式版(latest)として公開する。
-#   車のオットキャスト(Duo Cruise 更新)が、この正式版を15分ごとに見に行く。
+#   車のオットキャスト(Duo Cruise Market)が、この正式版を15分ごとに見に行く。
 #   正式版には「1つ前の正式版の中身を、今と同じ版番号で作り直したもの」(prev-*.apk)も付ける。
 #   Android は版番号を下げて入れられないため、更新アプリの「1つ前の版に戻す」はこれを入れる。
 # PR(変更の提案)のときは、作って署名し、テスト版(prerelease「test-番号」)として公開する。
@@ -72,7 +72,7 @@ jobs:
             echo "apps/duo がないので、本体は作りません"
           fi
 
-      - name: Duo Cruise 更新 を作る
+      - name: Duo Cruise Market を作る
         working-directory: apps/updater
         run: |
           echo "sdk.dir=$ANDROID_HOME" > local.properties

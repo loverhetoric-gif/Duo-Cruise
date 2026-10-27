@@ -128,7 +128,7 @@ public class MainActivity extends Activity {
         panel.setOrientation(LinearLayout.VERTICAL);
 
         TextView title = new TextView(this);
-        title.setText("Duo Cruise 更新");
+        title.setText("Duo Cruise Market");
         title.setTextColor(TEXT);
         title.setTextSize(wide ? 22 : 18);
         title.setTypeface(Typeface.DEFAULT_BOLD);

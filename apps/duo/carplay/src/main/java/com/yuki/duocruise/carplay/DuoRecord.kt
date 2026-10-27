@@ -6,7 +6,7 @@ import android.os.Build
 import android.util.Log
 
 /**
- * 記録を更新アプリ(Duo Cruise 更新)へ送る。更新アプリがまとめて記録シートへ送る。
+ * 記録を更新アプリ(Duo Cruise Market)へ送る。更新アプリがまとめて記録シートへ送る。
  *
  * 約束(実装の分担 2026-10-27)：
  * ブロードキャスト `com.yuki.duocruise.updater.LOG`、宛先パッケージ `com.yuki.duocruise.updater`、

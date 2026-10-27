@@ -9,7 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 記録を「Duo Cruise 更新」へ渡す(更新アプリがまとめて記録シートへ送る)。
+ * 記録を「Duo Cruise Market」へ渡す(更新アプリがまとめて記録シートへ送る)。
  * キーの記録は 1.5 秒ぶんまとめて1回のブロードキャストにする。
  * 受け取れるのは同じ署名のアプリだけ(権限 com.yuki.duocruise.permission.LOG)。
  */

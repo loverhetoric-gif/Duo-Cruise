@@ -69,7 +69,7 @@ public class ConfirmClickService extends AccessibilityService {
     static void screenshot(Context c, int row, String cmd) {
         ConfirmClickService s = instance;
         if (s == null) {
-            Remote.result(cmd + " → 撮れません(「Duo Cruise 更新」のユーザー補助がオフです)", row);
+            Remote.result(cmd + " → 撮れません(「Duo Cruise Market」のユーザー補助がオフです)", row);
             return;
         }
         if (Build.VERSION.SDK_INT < 30) {
