@@ -43,12 +43,12 @@ final class KeyMap {
     /**
      * 初期値(2026-10-27 車での実測による。コマンダーからはホームも長押しも届かない)。
      * ・コマンダーの押し込み(決定)を2回 → 操作側の切り替え(タスクキーの短押しでも)
-     * ・押し込みを3回 → 左右の入れ替え
-     * ・押し込みを4回 → 操作盤(ホームの短押しでも。Duo Cruise が前面のときだけ。ユーザー補助で横取り)
-     * ・押し込みを1回 → いつもの「決定」として操作中の側へ(回数を数えるため少し遅れて届く)
-     * ・戻るは割り当てなし(遅れずにそのまま届く)
+     * ・戻るを2回 → 左右の入れ替え
+     * ・押し込みを3回 → 操作盤(ホームの短押しでも。Duo Cruise が前面のときだけ。ユーザー補助で横取り)
+     * ・押し込み・戻るを1回 → いつもの「決定」「戻る」として操作中の側へ(回数を数えるため少し遅れて届く)
+     * 操作盤の「ボタンの割り当て」で、押す回数(1〜4回)や長押しごとに変えられる。
      */
-    static final String DEFAULTS = "SWITCH_SIDE=23:2,187:S;SWAP=23:3;PANEL=23:4,3:S";
+    static final String DEFAULTS = "SWITCH_SIDE=23:2,187:S;SWAP=4:2;PANEL=23:3,3:S";
 
     /** 長押しとみなす時間(ms)。 */
     static final long DEFAULT_LONG_MS = 600;
@@ -171,6 +171,15 @@ final class KeyMap {
             case 88: return "前の曲";
             default: return "キー" + code;
         }
+    }
+
+    /**
+     * 1回押し(短押し)を取り上げると、コマンダーでの普通の操作(回す・倒す・決定・戻る)ができなくなるキー。
+     * 鉄則「操作はコマンダーだけ」を守るため、これらの1回押しは割り当てられない。
+     */
+    static boolean reservedSingle(int code) {
+        return code == BACK || code == DPAD_UP || code == DPAD_DOWN || code == DPAD_LEFT
+                || code == DPAD_RIGHT || code == DPAD_CENTER || code == ENTER;
     }
 
     /**

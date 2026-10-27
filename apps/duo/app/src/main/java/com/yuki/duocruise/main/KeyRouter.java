@@ -65,7 +65,7 @@ final class KeyRouter {
     /** 回数を数えている途中のキー。 */
     private static final class Taps {
         int code, count;
-        boolean system;
+        boolean system, learn;
         long downTime;
         Object token;
     }
@@ -172,12 +172,7 @@ final class KeyRouter {
     }
 
     private void shortPress(int code, boolean system, long downTime) {
-        if (learning) {
-            learning = false;
-            sink.learned(code, KeyMap.SHORT);
-            return;
-        }
-        if (map.maxTaps(code) > 1) { tap(code, system, downTime); return; }
+        if (learning || map.maxTaps(code) > 1) { tap(code, system, downTime); return; }
         plainShort(code, system, downTime);
     }
 
@@ -186,13 +181,13 @@ final class KeyRouter {
         if (t != null && t.code != code) { flushTaps(); t = null; }
         if (t == null) {
             t = new Taps();
-            t.code = code; t.system = system; t.downTime = downTime;
+            t.code = code; t.system = system; t.downTime = downTime; t.learn = learning;
             taps = t;
         } else {
             timer.cancel(t.token);
         }
         t.count++;
-        if (t.count >= map.maxTaps(code)) { flushTaps(); return; }
+        if (t.count >= (t.learn ? KeyMap.MAX_TAPS : map.maxTaps(code))) { flushTaps(); return; }
         Taps mine = t;
         t.token = timer.post(() -> { if (taps == mine) flushTaps(); }, TAP_GAP);
     }
@@ -202,6 +197,13 @@ final class KeyRouter {
         if (t == null) return;
         taps = null;
         timer.cancel(t.token);
+        if (t.learn) {
+            // 登録中: 押した回数(1回なら短押し)で覚える
+            if (!learning) return;
+            learning = false;
+            sink.learned(t.code, t.count >= 2 ? Math.min(t.count, KeyMap.MAX_TAPS) : KeyMap.SHORT);
+            return;
+        }
         KeyMap.Action a = t.count >= 2 ? map.find(t.code, Math.min(t.count, KeyMap.MAX_TAPS)) : null;
         if (a != null) { sink.action(a); return; }
         for (int i = 0; i < t.count; i++) plainShort(t.code, t.system, t.downTime);

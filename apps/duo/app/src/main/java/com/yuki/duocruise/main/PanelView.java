@@ -120,7 +120,7 @@ final class PanelView extends ViewGroup {
             items.add(new Item(() -> "操作側を切り替え", host::sideText, Theme.ACCENT, host::switchSide));
             items.add(new Item(() -> "左右を入れ替え", host::layoutText, Theme.MUTED, host::swap));
             items.add(new Item(() -> "2画面に戻る", () -> "操作盤を閉じる", Theme.MUTED, host::closePanel));
-            items.add(new Item(() -> "ボタンの割り当て", () -> "押し込みの回数・ホーム・タスク", Theme.MUTED, () -> show(KEYS)));
+            items.add(new Item(() -> "ボタンの割り当て", () -> "押す回数・長押し・ホーム", Theme.MUTED, () -> show(KEYS)));
             items.add(new Item(() -> host.carOn() ? "CarPlay を止める" : "CarPlay を開始",
                     () -> host.carOn() ? "チップ・Wi-Fi・Bluetooth を手放す" : "MultiPlay を使っていない時だけ",
                     Theme.MUTED, host::toggleCar));
@@ -131,7 +131,7 @@ final class PanelView extends ViewGroup {
             title.setText("ボタンの割り当て");
             for (KeyMap.Action a : KeyMap.Action.values()) {
                 items.add(new Item(() -> a.label,
-                        () -> host.learning() == a ? "▶ 割り当てたいボタンを押す(短く/長く)" : host.keyMap().describe(a),
+                        () -> host.learning() == a ? "▶ ボタンを押す(1〜4回 続けて、または長く)" : host.keyMap().describe(a),
                         Theme.MUTED, () -> { host.startLearn(a); refresh(); }));
             }
             items.add(new Item(() -> "ユーザー補助の設定", () -> host.accessOn() ? "オン(ホーム・タスクを受けられる)" : "オフ: ホーム・タスクは受けられません",

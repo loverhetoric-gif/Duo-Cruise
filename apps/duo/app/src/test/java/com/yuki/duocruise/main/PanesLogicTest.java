@@ -87,11 +87,10 @@ public final class PanesLogicTest {
     static void keymap() {
         KeyMap d = KeyMap.defaults();
         ok(d.find(KeyMap.DPAD_CENTER, KeyMap.DOUBLE) == KeyMap.Action.SWITCH_SIDE, "初期値: 押し込み2回=切替");
-        ok(d.find(KeyMap.DPAD_CENTER, KeyMap.TRIPLE) == KeyMap.Action.SWAP, "初期値: 押し込み3回=入替");
-        ok(d.find(KeyMap.DPAD_CENTER, 4) == KeyMap.Action.PANEL, "初期値: 押し込み4回=操作盤");
-        ok(d.maxTaps(KeyMap.BACK) == 1 && d.find(KeyMap.BACK, KeyMap.SHORT) == null, "初期値: 戻るは割り当て無し");
+        ok(d.find(KeyMap.BACK, KeyMap.DOUBLE) == KeyMap.Action.SWAP, "初期値: 戻る2回=入替");
+        ok(d.find(KeyMap.DPAD_CENTER, KeyMap.TRIPLE) == KeyMap.Action.PANEL, "初期値: 押し込み3回=操作盤");
         ok(d.find(KeyMap.HOME, KeyMap.SHORT) == KeyMap.Action.PANEL, "初期値: ホーム=操作盤");
-        ok(d.find(KeyMap.DPAD_CENTER, KeyMap.SHORT) == null && d.maxTaps(KeyMap.DPAD_CENTER) == 4, "初期値: 押し込み1回は割り当て無し");
+        ok(d.find(KeyMap.DPAD_CENTER, KeyMap.SHORT) == null && d.maxTaps(KeyMap.DPAD_CENTER) == 3, "初期値: 押し込み1回は割り当て無し");
         ok(KeyMap.parse(d.serialize()).serialize().equals(d.serialize()), "回数も保存して読み直して同じ");
         ok(KeyMap.parse("SWAP=4:9").serialize().isEmpty(), "多すぎる回数は捨てる");
         KeyMap m = KeyMap.parse(OLD);
@@ -120,7 +119,7 @@ public final class PanesLogicTest {
         @Override public void deliver(int code, int action, long d, Object raw) { ev.add("渡" + code + (action == 0 ? "押" : "離") + (raw == null ? "作" : "")); }
         @Override public void action(KeyMap.Action a) { ev.add("動" + a.name()); }
         @Override public void systemDefault(int code) { ev.add("系" + code); }
-        @Override public void learned(int code, int g) { ev.add("登" + code + (g == KeyMap.LONG ? "長" : "短")); }
+        @Override public void learned(int code, int g) { ev.add("登" + code + (g == KeyMap.LONG ? "長" : g == KeyMap.SHORT ? "短" : g + "回")); }
         @Override public void note(String t) { ev.add("注"); }
         String s() { String r = String.join(",", ev); ev.clear(); return r; }
     }
@@ -134,8 +133,6 @@ public final class PanesLogicTest {
         Rec r = new Rec();
         KeyRouter k = new KeyRouter(KeyMap.defaults(), 600, r, t);
         int B = KeyMap.DPAD_CENTER, R = KeyMap.DPAD_RIGHT;
-        k.onKey(KeyMap.BACK, 0, 0, t.now, false, "raw"); k.onKey(KeyMap.BACK, 1, 0, t.now, false, "raw");
-        ok(r.s().equals("渡4押,渡4離"), "戻るは遅れずそのまま");
         Runnable press = () -> { k.onKey(B, 0, 0, t.now, false, null); t.advance(15); k.onKey(B, 1, 0, t.now, false, null); };
 
         press.run();
@@ -148,13 +145,26 @@ public final class PanesLogicTest {
         t.advance(500);
         ok(r.s().equals("動SWITCH_SIDE"), "押し込み2回で切替");
 
-        press.run(); t.advance(150); press.run(); t.advance(150); press.run(); t.advance(500);
-        ok(r.s().equals("動SWAP"), "押し込み3回で入替");
-
-        press.run(); t.advance(150); press.run(); t.advance(150); press.run(); t.advance(150); press.run();
-        ok(r.s().equals("動PANEL"), "押し込み4回で操作盤(待たずに)");
+        press.run(); t.advance(150); press.run(); t.advance(150); press.run();
+        ok(r.s().equals("動PANEL"), "押し込み3回で操作盤(待たずに)");
         t.advance(500);
-        ok(r.s().isEmpty(), "4回のあとに余計なものは届かない");
+        ok(r.s().isEmpty(), "3回のあとに余計なものは届かない");
+
+        int K = KeyMap.BACK;
+        k.onKey(K, 0, 0, t.now, false, null); t.advance(15); k.onKey(K, 1, 0, t.now, false, null);
+        t.advance(150);
+        k.onKey(K, 0, 0, t.now, false, null); t.advance(15); k.onKey(K, 1, 0, t.now, false, null);
+        ok(r.s().equals("動SWAP"), "戻る2回で入替(待たずに)");
+        k.onKey(K, 0, 0, t.now, false, null); t.advance(15); k.onKey(K, 1, 0, t.now, false, null); t.advance(500);
+        ok(r.s().equals("渡4押作,渡4離作"), "戻る1回は待ったあと普通の戻る");
+
+        // 登録: 押した回数で覚える
+        k.setLearning(true);
+        k.onKey(K, 0, 0, t.now, false, null); t.advance(15); k.onKey(K, 1, 0, t.now, false, null); t.advance(150);
+        k.onKey(K, 0, 0, t.now, false, null); t.advance(15); k.onKey(K, 1, 0, t.now, false, null);
+        ok(r.s().isEmpty(), "登録: 2回目のあとも続きを待つ");
+        t.advance(500);
+        ok(r.s().equals("登4" + "2回") && !k.learning(), "登録: 戻る2回");
 
         press.run(); t.advance(150); k.onKey(R, 0, 0, t.now, false, "raw");
         ok(r.s().equals("渡23押作,渡23離作,渡22押"), "数えている途中で別のキー → 押し込み1回で確定");
@@ -240,7 +250,8 @@ public final class PanesLogicTest {
         // 割り当ての登録: 短く/長く
         k.setLearning(true);
         k.onKey(KeyMap.DPAD_LEFT, 0, 0, t.now, false, null); t.advance(80); k.onKey(KeyMap.DPAD_LEFT, 1, 0, t.now, false, null);
-        ok(r.s().equals("登21短") && !k.learning(), "登録: 短く");
+        t.advance(500);
+        ok(r.s().equals("登21短") && !k.learning(), "登録: 短く(1回)");
         k.setLearning(true);
         k.onKey(H, 0, 0, t.now, true, null); t.advance(700); k.onKey(H, 1, 0, t.now, true, null);
         String hl = r.s();

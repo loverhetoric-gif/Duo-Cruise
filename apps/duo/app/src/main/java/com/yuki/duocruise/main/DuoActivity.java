@@ -272,6 +272,11 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         KeyMap.Action a = learnAction;
         learnAction = null;
         if (a == null) return;
+        if (gesture == KeyMap.SHORT && KeyMap.reservedSingle(code)) {
+            DuoLog.log("割り当ての登録: " + KeyMap.keyName(code) + "の1回押しはコマンダーの普通の操作に使うため割り当てられません。2回以上か長押しにしてください");
+            if (panel.getVisibility() == View.VISIBLE) panel.refresh();
+            return;
+        }
         keyMap.set(a, code, gesture, true);
         Store.setKeyMap(this, keyMap);
         router.setMap(keyMap);
