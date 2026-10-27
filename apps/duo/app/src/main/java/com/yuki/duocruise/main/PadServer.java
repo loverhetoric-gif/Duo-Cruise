@@ -25,7 +25,8 @@ import java.nio.charset.StandardCharsets;
  *
  * 指示(iPhone → OTTO)は PadInput の説明を参照。OTTO → iPhone は
  * 「i 幅 高さ」(つながった直後の画面の大きさ)、「a 番号」(生きているかの返事)、
- * 「s L|R|F」(操作している側: 左・右・1画面。つながった直後と変わったとき)。
+ * 「s L|R|F」(操作している側: 左・右・1画面。つながった直後と変わったとき)、
+ * 「b 1|0」(CarPlay の Bluetooth が iPhone とつながっているか。つながった直後と変わったとき)。
  */
 final class PadServer {
     static final int PORT = 47800;
@@ -51,6 +52,7 @@ final class PadServer {
     private volatile int linesTotal;
     private volatile OutputStream out;
     private volatile String state = "s L";
+    private volatile String bt = "b 0";
     private final java.util.concurrent.ExecutorService writer = java.util.concurrent.Executors.newSingleThreadExecutor();
 
     PadServer(Context c, Sink sink) {
@@ -135,6 +137,7 @@ final class PadServer {
             int[] wh = sink.screen();
             send(out, "i " + wh[0] + " " + wh[1]);
             send(out, state);
+            send(out, bt);
             BufferedReader in = new BufferedReader(new InputStreamReader(c.getInputStream(), StandardCharsets.UTF_8));
             String line;
             while ((line = in.readLine()) != null) {
@@ -159,6 +162,16 @@ final class PadServer {
     void setState(String s) {
         if (s.equals(state)) return;
         state = s;
+        OutputStream o = out;
+        if (o == null) return;
+        writer.execute(() -> { try { send(o, s); } catch (Exception ignored) {} });
+    }
+
+    /** CarPlay の Bluetooth が iPhone とつながったか(メインスレッドから)。iPhone の縁を緑に灯す合図。 */
+    void setBluetooth(boolean on) {
+        String s = on ? "b 1" : "b 0";
+        if (s.equals(bt)) return;
+        bt = s;
         OutputStream o = out;
         if (o == null) return;
         writer.execute(() -> { try { send(o, s); } catch (Exception ignored) {} });

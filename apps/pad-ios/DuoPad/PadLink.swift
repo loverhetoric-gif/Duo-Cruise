@@ -20,6 +20,10 @@ final class PadLink: ObservableObject {
     @Published private(set) var target = ""
     /// 操作している側が変わるたびに1つ増える(縁を光らせる合図)。
     @Published private(set) var switches = 0
+    /// CarPlay の Bluetooth が iPhone とつながっているか(OTTO が知らせる)。
+    @Published private(set) var bluetooth = false
+    /// Bluetooth がつながるたびに1つ増える(縁を緑に灯す合図)。
+    @Published private(set) var bluetoothUps = 0
 
     static let port: UInt16 = 47800
     private let queue = DispatchQueue(label: "duopad.link", qos: .userInteractive)
@@ -168,6 +172,10 @@ final class PadLink: ObservableObject {
                 let t = String(p[1])
                 if !target.isEmpty && t != target { switches += 1 }
                 target = t
+            } else if k == "b", p.count > 1 {
+                let on = p[1] == "1"
+                if on && !bluetooth { bluetoothUps += 1 }
+                bluetooth = on
             } else if k == "i", p.count > 2, let w = Double(p[1]), let h = Double(p[2]) {
                 screen = CGSize(width: w, height: h)
             }

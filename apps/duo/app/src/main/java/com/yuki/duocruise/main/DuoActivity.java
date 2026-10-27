@@ -390,6 +390,11 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         stateChanged();
     }
 
+    /** CarPlay の Bluetooth が iPhone とつながっている状態か(つながった後、Wi-Fi へ移って接続中まで)。 */
+    static boolean carBluetooth(String s) {
+        return s.startsWith("iPhone と準備中") || s.startsWith("無線 CarPlay 接続中");
+    }
+
     /** つなぎ直しが要る状態か(失敗・切断・始められない・停止のまま)。 */
     static boolean carStopped(String s) {
         return s.startsWith("失敗") || s.startsWith("始められません") || s.startsWith("権限が足りません")
@@ -624,6 +629,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     static void stateChanged() {
         DuoActivity a = live;
         if (a == null) return;
+        if (a.padServer != null) a.padServer.setBluetooth(carBluetooth(safeStatus(a.car)));
         a.main.removeCallbacks(a.sendState);
         a.main.postDelayed(a.sendState, 800);
     }
