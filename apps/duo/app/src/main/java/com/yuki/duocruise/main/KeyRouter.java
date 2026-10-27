@@ -13,6 +13,9 @@ import java.util.Set;
  * ・短押しの扱い: 短押しの割り当てがあればその動作。無ければ、アプリのキーは操作中の側へ
  *   「押す→離す」を作って届け、ホーム等のシステムのキーはシステム本来の動作に回す。
  * ・割り当てが無いキーは、待たずにそのまま操作中の側へ届ける(遅れなし)。
+ * ・「2回」「3回」…の割り当てがあるキーは、押すたびに数え、TAP_GAP のあいだ次が来なければ
+ *   その回数の動作を実行する。割り当ての一番多い回数に届いたら待たずに実行する。
+ *   その回数に割り当てが無ければ、押した回数だけ普通の短押しとして届ける(1回なら少し遅れて届く)。
  *
  * 押す/離すが分かれて届かない機器でも壊れないようにする:
  * ・押す と 離す が同時に届く → 短押し(長押しは使えないだけ)
@@ -25,6 +28,9 @@ final class KeyRouter {
 
     /** これより間があいて同じキーの「押す」が来たら、別の押下とみなす(ms)。 */
     static final long HOLD_GAP = 1000;
+
+    /** 「2回」「3回」と数えるときの、押してから次を待つ時間(ms)。 */
+    static final long TAP_GAP = 400;
 
     interface Sink {
         /** 操作中の側(または操作盤)へキーを届ける。raw が null なら作って届ける。 */
@@ -55,6 +61,15 @@ final class KeyRouter {
     private long longMs;
     private boolean learning;
     private Pending pending;
+
+    /** 回数を数えている途中のキー。 */
+    private static final class Taps {
+        int code, count;
+        boolean system;
+        long downTime;
+        Object token;
+    }
+    private Taps taps;
     private final Set<Integer> noUp = new HashSet<>();
     private final Map<Integer, Long> shortDown = new HashMap<>();
 
@@ -79,8 +94,10 @@ final class KeyRouter {
             return true;
         }
         if (action == DOWN && pending != null && pending.code != code) finish(pending); // 別のキーが来たら、待っていたキーは短押しで確定
+        if (action == DOWN && taps != null && taps.code != code) flushTaps(); // 数えている途中のキーも、その回数で確定
         // 待っている途中のキーは、割り当てや登録の状態が変わっても最後まで同じ扱いにする
-        boolean longBound = learning || map.hasLong(code) || (pending != null && pending.code == code);
+        boolean longBound = learning || map.hasLong(code) || map.maxTaps(code) > 1
+                || (pending != null && pending.code == code);
         if (!longBound) {
             KeyMap.Action s = map.find(code, KeyMap.SHORT);
             if (s == null) {
@@ -160,6 +177,37 @@ final class KeyRouter {
             sink.learned(code, KeyMap.SHORT);
             return;
         }
+        if (map.maxTaps(code) > 1) { tap(code, system, downTime); return; }
+        plainShort(code, system, downTime);
+    }
+
+    private void tap(int code, boolean system, long downTime) {
+        Taps t = taps;
+        if (t != null && t.code != code) { flushTaps(); t = null; }
+        if (t == null) {
+            t = new Taps();
+            t.code = code; t.system = system; t.downTime = downTime;
+            taps = t;
+        } else {
+            timer.cancel(t.token);
+        }
+        t.count++;
+        if (t.count >= map.maxTaps(code)) { flushTaps(); return; }
+        Taps mine = t;
+        t.token = timer.post(() -> { if (taps == mine) flushTaps(); }, TAP_GAP);
+    }
+
+    private void flushTaps() {
+        Taps t = taps;
+        if (t == null) return;
+        taps = null;
+        timer.cancel(t.token);
+        KeyMap.Action a = t.count >= 2 ? map.find(t.code, Math.min(t.count, KeyMap.MAX_TAPS)) : null;
+        if (a != null) { sink.action(a); return; }
+        for (int i = 0; i < t.count; i++) plainShort(t.code, t.system, t.downTime);
+    }
+
+    private void plainShort(int code, boolean system, long downTime) {
         KeyMap.Action a = map.find(code, KeyMap.SHORT);
         if (a != null) { sink.action(a); return; }
         if (system) { sink.systemDefault(code); return; }

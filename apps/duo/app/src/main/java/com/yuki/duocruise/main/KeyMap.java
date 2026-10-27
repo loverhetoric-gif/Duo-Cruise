@@ -17,7 +17,12 @@ final class KeyMap {
             DPAD_CENTER = 23, TAB = 61, ENTER = 66, MENU = 82, SEARCH = 84, APP_SWITCH = 187,
             ASSIST = 219, VOICE_ASSIST = 231, NAVIGATE_PREVIOUS = 260, NAVIGATE_NEXT = 261;
 
-    static final int SHORT = 0, LONG = 1;
+    /**
+     * 押し方。SHORT=1回、LONG=長押し、2 以上=その回数だけ素早く押す(2=2回、3=3回…)。
+     * 車(MX-30)のコマンダーは押した瞬間に離した形で届くため長押しが使えず、回数で分ける。
+     */
+    static final int SHORT = 0, LONG = 1, DOUBLE = 2, TRIPLE = 3;
+    static final int MAX_TAPS = 4;
 
     /** 割り当てられる動作。 */
     enum Action {
@@ -36,13 +41,13 @@ final class KeyMap {
     }
 
     /**
-     * 仮の初期値(実測前)。
-     * ・決定(ダイヤル押し込み)の長押し → 操作側の切り替え
-     * ・タスクキーの短押し → 操作側の切り替え
-     * ・戻るの長押し → 左右の入れ替え
-     * ・ホームの短押し → 操作盤(Duo Cruise が前面のときだけ。ユーザー補助で横取り)
+     * 初期値(2026-10-27 車での実測による。コマンダーからはホームも長押しも届かない)。
+     * ・戻るを2回 → 操作側の切り替え(タスクキーの短押しでも)
+     * ・戻るを3回 → 左右の入れ替え
+     * ・戻るを4回 → 操作盤(ホームの短押しでも。Duo Cruise が前面のときだけ。ユーザー補助で横取り)
+     * ・戻るを1回 → いつもの「戻る」として操作中の側へ(回数を数えるため少し遅れて届く)
      */
-    static final String DEFAULTS = "SWITCH_SIDE=23:L,66:L,187:S;SWAP=4:L;PANEL=3:S";
+    static final String DEFAULTS = "SWITCH_SIDE=4:2,187:S;SWAP=4:3;PANEL=4:4,3:S";
 
     /** 長押しとみなす時間(ms)。 */
     static final long DEFAULT_LONG_MS = 600;
@@ -64,8 +69,10 @@ final class KeyMap {
                 if (cg.length != 2) continue;
                 try {
                     int code = Integer.parseInt(cg[0].trim());
-                    int g = "L".equalsIgnoreCase(cg[1].trim()) ? LONG : SHORT;
-                    m.set(a, code, g, false);
+                    String gs = cg[1].trim();
+                    int g = "L".equalsIgnoreCase(gs) ? LONG : "S".equalsIgnoreCase(gs) ? SHORT : Integer.parseInt(gs);
+                    if (g < SHORT || g > MAX_TAPS) continue;
+                    m.set(a, code, g == 1 && !"L".equalsIgnoreCase(gs) ? SHORT : g, false);
                 } catch (NumberFormatException ignored) {}
             }
         }
@@ -80,7 +87,7 @@ final class KeyMap {
             StringBuilder one = new StringBuilder();
             for (Bind b : binds) if (b.action == a) {
                 if (one.length() > 0) one.append(',');
-                one.append(b.code).append(':').append(b.gesture == LONG ? 'L' : 'S');
+                one.append(b.code).append(':').append(b.gesture == LONG ? "L" : b.gesture == SHORT ? "S" : String.valueOf(b.gesture));
             }
             if (one.length() == 0) continue;
             if (sb.length() > 0) sb.append(';');
@@ -113,6 +120,13 @@ final class KeyMap {
 
     boolean hasLong(int code) { return find(code, LONG) != null; }
 
+    /** そのボタンに割り当てのある一番多い回数(2 以上)。回数の割り当てが無ければ 1。 */
+    int maxTaps(int code) {
+        int n = 1;
+        for (Bind b : binds) if (b.code == code && b.gesture >= DOUBLE) n = Math.max(n, b.gesture);
+        return n;
+    }
+
     List<Bind> of(Action a) {
         List<Bind> out = new ArrayList<>();
         for (Bind b : binds) if (b.action == a) out.add(b);
@@ -124,9 +138,13 @@ final class KeyMap {
         StringBuilder sb = new StringBuilder();
         for (Bind b : of(a)) {
             if (sb.length() > 0) sb.append(" / ");
-            sb.append(keyName(b.code)).append(b.gesture == LONG ? "(長)" : "(短)");
+            sb.append(keyName(b.code)).append(gestureName(b.gesture));
         }
         return sb.length() == 0 ? "未割り当て" : sb.toString();
+    }
+
+    static String gestureName(int g) {
+        return g == LONG ? "(長)" : g == SHORT ? "(短)" : "(" + g + "回)";
     }
 
     /** よく使うキーの日本語名。知らないキーは番号。 */

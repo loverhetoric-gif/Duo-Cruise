@@ -35,8 +35,29 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
 
     private final Handler main = new Handler(Looper.getMainLooper());
     private Pane car, tv;
-    /** 本人が操作盤で CarPlay を開始したか。開いた直後は false(チップに触れない)。 */
+    /** CarPlay を動かしているか。開いたら自動で true(本人の指示 2026-10-27「自動で接続は絶対」)。操作盤で止めたら false。 */
     private boolean carOn;
+    /** 次につなぎ直すまでの待ち時間(ms)。失敗が続くほど延ばし、つながったら戻す。 */
+    private long carRetryMs = CAR_RETRY_MIN_MS;
+    private static final long CAR_RETRY_MIN_MS = 10_000, CAR_RETRY_MAX_MS = 120_000, CAR_WATCH_MS = 5_000;
+    /** CarPlay の見張り。失敗・切断で止まっていたら、待ってから作り直してつなぎ直す。 */
+    private final Runnable carWatch = new Runnable() {
+        private long stoppedSince;
+        @Override public void run() {
+            main.postDelayed(this, CAR_WATCH_MS);
+            if (!carOn) { stoppedSince = 0; return; }
+            String s = safeStatus(car);
+            if (s.startsWith("無線 CarPlay 接続中")) carRetryMs = CAR_RETRY_MIN_MS;
+            if (!carStopped(s)) { stoppedSince = 0; return; }
+            long now = SystemClock.elapsedRealtime();
+            if (stoppedSince == 0) { stoppedSince = now; return; }
+            if (now - stoppedSince < carRetryMs) return;
+            stoppedSince = 0;
+            DuoLog.log("CarPlay をつなぎ直します(" + (carRetryMs / 1000) + " 秒待った。止まった理由: " + s + ")");
+            carRetryMs = Math.min(carRetryMs * 2, CAR_RETRY_MAX_MS);
+            restartCar();
+        }
+    };
     private SplitRoot root;
     private PanelView panel;
     private KeyRouter router;
@@ -74,7 +95,9 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         root.apply(Store.swapped(this), Store.side(this), Store.panelHalf(this));
 
         askPermissions();
-        // CarPlay は開いただけでは始めない(チップ・Wi-Fi・Bluetooth に触れない)。操作盤の「CarPlay を開始」でだけ始める
+        // CarPlay は開いたら自動で始め、失敗・切断したら見張りがつなぎ直す
+        startCar("開いたので自動で");
+        main.postDelayed(carWatch, CAR_WATCH_MS);
         try { tv.start(); } catch (Throwable t) { DuoLog.error("YouTube を始められません: " + DuoLog.why(t)); }
         boolean asHome = getIntent() != null && getIntent().hasCategory(Intent.CATEGORY_HOME);
         DuoLog.log("Duo Cruise を開きました(版 " + DuoLog.version() + (asHome ? "、ホームとして" : "") + ")");
@@ -318,15 +341,34 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         focusActive();
     }
 
-    /** 操作盤の「CarPlay を開始/止める」。CarPlay を始めるのは、本人がこれを押したときだけ。 */
+    /** 操作盤の「CarPlay を開始/止める」。止めたら、次に開くか「開始」を押すまでつなぎ直さない。 */
     @Override public void toggleCar() {
         if (carOn) stopCar();
-        else {
-            DuoLog.log("CarPlay を開始します(操作盤から)");
-            carOn = true;
-            try { car.start(); } catch (Throwable t) { DuoLog.error("CarPlay を始められません: " + DuoLog.why(t)); }
-            stateChanged();
-        }
+        else startCar("操作盤から");
+    }
+
+    private void startCar(String why) {
+        DuoLog.log("CarPlay を開始します(" + why + ")");
+        carOn = true;
+        carRetryMs = CAR_RETRY_MIN_MS;
+        try { car.start(); } catch (Throwable t) { DuoLog.error("CarPlay を始められません: " + DuoLog.why(t)); }
+        stateChanged();
+    }
+
+    /** つなぎ直しが要る状態か(失敗・切断・始められない・停止のまま)。 */
+    static boolean carStopped(String s) {
+        return s.startsWith("失敗") || s.startsWith("始められません") || s.startsWith("権限が足りません")
+                || s.startsWith("iPhone との接続が終わりました") || s.equals("停止中");
+    }
+
+    /** 部品を作り直して、もう一度始める(前の Wi-Fi・Bluetooth・チップは手放してから)。 */
+    private void restartCar() {
+        try { car.destroy(); } catch (Throwable t) { DuoLog.error("CarPlay を止められません: " + DuoLog.why(t)); }
+        car = Panes.car(this);
+        root.setPanes(car.view(), tv.view(), panel);
+        root.apply(Store.swapped(this), Store.side(this), Store.panelHalf(this));
+        try { car.start(); } catch (Throwable t) { DuoLog.error("CarPlay を始められません: " + DuoLog.why(t)); }
+        stateChanged();
     }
 
     @Override public boolean carOn() { return carOn; }

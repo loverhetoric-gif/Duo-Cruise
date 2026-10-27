@@ -31,6 +31,7 @@ public final class PanesLogicTest {
         navigation();
         keymap();
         router();
+        taps();
         System.out.println(fails == 0 ? "すべて合格(" + checks + " 件)" : fails + " 件 不合格 / " + checks);
         if (fails != 0) System.exit(1);
     }
@@ -84,10 +85,16 @@ public final class PanesLogicTest {
     }
 
     static void keymap() {
-        KeyMap m = KeyMap.defaults();
-        ok(m.find(KeyMap.DPAD_CENTER, KeyMap.LONG) == KeyMap.Action.SWITCH_SIDE, "初期値: 決定の長押し=切替");
-        ok(m.find(KeyMap.BACK, KeyMap.LONG) == KeyMap.Action.SWAP, "初期値: 戻るの長押し=入替");
-        ok(m.find(KeyMap.HOME, KeyMap.SHORT) == KeyMap.Action.PANEL, "初期値: ホーム=操作盤");
+        KeyMap d = KeyMap.defaults();
+        ok(d.find(KeyMap.BACK, KeyMap.DOUBLE) == KeyMap.Action.SWITCH_SIDE, "初期値: 戻る2回=切替");
+        ok(d.find(KeyMap.BACK, KeyMap.TRIPLE) == KeyMap.Action.SWAP, "初期値: 戻る3回=入替");
+        ok(d.find(KeyMap.BACK, 4) == KeyMap.Action.PANEL, "初期値: 戻る4回=操作盤");
+        ok(d.find(KeyMap.HOME, KeyMap.SHORT) == KeyMap.Action.PANEL, "初期値: ホーム=操作盤");
+        ok(d.find(KeyMap.BACK, KeyMap.SHORT) == null && d.maxTaps(KeyMap.BACK) == 4, "初期値: 戻る1回は割り当て無し");
+        ok(KeyMap.parse(d.serialize()).serialize().equals(d.serialize()), "回数も保存して読み直して同じ");
+        ok(KeyMap.parse("SWAP=4:9").serialize().isEmpty(), "多すぎる回数は捨てる");
+        KeyMap m = KeyMap.parse(OLD);
+        ok(m.find(KeyMap.DPAD_CENTER, KeyMap.LONG) == KeyMap.Action.SWITCH_SIDE, "旧: 決定の長押し=切替");
         ok(KeyMap.parse(m.serialize()).serialize().equals(m.serialize()), "保存して読み直しても同じ");
         m.set(KeyMap.Action.SWAP, KeyMap.DPAD_CENTER, KeyMap.LONG, true);
         ok(m.find(KeyMap.DPAD_CENTER, KeyMap.LONG) == KeyMap.Action.SWAP, "同じ押し方は1つの動作だけ");
@@ -117,10 +124,47 @@ public final class PanesLogicTest {
         String s() { String r = String.join(",", ev); ev.clear(); return r; }
     }
 
-    static void router() {
+    /** 長押しを使う旧い割り当て(長押しの仕組みが壊れていないかを確かめる用)。 */
+    static final String OLD = "SWITCH_SIDE=23:L,66:L,187:S;SWAP=4:L;PANEL=3:S";
+
+    /** 戻るの回数(車のコマンダー: 押す と 離す が 10〜25ms で続けて届く)。 */
+    static void taps() {
         FakeTimer t = new FakeTimer();
         Rec r = new Rec();
         KeyRouter k = new KeyRouter(KeyMap.defaults(), 600, r, t);
+        int B = KeyMap.BACK, R = KeyMap.DPAD_RIGHT;
+        Runnable press = () -> { k.onKey(B, 0, 0, t.now, false, null); t.advance(15); k.onKey(B, 1, 0, t.now, false, null); };
+
+        press.run();
+        ok(r.s().isEmpty(), "戻る1回はすぐには届かない(数えている)");
+        t.advance(500);
+        ok(r.s().equals("渡4押作,渡4離作"), "戻る1回は待ったあと普通の戻る");
+
+        press.run(); t.advance(150); press.run();
+        ok(r.s().isEmpty(), "戻る2回: 3回目を待つ");
+        t.advance(500);
+        ok(r.s().equals("動SWITCH_SIDE"), "戻る2回で切替");
+
+        press.run(); t.advance(150); press.run(); t.advance(150); press.run(); t.advance(500);
+        ok(r.s().equals("動SWAP"), "戻る3回で入替");
+
+        press.run(); t.advance(150); press.run(); t.advance(150); press.run(); t.advance(150); press.run();
+        ok(r.s().equals("動PANEL"), "戻る4回で操作盤(待たずに)");
+        t.advance(500);
+        ok(r.s().isEmpty(), "4回のあとに余計なものは届かない");
+
+        press.run(); t.advance(150); k.onKey(R, 0, 0, t.now, false, "raw");
+        ok(r.s().equals("渡4押作,渡4離作,渡22押"), "数えている途中で別のキー → 戻る1回で確定");
+        k.onKey(R, 1, 0, t.now, false, "raw"); r.s();
+
+        press.run(); t.advance(700); press.run(); t.advance(500);
+        ok(r.s().equals("渡4押作,渡4離作,渡4押作,渡4離作"), "間があけば別々の戻る");
+    }
+
+    static void router() {
+        FakeTimer t = new FakeTimer();
+        Rec r = new Rec();
+        KeyRouter k = new KeyRouter(KeyMap.parse(OLD), 600, r, t);
         int C = KeyMap.DPAD_CENTER, B = KeyMap.BACK, H = KeyMap.HOME, R = KeyMap.DPAD_RIGHT;
 
         // 割り当ての無いキーは、そのまま(遅れなし)
@@ -183,7 +227,7 @@ public final class PanesLogicTest {
         ok(r.s().equals("系3"), "ホーム短押しはシステムのホームへ");
 
         // 別のキーが割り込んだら、待っていたキーは短押しで確定
-        k.setMap(KeyMap.defaults());
+        k.setMap(KeyMap.parse(OLD));
         k.onKey(C, 0, 0, t.now, false, null); t.advance(100); k.onKey(R, 0, 0, t.now, false, "raw");
         String ir = r.s();
         ok(ir.equals("渡23押作,渡23離作,渡22押"), "割り込みで短押し確定: " + ir);
