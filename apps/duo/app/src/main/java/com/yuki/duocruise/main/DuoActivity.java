@@ -597,9 +597,10 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         if (!PaneService.global(action)) DuoLog.log("タッチパッド: ホーム・タスクはユーザー補助がオフのため使えません");
     }
 
-    @Override public void typeText(String text) { tv.typeText(text); }
+    /** 文字は操作中の側へ(CarPlay 側は、OTTO の Wi-Fi のパスワードを入力中のときだけ受ける)。 */
+    @Override public void typeText(String text) { active().typeText(text); }
 
-    @Override public void typeKey(int keyCode) { tv.typeKey(keyCode); }
+    @Override public void typeKey(int keyCode) { active().typeKey(keyCode); }
 
     @Override public void touched(int side) {
         if (side != Store.side(this)) setSide(side);
@@ -680,6 +681,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
             case "keys-reset": resetKeys(); return "割り当てを初期値に戻しました: " + keyMap.serialize();
             // 遠くからは「止める」だけ。始めるのは OTTO の画面の操作盤からだけ
             case "car-stop": if (carOn) stopCar(); return "CarPlay は止まっています";
+            case "car-wifi-reset": { String r = car.command(cmd); return r == null ? "CarPlay の部品がありません" : r; }
             default: return null;
         }
     }

@@ -68,7 +68,12 @@ final class Panes {
         @Override public boolean onKey(KeyEvent e) { return p.onKey(e); }
         @Override public boolean onGenericMotion(MotionEvent e) { return p.onGenericMotion(e); }
         @Override public String status() { return p.status(); }
-        @Override public String command(String cmd) { return null; }
+        @Override public String command(String cmd) {
+            return "car-wifi-reset".equals(cmd) ? p.resetWifiPass() : null;
+        }
+        /** OTTO の Wi-Fi のパスワードを入力中のときだけ使う。 */
+        @Override public void typeText(String text) { p.typeText(text); }
+        @Override public void typeKey(int keyCode) { p.typeKey(keyCode); }
         @Override public String name() { return "CarPlay"; }
         @Override public boolean real() { return true; }
     }
