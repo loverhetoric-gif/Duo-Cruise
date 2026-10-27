@@ -144,6 +144,14 @@ class Iap2LinkEngine(
     private var sendAcknowledgementDeadlineMillis: Long? = null
     private var receiveAcknowledgementDeadlineMillis: Long? = null
 
+    /**
+     * Duo Cruise: iPhone は CarPlay の開始(0x4301)を受けると画面に「接続」の確認を出し、本人が押すまで
+     * 受け取りの返事をしないことがある(実機：16秒であきらめた後に「接続」を押して接続エラー)。
+     * 相手の再送回数(例 4回×4秒)より長く、約2分は待つ。
+     */
+    private val retryLimit: Int
+        get() = maxOf(peerSynchronization.maxRetransmissions, IPHONE_PROMPT_RETRIES)
+
     fun state(): State = state
 
     fun writable(): Boolean = writable
@@ -398,7 +406,7 @@ class Iap2LinkEngine(
         for (packet in unacknowledged) {
             if (!missing.any { u8(it) == packet.sequence }) continue
             packet.retransmissions += 1
-            if (packet.retransmissions == peerSynchronization.maxRetransmissions) {
+            if (packet.retransmissions >= retryLimit) {
                 die("iAP2 packet ${packet.sequence} was not acknowledged")
                 return
             }
@@ -488,7 +496,7 @@ class Iap2LinkEngine(
         val secondDeadline = unacknowledged.filter { it !== next }.minOfOrNull { it.deadlineMillis }
         next.deadlineMillis = nowMillis + peerSynchronization.retransmissionTimeoutMillis
         next.retransmissions += 1
-        if (next.retransmissions == peerSynchronization.maxRetransmissions) {
+        if (next.retransmissions >= retryLimit) {
             die("iAP2 packet ${next.sequence} was not acknowledged")
             return
         }
@@ -664,6 +672,8 @@ class Iap2LinkEngine(
         private const val SYNCHRONIZATION_RESEND_MILLIS = 500L
         private const val DEFAULT_RETRANSMISSION_TIMEOUT_MILLIS = 4_000
         private const val DEFAULT_MAX_RETRANSMISSIONS = 4
+        /** 再送の上限(約2分。相手の再送間隔が4秒のとき)。 */
+        private const val IPHONE_PROMPT_RETRIES = 30
         private const val DEFAULT_MAX_ACKNOWLEDGEMENTS = 3
         private const val ACK_SLACK = 10
 
