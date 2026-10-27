@@ -16,6 +16,10 @@ final class PadLink: ObservableObject {
     @Published private(set) var rttMs: Double = 0
     /// OTTO の画面の大きさ(px)。
     @Published private(set) var screen = CGSize(width: 1480, height: 480)
+    /// Duo Cruise で操作している側("L"＝左、"R"＝右、"F"＝1画面、""＝まだ分からない)。
+    @Published private(set) var target = ""
+    /// 操作している側が変わるたびに1つ増える(縁を光らせる合図)。
+    @Published private(set) var switches = 0
 
     static let port: UInt16 = 47800
     private let queue = DispatchQueue(label: "duopad.link", qos: .userInteractive)
@@ -56,6 +60,13 @@ final class PadLink: ObservableObject {
     }
 
     func restart() { stop(); start() }
+
+    /// 前面に戻ったとき: つながっていればそのまま、切れていればつなぎ直す(起動直後に二重につながないように)。
+    func resume() {
+        if stopped { start(); return }
+        if case .connected = state { return }
+        restart()
+    }
 
     /// 1行送る(改行はこちらで付ける)。
     func send(_ line: String) {
@@ -153,6 +164,10 @@ final class PadLink: ObservableObject {
                 let ms = (CACurrentMediaTime() - t) * 1000
                 rttMs = ms
                 rtts.append(ms)
+            } else if k == "s", p.count > 1 {
+                let t = String(p[1])
+                if !target.isEmpty && t != target { switches += 1 }
+                target = t
             } else if k == "i", p.count > 2, let w = Double(p[1]), let h = Double(p[2]) {
                 screen = CGSize(width: w, height: h)
             }

@@ -104,6 +104,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         startCar("開いたので自動で");
         main.postDelayed(carWatch, CAR_WATCH_MS);
         padServer = new PadServer(this, pad);
+        padServer.setState(Store.single(this) ? "s F" : Store.side(this) == SplitGeometry.SIDE_LEFT ? "s L" : "s R");
         padServer.start();
         try { tv.start(); } catch (Throwable t) { DuoLog.error("YouTube を始められません: " + DuoLog.why(t)); }
         boolean asHome = getIntent() != null && getIntent().hasCategory(Intent.CATEGORY_HOME);
@@ -310,6 +311,8 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
 
     private void relayout() {
         applyLayout();
+        if (padServer != null) padServer.setState(Store.single(this) ? "s F"
+                : Store.side(this) == SplitGeometry.SIDE_LEFT ? "s L" : "s R");
         if (panel.getVisibility() == View.VISIBLE) panel.refresh();
         stateChanged();
     }

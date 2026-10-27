@@ -13,7 +13,7 @@ struct DuoPadApp: App {
                 .onAppear { link.start(); UIApplication.shared.isIdleTimerDisabled = true }
                 .onChange(of: phase) { _, p in
                     // 前面に戻ったらすぐつなぎ直す。使っている間は画面を消さない
-                    if p == .active { link.restart(); UIApplication.shared.isIdleTimerDisabled = true }
+                    if p == .active { link.resume(); UIApplication.shared.isIdleTimerDisabled = true }
                     if p == .background { link.stop() }
                 }
         }
@@ -24,11 +24,21 @@ struct DuoPadApp: App {
 /// 昼: 日差しの下でも読めるよう、明るい面に濃い記号(強いコントラスト)。
 /// 夜: 車内で眩しくないよう、ほぼ黒の面に暗めの記号(明るさを抑え、運転の邪魔をしない)。
 struct Palette {
-    let bg, pad, padEdge, key, icon: Color
+    let bg, pad, padEdge, key, icon, glow: Color
+    /// 昼の光は白だと明るい面で見えないため、柔らかい灰色にする。
     static let day = Palette(bg: Color(white: 0.86), pad: Color(white: 0.97), padEdge: Color(white: 0.70),
-                             key: Color(white: 0.78), icon: Color(white: 0.08))
+                             key: Color(white: 0.78), icon: Color(white: 0.08), glow: Color(white: 0.45))
     static let night = Palette(bg: .black, pad: Color(white: 0.07), padEdge: Color(white: 0.16),
-                               key: Color(white: 0.12), icon: Color(white: 0.55))
+                               key: Color(white: 0.12), icon: Color(white: 0.55), glow: .white)
+}
+
+/// iPhone の画面の角の丸み(pt)。面は画面の縁から 6pt 内側にあるので、その分だけ小さくすると同じ曲線に見える。
+/// 公開の方法では読めないため、画面の幅から近い値を選ぶ(App Store に出せない非公開の方法は使わない)。
+enum Screen {
+    @MainActor static var cornerRadius: CGFloat {
+        let w = min(UIScreen.main.bounds.width, UIScreen.main.bounds.height)
+        return w >= 430 ? 62 : w >= 400 ? 58 : 50
+    }
 }
 
 struct PadScreen: View {
@@ -40,6 +50,9 @@ struct PadScreen: View {
     @Environment(\.colorScheme) private var scheme
     @State private var typing = false
     @State private var settings = false
+    /// 縁の光の強さ(0〜1)。操作している側が変わった直後だけ、ふわっと灯って消える。
+    @State private var glow = 0.0
+    private var radius: CGFloat { max(Screen.cornerRadius - 6, 20) }
 
     private var night: Bool { theme == 2 || (theme == 0 && scheme == .dark) }
     private var c: Palette { night ? .night : .day }
@@ -47,9 +60,12 @@ struct PadScreen: View {
     var body: some View {
         VStack(spacing: 6) {
             Surface(sensitivity: sensitivity, acceleration: acceleration, screenWidth: link.screen.width) { link.send($0) }
-                .background(RoundedRectangle(cornerRadius: 26).fill(c.pad))
-                .overlay(RoundedRectangle(cornerRadius: 26).stroke(c.padEdge, lineWidth: 1))
+                .background(RoundedRectangle(cornerRadius: radius, style: .continuous).fill(c.pad))
+                .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous).stroke(c.padEdge, lineWidth: 1))
+                .overlay { sideMark.allowsHitTesting(false) }
+                .overlay { edgeGlow.allowsHitTesting(false) }
                 .overlay(alignment: .topTrailing) { corner.padding(.top, topInset) }
+                .onChange(of: link.switches) { _, _ in flash() }
             KeyField(active: $typing) { link.send($0) }
                 .frame(width: 1, height: 1).opacity(0.01)
             HStack(spacing: 6) {
@@ -67,6 +83,41 @@ struct PadScreen: View {
         .background(c.bg.ignoresSafeArea())
         .preferredColorScheme(theme == 1 ? .light : theme == 2 ? .dark : nil)
         .sheet(isPresented: $settings) { SettingsSheet(sensitivity: $sensitivity, acceleration: $acceleration, theme: $theme) }
+    }
+
+    /// 操作している側の印: その側の縁だけが、うっすら白く灯る(1画面のときは全体をごく薄く)。
+    private var sideMark: some View {
+        let t = link.target
+        let stops: [Gradient.Stop]
+        switch t {
+        case "L": stops = [.init(color: c.glow.opacity(0.42), location: 0), .init(color: c.glow.opacity(0), location: 0.42)]
+        case "R": stops = [.init(color: c.glow.opacity(0), location: 0.58), .init(color: c.glow.opacity(0.42), location: 1)]
+        case "F": stops = [.init(color: c.glow.opacity(0.16), location: 0), .init(color: c.glow.opacity(0.16), location: 1)]
+        default: stops = [.init(color: .clear, location: 0), .init(color: .clear, location: 1)]
+        }
+        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+        let grad = LinearGradient(stops: stops, startPoint: .leading, endPoint: .trailing)
+        return ZStack {
+            shape.stroke(grad, lineWidth: 5).blur(radius: 5)   // 柔らかいにじみ
+            shape.stroke(grad, lineWidth: 1.2)                 // 細い芯
+        }
+        .animation(.easeInOut(duration: 0.5), value: t)
+    }
+
+    /// 切り替えた直後の縁の光: 縁全体を白い光がふわっと囲って、ゆっくり消える(Duo Cruise の虹色の光の白版)。
+    private var edgeGlow: some View {
+        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+        return ZStack {
+            shape.stroke(c.glow.opacity(0.55 * glow), lineWidth: 8).blur(radius: 8)
+            shape.stroke(c.glow.opacity(0.75 * glow), lineWidth: 1.5)
+        }
+    }
+
+    private func flash() {
+        withAnimation(.easeOut(duration: 0.2)) { glow = 1 }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            withAnimation(.easeInOut(duration: 0.9)) { glow = 0 }
+        }
     }
 
     /// 時計・ステータスバーの高さ。設定ボタンはその下(右上)に置く。

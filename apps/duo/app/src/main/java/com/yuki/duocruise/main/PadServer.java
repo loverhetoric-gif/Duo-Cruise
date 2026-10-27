@@ -24,7 +24,8 @@ import java.nio.charset.StandardCharsets;
  * ・指示の中身は {@link PadInput} がメインスレッドで扱う
  *
  * 指示(iPhone → OTTO)は PadInput の説明を参照。OTTO → iPhone は
- * 「i 幅 高さ」(つながった直後の画面の大きさ)と「a 番号」(生きているかの返事)だけ。
+ * 「i 幅 高さ」(つながった直後の画面の大きさ)、「a 番号」(生きているかの返事)、
+ * 「s L|R|F」(操作している側: 左・右・1画面。つながった直後と変わったとき)。
  */
 final class PadServer {
     static final int PORT = 47800;
@@ -48,6 +49,9 @@ final class PadServer {
     private NsdManager nsd;
     private NsdManager.RegistrationListener reg;
     private volatile int linesTotal;
+    private volatile OutputStream out;
+    private volatile String state = "s L";
+    private final java.util.concurrent.ExecutorService writer = java.util.concurrent.Executors.newSingleThreadExecutor();
 
     PadServer(Context c, Sink sink) {
         this.app = c.getApplicationContext();
@@ -126,9 +130,11 @@ final class PadServer {
             c.setTcpNoDelay(true);
             c.setSoTimeout(5000); // 1秒ごとの「生きているか」が5秒来なければ切れたとみなす
             OutputStream out = c.getOutputStream();
+            this.out = out;
             main.post(() -> sink.connected(true, who));
             int[] wh = sink.screen();
             send(out, "i " + wh[0] + " " + wh[1]);
+            send(out, state);
             BufferedReader in = new BufferedReader(new InputStreamReader(c.getInputStream(), StandardCharsets.UTF_8));
             String line;
             while ((line = in.readLine()) != null) {
@@ -143,9 +149,19 @@ final class PadServer {
             closeQuietly(c);
             if (client == c) {
                 client = null;
+                out = null;
                 main.post(() -> sink.connected(false, who));
             }
         }
+    }
+
+    /** 操作している側が変わった(メインスレッドから)。iPhone の縁の光と左右の印に使う。 */
+    void setState(String s) {
+        if (s.equals(state)) return;
+        state = s;
+        OutputStream o = out;
+        if (o == null) return;
+        writer.execute(() -> { try { send(o, s); } catch (Exception ignored) {} });
     }
 
     private static void send(OutputStream out, String s) throws java.io.IOException {
