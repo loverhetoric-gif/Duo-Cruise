@@ -120,6 +120,8 @@ final class CaptureView: NSView {
     private var pressed = false, dragging = false
     private var pressMoved: CGFloat = 0
     private var resignObserver: Any?
+    /** Mac のマウスは1秒に数百回動きを出すので、約 8ms ぶんずつまとめて送る(小数のまま足すので失わない)。 */
+    private var accX = 0.0, accY = 0.0, flushScheduled = false
 
     override var acceptsFirstResponder: Bool { true }
 
@@ -153,7 +155,7 @@ final class CaptureView: NSView {
     func release() {
         guard captured else { return }
         captured = false
-        if dragging { send("u") }
+        if dragging { sendNow("u") }
         pressed = false; dragging = false
         CGAssociateMouseAndMouseCursorPosition(1)
         NSCursor.unhide()
@@ -162,10 +164,22 @@ final class CaptureView: NSView {
 
     /// Mac のカーソルの動き(加速は macOS が済ませている)を、OTTO の画面の px へ。
     private func move(_ e: NSEvent) {
-        let dx = Double(e.deltaX) * 1.4 * sensitivity, dy = Double(e.deltaY) * 1.4 * sensitivity
-        if dx == 0 && dy == 0 { return }
-        send(String(format: "m %.2f %.2f", dx, dy))
+        accX += Double(e.deltaX) * 1.4 * sensitivity
+        accY += Double(e.deltaY) * 1.4 * sensitivity
+        guard !flushScheduled else { return }
+        flushScheduled = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.008) { [weak self] in self?.flush() }
     }
+
+    /** たまった動きを送る。押す・離す などの前にも必ず呼び、順番を守る。 */
+    private func flush() {
+        flushScheduled = false
+        if accX == 0 && accY == 0 { return }
+        send(String(format: "m %.2f %.2f", accX, accY))
+        accX = 0; accY = 0
+    }
+
+    private func sendNow(_ s: String) { flush(); send(s) }
 
     override func mouseMoved(with e: NSEvent) { if captured { move(e) } }
 
@@ -178,7 +192,7 @@ final class CaptureView: NSView {
         guard captured else { return }
         if pressed && !dragging {
             pressMoved += abs(e.deltaX) + abs(e.deltaY)
-            if pressMoved > 3 { dragging = true; send("d") } // 少し動いたらドラッグ
+            if pressMoved > 3 { dragging = true; sendNow("d") } // 少し動いたらドラッグ
         }
         move(e)
     }
@@ -186,30 +200,30 @@ final class CaptureView: NSView {
     override func mouseUp(with e: NSEvent) {
         guard captured, pressed else { return }
         pressed = false
-        if dragging { dragging = false; send("u") } else { send("c") }
+        if dragging { dragging = false; sendNow("u") } else { sendNow("c") }
     }
 
-    override func rightMouseDown(with e: NSEvent) { if captured { send("k b") } }
+    override func rightMouseDown(with e: NSEvent) { if captured { sendNow("k b") } }
 
     /// 2本指のスクロール(マウスのホイールも)。指を動かした向きにページが動く。
     override func scrollWheel(with e: NSEvent) {
         guard captured else { return }
         let k = e.hasPreciseScrollingDeltas ? 1.2 : 12.0
         let dx = Double(e.scrollingDeltaX) * k, dy = Double(e.scrollingDeltaY) * k
-        if dx != 0 || dy != 0 { send(String(format: "w %.2f %.2f", dx, dy)) }
-        if e.phase == .ended || e.momentumPhase == .ended { send("w end") }
+        if dx != 0 || dy != 0 { sendNow(String(format: "w %.2f %.2f", dx, dy)) }
+        if e.phase == .ended || e.momentumPhase == .ended { sendNow("w end") }
     }
 
     override func keyDown(with e: NSEvent) {
         switch e.keyCode {
         case 53: release()                // Esc
-        case 36, 76: send("e")            // Return
-        case 51: send("x")                // Delete
+        case 36, 76: sendNow("e")         // Return
+        case 51: sendNow("x")             // Delete
         default:
             guard captured, let s = e.characters, !s.isEmpty,
                   s.unicodeScalars.allSatisfy({ $0.value >= 0x20 && $0.value != 0x7F && !(0xF700...0xF8FF).contains($0.value) })
             else { return }
-            send("t " + s)
+            sendNow("t " + s)
         }
     }
 }

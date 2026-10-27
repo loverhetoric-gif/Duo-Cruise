@@ -74,9 +74,12 @@ final class PadLink: ObservableObject {
     }
 
     /// 1行送る(改行はこちらで付ける)。
+    /// 送った時刻(ms)を頭に付ける。OTTO はこれを使って、Wi-Fi の揺れを吸収し、送った間隔どおりに再生する。
+    /// 「生きているか」(q)は時刻を付けない(OTTO がすぐ返事をするため)。
     func send(_ line: String) {
         guard let c = conn, case .connected = state else { return }
-        c.send(content: Data((line + "\n").utf8), completion: .idempotent)
+        let out = line.hasPrefix("q ") ? line : "@\(Int64(ProcessInfo.processInfo.systemUptime * 1000)) " + line
+        c.send(content: Data((out + "\n").utf8), completion: .idempotent)
     }
 
     // MARK: - 探す・つなぐ
