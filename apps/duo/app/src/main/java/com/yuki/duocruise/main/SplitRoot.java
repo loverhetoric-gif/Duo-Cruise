@@ -228,7 +228,6 @@ final class SplitRoot extends ViewGroup {
 
         Frame(Context c) {
             super(c);
-            setLayerType(LAYER_TYPE_SOFTWARE, null); // 発光のぼかしに必要
             setWillNotDraw(false);
         }
 

@@ -97,7 +97,6 @@ final class PanelView extends ViewGroup {
         dp = c.getResources().getDisplayMetrics().density;
         setBackgroundColor(0xC2000000); // 黒の透過(後ろの映像をうっすら通す)
         setClickable(true);             // 下の2画面へタッチを通さない
-        setLayerType(LAYER_TYPE_SOFTWARE, null); // メニュー枠の発光(ぼかし)に必要
         setWillNotDraw(false);
         title = text(26, Theme.TEXT, true);
         logText = text(14, Theme.TEXT, false);
@@ -430,7 +429,6 @@ final class PanelView extends ViewGroup {
         void setOn(boolean b) {
             if (on == b) return;
             on = b;
-            setLayerType(b ? LAYER_TYPE_SOFTWARE : LAYER_TYPE_NONE, null);
             invalidate();
         }
 
