@@ -144,7 +144,7 @@ final class PanelView extends ViewGroup {
         frameBox.set(0, 0, getWidth(), getHeight());
         // 開いた瞬間に光がふわっと膨らみ(強く・深く)、すぐ落ち着く
         float burst = intro < 0.35f ? intro / 0.35f * 1.35f : 1.35f - 0.35f * (intro - 0.35f) / 0.65f;
-        frameGlow.draw(cv, frameBox, dp, 110 * (0.6f + 0.4f * intro), burst, NeonGlow.VIVID, phase);
+        frameGlow.draw(cv, frameBox, dp, 110 * (0.6f + 0.4f * intro), burst, NeonGlow.AURORA, phase);
         // 色編集ページ: 今の色・強さを「発光する丸いネオン」として見出しの右にプレビュー
         if (page == NEON_EDIT) drawOrb(cv, host.neonColor(neonWhich) | 0xFF000000, host.neonLevel(neonWhich) / 100f);
     }
