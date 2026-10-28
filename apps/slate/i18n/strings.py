@@ -1,4 +1,4 @@
-# Duo Slate の画面の文言(9 言語)。ここが原本。gen.py が DuoPad/Localizable.xcstrings と InfoPlist.xcstrings を書き出す。
+# Duo Slate の画面の文言(9 言語)。ここが原本。gen.py が DuoSlate/Localizable.xcstrings と InfoPlist.xcstrings を書き出す。
 # 並びは Duo Cruise と同じ: en(既定), ja, zh-Hans(簡体), zh-Hant(繁体), ko, de, fr, es, it
 # 鍵はコードに書いた日本語そのもの。%@ は差し込み(2 つあるものは各言語で %1$@ %2$@ と順番を明示)。
 # 言葉は一般的なアプリの定番の言い回しに合わせる(内部の呼び名・造語を出さない)。

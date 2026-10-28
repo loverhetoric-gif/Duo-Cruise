@@ -1,5 +1,5 @@
-# strings.py から DuoPad/Localizable.xcstrings と DuoPad/InfoPlist.xcstrings を書き出す。
-# 使い方: python3 -I apps/pad-ios/i18n/gen.py
+# strings.py から DuoSlate/Localizable.xcstrings と DuoSlate/InfoPlist.xcstrings を書き出す。
+# 使い方: python3 -I apps/slate/i18n/gen.py
 import json, os, sys
 
 here = os.path.dirname(os.path.abspath(__file__))
@@ -14,7 +14,7 @@ def catalog(table):
             lang: {"stringUnit": {"state": "translated", "value": v}} for lang, v in zip(LANGS, vals)}}
     return out
 
-dst = os.path.join(here, "..", "DuoPad")
+dst = os.path.join(here, "..", "DuoSlate")
 for name, table in (("Localizable", S), ("InfoPlist", INFO)):
     with open(os.path.join(dst, name + ".xcstrings"), "w", encoding="utf-8") as f:
         json.dump(catalog(table), f, ensure_ascii=False, indent=2, sort_keys=True)

@@ -13,7 +13,7 @@ import android.view.MotionEvent;
 import android.view.View;
 
 /**
- * タッチパッド(iPhone の Duo Pad)の指示を、Duo Cruise の画面への操作に変える。メインスレッドだけで使う。
+ * タッチパッド(iPhone の Duo Slate)の指示を、Duo Cruise の画面への操作に変える。メインスレッドだけで使う。
  *
  * 指示(1行1つ。数は OTTO の画面の px):
  *   m dx dy          … カーソルを動かす(加速は iPhone 側で済ませてある。小数のまま足すので細かい動きも失わない)

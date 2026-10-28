@@ -1,5 +1,5 @@
-# タッチパッドアプリ(Duo Slate。旧名 Duo Pad)。iPhone と Mac の両方で動く1つのアプリ。`xcodegen generate` で DuoPad.xcodeproj を作る。
-name: DuoPad
+# タッチパッドアプリ Duo Slate。iPhone と Mac の両方で動く1つのアプリ。`xcodegen generate` で DuoSlate.xcodeproj を作る。
+name: DuoSlate
 options:
   bundleIdPrefix: com.yuki.duocruise
   # 既定の言語は英語(9 言語にない言語の端末では英語で出す)。文言の原本は i18n/strings.py
@@ -15,12 +15,12 @@ settings:
     MARKETING_VERSION: "0.1"
     CURRENT_PROJECT_VERSION: "1"
 targets:
-  DuoPad:
+  DuoSlate:
     type: application
     supportedDestinations: [iOS, macOS]
-    sources: [DuoPad]
+    sources: [DuoSlate]
     info:
-      path: DuoPad/Info.plist
+      path: DuoSlate/Info.plist
       properties:
         CFBundleDisplayName: Duo Slate
         CFBundleName: Duo Slate
@@ -29,10 +29,10 @@ targets:
         UIRequiresFullScreen: true
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         NSLocalNetworkUsageDescription: Used to find the device to connect to on the same Wi-Fi and control it as a touchpad.  # 各言語は InfoPlist.xcstrings
-        NSBonjourServices: [_duopad._tcp]
+        NSBonjourServices: [_duopad._tcp]  # 通信上の名前。OTTO 側(PadServer)と揃える必要があり、旧名のまま
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.yuki.duocruise.pad
+        PRODUCT_BUNDLE_IDENTIFIER: com.yuki.duocruise.pad  # 変えると別のアプリ扱いになり、入っている設定が消えるため据え置き
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         TARGETED_DEVICE_FAMILY: "1"
         SUPPORTS_MACCATALYST: NO

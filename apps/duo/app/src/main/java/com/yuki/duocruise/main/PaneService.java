@@ -21,7 +21,7 @@ public class PaneService extends AccessibilityService {
         super.onServiceConnected();
         DuoLog.init(this);
         live = this;
-        // Duo Pad を、Duo Cruise 以外のアプリ(ホームなど)でも使えるようにする
+        // Duo Slate を、Duo Cruise 以外のアプリ(ホームなど)でも使えるようにする
         try {
             systemPad = new SystemPad(this);
             PadRouter.get(this).setSystemSink(systemPad);
@@ -29,7 +29,7 @@ public class PaneService extends AccessibilityService {
         } catch (Throwable t) {
             DuoLog.error("汎用タッチパッドを用意できません: " + DuoLog.why(t));
         }
-        DuoLog.log("ユーザー補助が動き始めました(ホーム・他アプリでも Duo Pad が使えます)");
+        DuoLog.log("ユーザー補助が動き始めました(ホーム・他アプリでも Duo Slate が使えます)");
         DuoActivity.stateChanged();
     }
 

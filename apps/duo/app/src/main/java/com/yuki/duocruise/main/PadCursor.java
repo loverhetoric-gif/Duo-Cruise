@@ -11,7 +11,7 @@ import android.graphics.Shader;
 import android.view.View;
 
 /**
- * Duo Pad のカーソル(矢印)。Duo Cruise の中でも、ホーム等(汎用モード)でも同じものを使う。
+ * Duo Slate のカーソル(矢印)。Duo Cruise の中でも、ホーム等(汎用モード)でも同じものを使う。
  *
  * 見た目: 柔らかい発光の縁 + 白い本体 + ほのかな青みのハイライト。
  * 暗い車内でも、明るい地図の上でも、輪郭が消えないように、外側にぼかした光を一枚敷く。

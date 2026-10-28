@@ -10,13 +10,13 @@ import android.graphics.RectF;
 import android.graphics.Shader;
 
 /**
- * 縁の光。設計の要点(Duo Pad の録画を計測して分かったこと):
+ * 縁の光。設計の要点(Duo Slate の録画を計測して分かったこと):
  *   ・光は自分ではほとんど動かない(起伏 ±25%、ごく遅く巡る、呼吸なし)。繊細。
  *   ・生きて見えるのは操作への応答。触れた所・選んだ所の縁が 0.15 秒で灯り 0.6 秒で引く。大胆。
  *   ・普段は控えめにして、応答の落差を残す。
  *   ・Android の blur 半径は σ=0.577r+0.5。Apple の数字は約 1.7 倍して使う(28→48、7→11)。
  *
- * 縁の光。Duo Pad の Lights と同じ三層(外側の細い線・中のにじみ・広い裾)で一本の縁を作る。
+ * 縁の光。Duo Slate の Lights と同じ三層(外側の細い線・中のにじみ・広い裾)で一本の縁を作る。
  *
  * 明るさの模様は「縁に沿った距離」で進める。角度(SweepGradient)で回すと、
  * 1480×480 のような横長では長い辺が角度のごく一部しか受け持たず、長い辺の光がほぼ動かなくなる。
@@ -29,14 +29,14 @@ import android.graphics.Shader;
  * ぼかしは GlowLayer(GPU の RenderEffect)が受け持つ。ここでは線と、ぼかし無しの代替(draw)を描く。
  */
 final class NeonGlow {
-    /** 白。模様は明るさの起伏だけ(Duo Pad の switched と同じ考え)。 */
+    /** 白。模様は明るさの起伏だけ(Duo Slate の switched と同じ考え)。 */
     static final int[] AURORA = { 0xFFFFFFFF };
     /** @deprecated 旧名。 */
     static final int[] VIVID = AURORA;
 
     /**
-     * 一周期ぶんの明るさの起伏(0〜1)。Duo Pad の [glow, 0.75, glow, 0.85] と同じ振幅(谷は 0.75・0.85)。
-     * 計測では、Duo Pad の自律的な動きはこの程度で、ほとんど意識に上らない。生きて見えるのは操作への応答の方。
+     * 一周期ぶんの明るさの起伏(0〜1)。Duo Slate の [glow, 0.75, glow, 0.85] と同じ振幅(谷は 0.75・0.85)。
+     * 計測では、Duo Slate の自律的な動きはこの程度で、ほとんど意識に上らない。生きて見えるのは操作への応答の方。
      */
     static final float[] PATTERN = { 1.00f, 0.75f, 1.00f, 0.85f };
 

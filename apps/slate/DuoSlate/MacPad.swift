@@ -2,14 +2,14 @@
 import SwiftUI
 import AppKit
 
-/// Mac の Duo Pad。マウス・トラックパッド・キーボードで OTTO を操作する。
+/// Mac の Duo Slate。マウス・トラックパッド・キーボードで OTTO を操作する。
 ///
-/// - 窓をクリックすると、Mac のカーソルを Duo Pad が捕まえる(画面の端で止まらず、動きはすべて OTTO のカーソルへ)
+/// - 窓をクリックすると、Mac のカーソルを Duo Slate が捕まえる(画面の端で止まらず、動きはすべて OTTO のカーソルへ)
 /// - Esc で捕まえるのをやめる。窓から離れた(他のアプリを使った)ときも自動でやめる
 /// - クリック＝押す、押したまま動かす＝ドラッグ、2本指＝スクロール、右クリック＝戻る
 /// - キーボードで打った文字は、そのまま OTTO へ(Return＝決定、Delete＝1文字消す)
 @main
-struct DuoPadMacApp: App {
+struct DuoSlateMacApp: App {
     @StateObject private var link = PadLink()
     /// Mac が省電力でアプリを眠らせる(App Nap)と、「生きているか」の合図が数秒止まり、
     /// OTTO が切れたとみなして往復 11 秒・つなぎ直し 25 回になっていた(2026-10-27)。動いている間は眠らせない。

@@ -16,7 +16,7 @@ import android.view.View;
 import android.view.WindowManager;
 
 /**
- * 汎用モード：ユーザー補助で、OTTO のホームや他のアプリを、Duo Pad のカーソルで操作する。
+ * 汎用モード：ユーザー補助で、OTTO のホームや他のアプリを、Duo Slate のカーソルで操作する。
  * メインスレッドだけで使う。
  *
  * ・カーソルは「ユーザー補助の重ね表示(TYPE_ACCESSIBILITY_OVERLAY)」で出す。他アプリの上に出す許可は要らない

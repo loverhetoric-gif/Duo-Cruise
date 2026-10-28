@@ -83,7 +83,7 @@ class CarPlayPane(context: Context, private val listener: Listener?) {
          * CarPlay に使う Wi-Fi = OTTO 本体のホットスポット(名前と機器番号が変わらない、WPA2)。
          * アプリ専用のアクセスポイント(LocalOnlyHotspot)は起動のたびに名前が変わり、iPhone は最初に入った名前で
          * 車を覚えるため、ペアリング直後の1回しかつながらなかった(2026-10-27・28 実機)。
-         * パスワードは Duo Pad のキーボードで一度だけ入れてもらい、この端末の中にだけ保存する(記録には出さない)。
+         * パスワードは Duo Slate のキーボードで一度だけ入れてもらい、この端末の中にだけ保存する(記録には出さない)。
          */
         private const val OTTO_AP_SSID = "OttoAibox-P3 Pro-99F0"
         private const val WIFI_PREFS = "carplay_wifi"
@@ -269,7 +269,7 @@ class CarPlayPane(context: Context, private val listener: Listener?) {
     }
 
     /**
-     * Duo Pad のキーボードの文字。OTTO の Wi-Fi のパスワードを入力中のときだけ受ける。
+     * Duo Slate のキーボードの文字。OTTO の Wi-Fi のパスワードを入力中のときだけ受ける。
      * 文字は画面に出さず、数だけ「●」で見せる。
      */
     fun typeText(text: String) {
@@ -278,7 +278,7 @@ class CarPlayPane(context: Context, private val listener: Listener?) {
         showTyping()
     }
 
-    /** Duo Pad のキー。入力中のとき、削除で1文字消し、決定で保存してつなぎに行く。 */
+    /** Duo Slate のキー。入力中のとき、削除で1文字消し、決定で保存してつなぎに行く。 */
     fun typeKey(keyCode: Int) {
         val buf = typing ?: return
         when (keyCode) {
@@ -307,7 +307,7 @@ class CarPlayPane(context: Context, private val listener: Listener?) {
         stop()
         app.getSharedPreferences(WIFI_PREFS, Context.MODE_PRIVATE).edit().remove(KEY_PASS).apply()
         askWifiPass()
-        return "OTTO の Wi-Fi のパスワードを消しました。Duo Pad のキーボードで入れ直してください"
+        return "OTTO の Wi-Fi のパスワードを消しました。Duo Slate のキーボードで入れ直してください"
     }
 
     private fun savedWifiPass(): String? =
@@ -317,7 +317,7 @@ class CarPlayPane(context: Context, private val listener: Listener?) {
     private fun askWifiPass() {
         if (typing == null) {
             typing = StringBuilder()
-            record(DuoRecord.KIND_STATE, "OTTO の Wi-Fi のパスワード待ち(Duo Pad のキーボードで入力)")
+            record(DuoRecord.KIND_STATE, "OTTO の Wi-Fi のパスワード待ち(Duo Slate のキーボードで入力)")
         }
         showTyping()
     }

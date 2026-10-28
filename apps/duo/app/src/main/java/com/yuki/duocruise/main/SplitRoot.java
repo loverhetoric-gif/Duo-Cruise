@@ -42,7 +42,7 @@ final class SplitRoot extends ViewGroup {
     /** 入れ替えの動き: 並べ直す前の左端。並べ直した後、ここから新しい場所へ動かす。 */
     private int swapFromCar = Integer.MIN_VALUE, swapFromTv = Integer.MIN_VALUE;
     private ValueAnimator swapAnim;
-    static final long SWAP_MS = 380, GLOW_MS = 2400; // 光は Duo Pad と同じ 2.4 秒
+    static final long SWAP_MS = 380, GLOW_MS = 2400; // 光は Duo Slate と同じ 2.4 秒
 
     SplitRoot(Context c, Listener l) {
         super(c);
@@ -219,10 +219,10 @@ final class SplitRoot extends ViewGroup {
      * メインビューの縁の光。イベント(ターゲット切替=白・接続完了=青・接続不良=赤)の瞬間だけ、
      * 操作中の画面の縁を光らせて消す。常時は出さない(没入優先)。
      *
-     * 作りは設定ビューと同じ三層(Duo Pad の band と同じ。NeonGlow の説明を参照):
+     * 作りは設定ビューと同じ三層(Duo Slate の band と同じ。NeonGlow の説明を参照):
      *   広い裾(46dp を GPU で 48 ぼかし)・中のにじみ(10dp を 11 ぼかし)・外側の細い線(1.6dp)。
-     * 出方は Duo Pad の Envelope と同じ: 0.35 秒で灯り、1.3 秒まで保ち、2.4 秒でゆっくり消える。
-     * その間、明るさの起伏が縁に沿って流れる(Duo Pad の spin e×90°/秒 = 0.25 周/秒)。
+     * 出方は Duo Slate の Envelope と同じ: 0.35 秒で灯り、1.3 秒まで保ち、2.4 秒でゆっくり消える。
+     * その間、明るさの起伏が縁に沿って流れる(Duo Slate の spin e×90°/秒 = 0.25 周/秒)。
      * 四角(半径0)。ペインの端にぴたりと合わせる。
      */
     private final class Frame extends ViewGroup {
@@ -230,7 +230,7 @@ final class SplitRoot extends ViewGroup {
         private final GlowLayer wide, mid;
         private final RectF box = new RectF();
         private ValueAnimator glowAnim;
-        private float edge = 0;                      // 出来事の光の強さ(0〜1)。Duo Pad の Envelope.edge
+        private float edge = 0;                      // 出来事の光の強さ(0〜1)。Duo Slate の Envelope.edge
         private float phase = 0;                     // 明るさの起伏の位置(0〜1 で縁を一周)
         private float strength = 0.55f;              // そのイベントの発光の強さ(設定で変わる)
         private int color = Theme.NEON_WHITE;        // 発光の色(イベント・設定で変わる)

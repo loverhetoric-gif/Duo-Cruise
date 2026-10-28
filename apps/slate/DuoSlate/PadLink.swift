@@ -4,7 +4,7 @@ import QuartzCore
 
 /// OTTO の Duo Cruise とのつながり。
 ///
-/// - Bonjour(_duopad._tcp)で探し、見つからなければ手で入れた住所へつなぐ
+/// - Bonjour(_duopad._tcp。OTTO 側と揃える通信上の名前なので旧名のまま)で探し、見つからなければ手で入れた接続先へつなぐ
 /// - TCP の遅らせる仕組み(Nagle)を切り、指の動きを1つずつすぐ送る
 /// - 1秒ごとに「生きているか」(q 番号)を送り、返事(a 番号)で往復の時間を測る
 /// - 切れたら 0.5 秒後に自動でつなぎ直す
@@ -29,7 +29,7 @@ final class PadLink: ObservableObject {
     @Published private(set) var bluetoothUps = 0
 
     static let port: UInt16 = 47800
-    private let queue = DispatchQueue(label: "duopad.link", qos: .userInteractive)
+    private let queue = DispatchQueue(label: "duoslate.link", qos: .userInteractive)
     private var browser: NWBrowser?
     private var conn: NWConnection?
     private var buffer = Data()

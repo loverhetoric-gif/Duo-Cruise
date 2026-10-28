@@ -3,7 +3,7 @@ import SwiftUI
 import UIKit
 
 @main
-struct DuoPadApp: App {
+struct DuoSlateApp: App {
     @StateObject private var link = PadLink()
     @Environment(\.scenePhase) private var phase
     /// ダークモード: 0＝デバイスの設定に合わせる、1＝オフ(ライト)、2＝オン(ダーク)。

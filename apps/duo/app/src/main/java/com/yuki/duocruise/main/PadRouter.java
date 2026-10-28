@@ -3,7 +3,7 @@ package com.yuki.duocruise.main;
 import android.content.Context;
 
 /**
- * Duo Pad の受け口を、いま前面のアプリに合わせて切り替える。
+ * Duo Slate の受け口を、いま前面のアプリに合わせて切り替える。
  *
  * ・Duo Cruise が前面 → Duo モード(CarPlay・YouTube・操作盤。DuoActivity の窓の中を操作)
  * ・それ以外(OTTO のホームや他のアプリ) → 汎用モード(ユーザー補助で、画面のどこでもカーソルで操作)

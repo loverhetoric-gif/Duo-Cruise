@@ -124,8 +124,8 @@ final class PanelView extends ViewGroup {
         logText.setTypeface(Typeface.MONOSPACE);
         logText.setPadding(px(14), px(10), px(14), px(10));
         list = new ListPane(c);
-        // 縁の光(Duo Pad の band と同じ三層)。ぼかす二層は View ごと GPU でぼかす。細い線は dispatchDraw で最後に引く
-        glowWide = new GlowLayer(c, 46, 48, 1, +1);  // 広い裾。Duo Pad の blur 28pt は Android の半径では 48(σ=0.577r+0.5)
+        // 縁の光(Duo Slate の band と同じ三層)。ぼかす二層は View ごと GPU でぼかす。細い線は dispatchDraw で最後に引く
+        glowWide = new GlowLayer(c, 46, 48, 1, +1);  // 広い裾。Duo Slate の blur 28pt は Android の半径では 48(σ=0.577r+0.5)
         glowMid = new GlowLayer(c, 10, 11, 1, -1);   // 中のにじみ。blur 7pt → 11。逆方向にゆっくり
         addView(glowWide);
         addView(glowMid);
@@ -162,7 +162,7 @@ final class PanelView extends ViewGroup {
         glowStrength = 0.30f * burst;                       // 普段は控えめ(0.30)。応答の光(+0.6)が立つ余地を残す。呼吸はさせない
         glowWide.set(0.38f * glowStrength, 0xFFFFFFFF, phase);
         glowMid.set(0.60f * glowStrength, 0xFFFFFFFF, phase);
-        // 応答の光: コマンダーで選んだ行の縁に寄る(Duo Pad が指の近くを灯すのと同じ。半径 260dp、0.15 秒で灯り 0.6 秒で引く)
+        // 応答の光: コマンダーで選んだ行の縁に寄る(Duo Slate が指の近くを灯すのと同じ。半径 260dp、0.15 秒で灯り 0.6 秒で引く)
         float sk = 0.6f * touchGlow;
         glowWide.spot(touchX, touchY, 260 * dp, 0.38f * sk);
         glowMid.spot(touchX, touchY, 260 * dp, 0.60f * sk);
@@ -209,7 +209,7 @@ final class PanelView extends ViewGroup {
     /** 発光する丸いネオン(オーブ)。色と強さを反映。NEON_EDIT のプレビューに使う。 */
     private void drawOrb(Canvas cv, int color, float level) {
         float k = Math.max(0.3f, level);                 // 0 でも消えないように下限
-        float breath = 1f; // 呼吸はさせない(自分では動かない。Duo Pad と同じ)
+        float breath = 1f; // 呼吸はさせない(自分では動かない。Duo Slate と同じ)
         float r = 20 * dp;
         float cx = getWidth() - px(PAD) - r - 4 * dp, cy = px(PAD) + 13 * dp;
         int a0 = Math.round(210 * k * breath), a1 = Math.round(95 * k * breath);
@@ -252,7 +252,7 @@ final class PanelView extends ViewGroup {
         introAnim.addUpdateListener(a -> { intro = (float) a.getAnimatedValue(); invalidate(); });
         introAnim.start();
         shimmer = android.animation.ValueAnimator.ofFloat(0f, 1f);
-        shimmer.setDuration(72000); // 模様が 72 秒で縁を一周(約 55px/秒。Duo Pad の長辺での速さに揃える)
+        shimmer.setDuration(72000); // 模様が 72 秒で縁を一周(約 55px/秒。Duo Slate の長辺での速さに揃える)
         shimmer.setRepeatCount(android.animation.ValueAnimator.INFINITE);
         shimmer.setInterpolator(new android.view.animation.LinearInterpolator());
         shimmer.addUpdateListener(a -> { phase = (float) a.getAnimatedValue(); invalidate(); list.invalidate(); });
@@ -762,7 +762,7 @@ final class PanelView extends ViewGroup {
         private int lastValue = Integer.MIN_VALUE;
         private float flare = 0;                       // 値が変わった瞬間に灯り、0.6 秒で引く
         private android.animation.ValueAnimator flareAnim;
-        /** 指で触れた・なぞった位置の値にする(DuoPad のカーソルのドラッグも同じ)。 */
+        /** 指で触れた・なぞった位置の値にする(Duo Slate のカーソルのドラッグも同じ)。 */
         Slider target;
 
         SliderBar(Context c) {
@@ -809,7 +809,7 @@ final class PanelView extends ViewGroup {
             invalidate();
         }
 
-        /** 値が動いた。光がふっと強まり、引いていく(Duo Pad の応答と同じ 0.15 秒→0.6 秒)。 */
+        /** 値が動いた。光がふっと強まり、引いていく(Duo Slate の応答と同じ 0.15 秒→0.6 秒)。 */
         private void flare() {
             if (flareAnim != null) flareAnim.cancel();
             float from = flare;

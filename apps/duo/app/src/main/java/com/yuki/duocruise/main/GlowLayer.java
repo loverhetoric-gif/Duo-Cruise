@@ -9,7 +9,7 @@ import android.os.Build;
 import android.view.View;
 
 /**
- * 縁の光の一層。Duo Pad の band() の一行ぶんに当たる:
+ * 縁の光の一層。Duo Slate の band() の一行ぶんに当たる:
  *   shape.stroke(gradient, lineWidth: w).blur(radius: r).opacity(strength)
  *
  * 縁に幅 w の帯(内側半分。外側半分は画面の外なので描かない)を引き、その View ごと GPU でぼかす

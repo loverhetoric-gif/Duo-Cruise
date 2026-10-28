@@ -15,10 +15,10 @@ import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 
 /**
- * iPhone のタッチパッドアプリ(Duo Pad)の受け口。
+ * iPhone のタッチパッドアプリ(Duo Slate)の受け口。
  *
  * ・車の中の Wi-Fi(CarPlay と同じ)で、iPhone から直接つながる。外のサーバーは通らない
- * ・Bonjour(_duopad._tcp)で名乗るので、iPhone は住所を入れなくても見つけられる
+ * ・Bonjour(_duopad._tcp。iPhone 側と揃える通信上の名前なので旧名のまま)で名乗るので、iPhone は住所を入れなくても見つけられる
  * ・1行1つの短い文字の指示。遅れを出さないため Nagle を切る(TCP_NODELAY)
  * ・何台つながってもよい(どれからでも操作できる)。前は「新しい方だけ」にしていたが、
  *   2台が互いを切り合って、0.5 秒ごとにつなぎ直しを繰り返した(2026-10-27)
@@ -84,7 +84,7 @@ final class PadServer {
     void start() {
         if (running) return;
         running = true;
-        Thread t = new Thread(this::acceptLoop, "DuoPad-accept");
+        Thread t = new Thread(this::acceptLoop, "DuoSlate-accept");
         t.setDaemon(true);
         t.start();
         advertise();
@@ -134,7 +134,7 @@ final class PadServer {
                 DuoLog.log("タッチパッド: 待ち受け開始 口=" + PORT);
                 while (running) {
                     Socket c = s.accept();
-                    Thread t = new Thread(() -> serve(c), "DuoPad-client");
+                    Thread t = new Thread(() -> serve(c), "DuoSlate-client");
                     t.setDaemon(true);
                     t.start();
                 }
@@ -241,7 +241,7 @@ final class PadServer {
                 int mode = android.os.Build.VERSION.SDK_INT >= 29
                         ? android.net.wifi.WifiManager.WIFI_MODE_FULL_LOW_LATENCY
                         : android.net.wifi.WifiManager.WIFI_MODE_FULL_HIGH_PERF;
-                wifiLock = wm.createWifiLock(mode, "DuoPad");
+                wifiLock = wm.createWifiLock(mode, "DuoSlate");
                 wifiLock.setReferenceCounted(false);
             }
             if (on) wifiLock.acquire(); else wifiLock.release();

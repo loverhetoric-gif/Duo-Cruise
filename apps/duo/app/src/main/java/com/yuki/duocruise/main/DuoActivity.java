@@ -63,7 +63,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     private KeyRouter router;
     private KeyMap keyMap;
     private KeyMap.Action learnAction;
-    /** iPhone のタッチパッド(Duo Pad)。 */
+    /** iPhone のタッチパッド(Duo Slate)。 */
     private PadInput pad;
     private PadServer padServer;
     private PaneService service;
@@ -801,7 +801,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     }
     @Override public void scrollEnd() { if (panel.getVisibility() == View.VISIBLE) { menuAcc = 0; return; } active().scrollEnd(); }
 
-    /** メニュー表示中の2本指スクロール(DuoPad)。縦になぞった量を、ダイヤルの1目盛りずつに直す。調整中は値が動く。 */
+    /** メニュー表示中の2本指スクロール(Duo Slate)。縦になぞった量を、ダイヤルの1目盛りずつに直す。調整中は値が動く。 */
     private float menuAcc;
     private void menuScroll(float dx, float dy) {
         float v = Math.abs(dy) >= Math.abs(dx) ? dy : dx; // 横になぞっても回せる(スライダーで自然)
