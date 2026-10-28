@@ -120,8 +120,8 @@ final class PanelView extends ViewGroup {
         logText.setPadding(px(14), px(10), px(14), px(10));
         list = new ListPane(c);
         // 縁の光(Duo Pad の band と同じ三層)。ぼかす二層は View ごと GPU でぼかす。細い線は dispatchDraw で最後に引く
-        glowWide = new GlowLayer(c, 46, 28, true);
-        glowMid = new GlowLayer(c, 10, 7, false);
+        glowWide = new GlowLayer(c, 46, 28, 2, +1);  // 広い裾: 模様 2 回、順方向
+        glowMid = new GlowLayer(c, 10, 7, 3, -1);    // 中のにじみ: 模様 3 回、逆方向(干渉で形が変わり続ける)
         addView(glowWide);
         addView(glowMid);
         addView(title);
@@ -151,9 +151,10 @@ final class PanelView extends ViewGroup {
         frameBox.set(0, 0, getWidth(), getHeight());
         // 開いた瞬間に光がふわっと膨らみ(強く・深く)、すぐ落ち着く
         float burst = intro < 0.35f ? intro / 0.35f * 1.35f : 1.35f - 0.35f * (intro - 0.35f) / 0.65f;
-        glowStrength = 0.55f * burst;                       // 普段 0.55(Duo Pad と同じ)
-        glowWide.set(0.38f * glowStrength, NeonGlow.AURORA, phase);
-        glowMid.set(0.60f * glowStrength, NeonGlow.AURORA, phase);
+        float breath = 0.90f + 0.10f * (float) Math.sin(phase * 6 * 2 * Math.PI); // 6 秒で一呼吸
+        glowStrength = 0.55f * burst * breath;              // 普段 0.55(Duo Pad と同じ)
+        glowWide.set(0.38f * glowStrength, 0xFFFFFFFF, phase);
+        glowMid.set(0.60f * glowStrength, 0xFFFFFFFF, phase);
         // 色編集ページ: 今の色・強さを「発光する丸いネオン」として見出しの右にプレビュー
         if (page == NEON_EDIT) drawOrb(cv, host.neonColor(neonWhich) | 0xFF000000, host.neonLevel(neonWhich) / 100f);
     }
@@ -161,7 +162,7 @@ final class PanelView extends ViewGroup {
     @Override protected void dispatchDraw(Canvas cv) {
         super.dispatchDraw(cv);
         // 外側の細い線(1.6dp)。ぼかした二層の上に、くっきりと淡く
-        frameGlow.line(cv, frameBox, dp, Math.min(1f, 1.1f * glowStrength), NeonGlow.AURORA, phase);
+        frameGlow.line(cv, frameBox, dp, Math.min(1f, 1.1f * glowStrength), 0xFFFFFFFF, 2, phase);
     }
 
     /** 発光する丸いネオン(オーブ)。色と強さを反映。NEON_EDIT のプレビューに使う。 */

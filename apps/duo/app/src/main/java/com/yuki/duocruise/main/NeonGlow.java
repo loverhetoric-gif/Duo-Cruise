@@ -3,111 +3,101 @@ package com.yuki.duocruise.main;
 import android.graphics.Canvas;
 import android.graphics.ComposeShader;
 import android.graphics.LinearGradient;
-import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.PorterDuff;
 import android.graphics.RectF;
 import android.graphics.Shader;
-import android.graphics.SweepGradient;
 
 /**
- * 縁の光。Duo Pad(iPhone)の Lights と同じ作り。
+ * 縁の光。Duo Pad の Lights と同じ三層(外側の細い線・中のにじみ・広い裾)で一本の縁を作る。
  *
- * 三層で一本の縁を作る:
- *   1. 外側の細い線(1.6dp)。くっきりと、しかし淡く。これが「縁が灯っている」輪郭になる
- *   2. その内側の中くらいのにじみ(約 12dp)
- *   3. さらに内側へ広く薄く引く光(約 64dp)。ぼかした筆の跡のように、なだらかに消える
- * 三層とも、縁を一周する明るさの並び(4 段階・差はわずか)を共有し、それが 36 秒で一周する。
- * だから光は縁の全周に途切れず在り(大胆)、明るさの差はごくわずかで、ゆっくりと巡る(繊細)。
- * 強さは Duo Pad と同じ桁(普段 0.55)。文字より目立ってはいけない。
+ * 明るさの模様は「縁に沿った距離」で進める。角度(SweepGradient)で回すと、
+ * 1480×480 のような横長では長い辺が角度のごく一部しか受け持たず、長い辺の光がほぼ動かなくなる。
+ * 縁に沿って一定の速さで模様が流れれば、どの辺でも同じように光が巡る。
  *
- * 帯は四隅で 45°に突き合わせた台形で塗るので、角で重なって明るくならない。
- * ぼかしも software レイヤーも使わない(ハードウェア描画)。CarPlay の映像も壊さない。
- * phase は 0〜1 で一周。
+ * 模様は明るさの起伏(PATTERN)を一周に cycles 回並べたもので、層ごとに向きと回数を変えて重ねる。
+ * 重なりが干渉して、同じ形が二度と来ない。そこに「生きている」感じが出る。
+ *
+ * 帯は四隅を 45°で突き合わせた台形。角で重ならない。
+ * ぼかしは GlowLayer(GPU の RenderEffect)が受け持つ。ここでは線と、ぼかし無しの代替(draw)を描く。
  */
 final class NeonGlow {
-    /** メニュー・ターゲット切替の白。明るさの差だけで流れを作る(Duo Pad の switched と同じ)。 */
-    static final int[] AURORA = { 0xFFFFFFFF, 0xBFFFFFFF, 0xFFFFFFFF, 0xD9FFFFFF };
-    /** @deprecated 旧名。AURORA を使う。 */
+    /** 白。模様は明るさの起伏だけ(Duo Pad の switched と同じ考え)。 */
+    static final int[] AURORA = { 0xFFFFFFFF };
+    /** @deprecated 旧名。 */
     static final int[] VIVID = AURORA;
 
-    // 層: 深さ(dp), 強さの係数。外から 線・中・広
-    private static final float LINE_DP = 1.6f;
-    private static final float MID_DP  = 12f;
-    private static final float WIDE_DP = 64f;
+    /** 一周期ぶんの明るさの起伏(0〜1)。山は鋭すぎず、谷は深く。 */
+    static final float[] PATTERN = { 1.00f, 0.82f, 0.50f, 0.36f, 0.58f, 0.92f, 1.00f, 0.74f, 0.44f, 0.66f, 0.96f, 0.86f };
+
+    static final float LINE_DP = 1.6f;
 
     private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final Matrix m = new Matrix();
     private final Path path = new Path();
+    private final float[] edge = new float[8];
 
-    /** 単色(状態色)。Duo Pad の通知色と同じく、近い色を少し白寄りに混ぜて並べる。 */
-    void draw(Canvas dst, RectF box, float dp, float depthDp, float intensity, int color, float phase) {
-        int a = mix(color, 0xFFFFFFFF, 0.30f), b = mix(color, 0xFFFFFFFF, 0.12f), c = mix(color, 0xFFFFFFFF, 0.42f);
-        draw(dst, box, dp, depthDp, intensity, new int[]{ color, a, b, c }, phase);
-    }
+    /** 次に描く帯の濃さ(0〜1)。 */
+    void alpha(float a) { p.setAlpha(Math.round(255 * Math.max(0f, Math.min(1f, a)))); }
 
-    /** 既定(白)。 */
-    void draw(Canvas dst, RectF box, float dp, float intensity, float phase) {
-        draw(dst, box, dp, 0, intensity, AURORA, phase);
-    }
-
-    /** 色の並びで描く。並びは縁を一周し、phase で回る。depthDp は広い層の深さ(0 で既定)。 */
-    void draw(Canvas dst, RectF box, float dp, float depthDp, float intensity, int[] palette, float phase) {
-        if (intensity <= 0 || box.width() < 2 || box.height() < 2) return;
-        float k = Math.min(1.5f, intensity);
-        float wide = Math.min((depthDp > 0 ? depthDp : WIDE_DP) * dp, Math.min(box.width(), box.height()) * 0.45f);
-
-        int[] cols = new int[palette.length + 1];
-        System.arraycopy(palette, 0, cols, 0, palette.length);
-        cols[palette.length] = palette[0];
-        SweepGradient sweep = new SweepGradient(box.centerX(), box.centerY(), cols, null);
-        m.setRotate(phase * 360f, box.centerX(), box.centerY());
-        sweep.setLocalMatrix(m);
-
-        // 3. 広く薄く(ぼかした太い筆: なだらかな裾)
-        halo(dst, box, wide, sweep, 0.34f * k, new float[]{ 0f, 0.15f, 0.40f, 0.70f, 1f }, new float[]{ 1f, 0.72f, 0.36f, 0.10f, 0f });
-        // 2. 中くらい
-        halo(dst, box, MID_DP * dp, sweep, 0.55f * k, new float[]{ 0f, 0.5f, 1f }, new float[]{ 1f, 0.45f, 0f });
-        // 1. 外側の細い線
-        halo(dst, box, LINE_DP * dp, sweep, Math.min(1f, 0.8f * k), new float[]{ 0f, 1f }, new float[]{ 1f, 1f });
-    }
-
-    /** 外側の細い線だけを引く(ぼかした層は GlowLayer が受け持つとき用)。 */
-    void line(Canvas dst, RectF box, float dp, float strength, int[] palette, float phase) {
-        if (strength <= 0 || box.width() < 2 || box.height() < 2) return;
-        int[] cols = new int[palette.length + 1];
-        System.arraycopy(palette, 0, cols, 0, palette.length);
-        cols[palette.length] = palette[0];
-        SweepGradient sweep = new SweepGradient(box.centerX(), box.centerY(), cols, null);
-        m.setRotate(phase * 360f, box.centerX(), box.centerY());
-        sweep.setLocalMatrix(m);
-        halo(dst, box, LINE_DP * dp, sweep, Math.min(1f, strength), new float[]{ 0f, 1f }, new float[]{ 1f, 1f });
+    /** 外側の細い線。模様 cycles 回・位置 u(0〜1 で一周)。 */
+    void line(Canvas dst, RectF box, float dp, float strength, int color, int cycles, float u) {
+        if (strength <= 0) return;
+        p.setAlpha(Math.round(255 * Math.min(1f, strength)));
+        ribbon(dst, box, LINE_DP * dp, color, cycles, u, null, null);
     }
 
     /**
-     * 縁から内側へ深さ d の帯を、四隅を 45°で突き合わせた台形で塗る。
-     * 色は sweep、濃さは縁からの距離の曲線(pos/alpha)で決める。
+     * 縁から内側へ深さ d の帯を、縁に沿って流れる明るさの模様で塗る。
+     * pos/alpha を渡すと、縁→内側の濃さの曲線で切り抜く(ぼかし無しの代替用)。
      */
-    private void halo(Canvas dst, RectF b, float d, Shader sweep, float strength, float[] pos, float[] alpha) {
-        if (d < 0.5f || strength <= 0) return;
-        int[] mask = new int[alpha.length];
-        for (int i = 0; i < alpha.length; i++) mask[i] = (Math.round(255 * alpha[i]) << 24) | 0xFFFFFF;
-        p.setAlpha(Math.round(255 * Math.min(1f, strength)));
+    void ribbon(Canvas dst, RectF b, float d, int color, int cycles, float u, float[] pos, float[] alpha) {
+        if (d < 0.5f || b.width() < 2 || b.height() < 2) return;
+        float w = b.width(), h = b.height(), per = 2 * (w + h);
         float l = b.left, t = b.top, r = b.right, bt = b.bottom;
-        // 上
+        int[] mask = null;
+        if (pos != null) {
+            mask = new int[alpha.length];
+            for (int i = 0; i < alpha.length; i++) mask[i] = (Math.round(255 * alpha[i]) << 24) | 0xFFFFFF;
+        }
+        // 上(左→右)
         trapezoid(l, t, r, t, r - d, t + d, l + d, t + d);
-        fill(dst, sweep, new LinearGradient(0, t, 0, t + d, mask, pos, Shader.TileMode.CLAMP));
-        // 下
-        trapezoid(l, bt, r, bt, r - d, bt - d, l + d, bt - d);
-        fill(dst, sweep, new LinearGradient(0, bt, 0, bt - d, mask, pos, Shader.TileMode.CLAMP));
-        // 左
-        trapezoid(l, t, l, bt, l + d, bt - d, l + d, t + d);
-        fill(dst, sweep, new LinearGradient(l, 0, l + d, 0, mask, pos, Shader.TileMode.CLAMP));
-        // 右
+        fill(dst, along(l, t, r, t, 0, w, per, color, cycles, u), mask == null ? null : new LinearGradient(0, t, 0, t + d, mask, pos, Shader.TileMode.CLAMP));
+        // 右(上→下)
         trapezoid(r, t, r, bt, r - d, bt - d, r - d, t + d);
-        fill(dst, sweep, new LinearGradient(r, 0, r - d, 0, mask, pos, Shader.TileMode.CLAMP));
+        fill(dst, along(r, t, r, bt, w, w + h, per, color, cycles, u), mask == null ? null : new LinearGradient(r, 0, r - d, 0, mask, pos, Shader.TileMode.CLAMP));
+        // 下(右→左)
+        trapezoid(r, bt, l, bt, l + d, bt - d, r - d, bt - d);
+        fill(dst, along(r, bt, l, bt, w + h, 2 * w + h, per, color, cycles, u), mask == null ? null : new LinearGradient(0, bt, 0, bt - d, mask, pos, Shader.TileMode.CLAMP));
+        // 左(下→上)
+        trapezoid(l, bt, l, t, l + d, t + d, l + d, bt - d);
+        fill(dst, along(l, bt, l, t, 2 * w + h, per, per, color, cycles, u), mask == null ? null : new LinearGradient(l, 0, l + d, 0, mask, pos, Shader.TileMode.CLAMP));
         p.setShader(null);
+    }
+
+    /** 一辺に沿った明るさのグラデ。辺は縁の距離 s0〜s1 を受け持ち、模様はその距離で決まる。 */
+    private static Shader along(float x0, float y0, float x1, float y1, float s0, float s1, float per, int color, int cycles, float u) {
+        int n = 1 + Math.max(4, Math.round((s1 - s0) / per * cycles * PATTERN.length)); // 辺の長さに応じた標本数
+        int[] cols = new int[n];
+        float[] pos = new float[n];
+        for (int i = 0; i < n; i++) {
+            float f = i / (float) (n - 1);
+            float s = s0 + (s1 - s0) * f;
+            float v = pattern(frac(s / per * cycles + u));
+            cols[i] = (Math.round(255 * v) << 24) | (color & 0xFFFFFF);
+            pos[i] = f;
+        }
+        return new LinearGradient(x0, y0, x1, y1, cols, pos, Shader.TileMode.CLAMP);
+    }
+
+    /** PATTERN を滑らかに(cos 補間で)引く。x は 0〜1。 */
+    static float pattern(float x) {
+        float fx = x * PATTERN.length;
+        int i = (int) Math.floor(fx);
+        float f = fx - i;
+        float a = PATTERN[i % PATTERN.length], b = PATTERN[(i + 1) % PATTERN.length];
+        float k = (1 - (float) Math.cos(Math.PI * f)) * 0.5f;
+        return a + (b - a) * k;
     }
 
     private void trapezoid(float x0, float y0, float x1, float y1, float x2, float y2, float x3, float y3) {
@@ -115,12 +105,42 @@ final class NeonGlow {
         path.moveTo(x0, y0); path.lineTo(x1, y1); path.lineTo(x2, y2); path.lineTo(x3, y3); path.close();
     }
 
-    private void fill(Canvas dst, Shader color, Shader mask) {
-        p.setShader(new ComposeShader(color, mask, PorterDuff.Mode.DST_IN)); // 色を、縁→内側の濃さで切り抜く
+    private void fill(Canvas dst, Shader color, Shader inward) {
+        p.setShader(inward == null ? color : new ComposeShader(color, inward, PorterDuff.Mode.DST_IN));
         dst.drawPath(path, p);
     }
 
-    private static int mix(int a, int b, float f) {
+    static float frac(float v) { v = v % 1f; return v < 0 ? v + 1f : v; }
+
+    // ───────── ぼかし無しの代替(メインビューの一瞬の光など、GlowLayer を持たない所) ─────────
+
+    private static final float[] WIDE_POS = { 0f, 0.15f, 0.40f, 0.70f, 1f }, WIDE_A = { 1f, 0.72f, 0.36f, 0.10f, 0f };
+    private static final float[] MID_POS = { 0f, 0.5f, 1f }, MID_A = { 1f, 0.45f, 0f };
+
+    /** 単色(状態色)。三層を、ぼかしの代わりに縁→内側の濃さの曲線で描く。 */
+    void draw(Canvas dst, RectF box, float dp, float depthDp, float intensity, int color, float phase) {
+        if (intensity <= 0) return;
+        float k = Math.min(1.5f, intensity);
+        float wide = Math.min((depthDp > 0 ? depthDp : 64) * dp, Math.min(box.width(), box.height()) * 0.45f);
+        p.setAlpha(Math.round(255 * Math.min(1f, 0.34f * k)));
+        ribbon(dst, box, wide, mix(color, 0xFFFFFFFF, 0.3f), 2, phase, WIDE_POS, WIDE_A);
+        p.setAlpha(Math.round(255 * Math.min(1f, 0.55f * k)));
+        ribbon(dst, box, 12 * dp, mix(color, 0xFFFFFFFF, 0.15f), 3, -phase, MID_POS, MID_A);
+        p.setAlpha(Math.round(255 * Math.min(1f, 0.8f * k)));
+        ribbon(dst, box, LINE_DP * dp, mix(color, 0xFFFFFFFF, 0.45f), 2, phase, null, null);
+    }
+
+    /** 既定(白)。 */
+    void draw(Canvas dst, RectF box, float dp, float intensity, float phase) {
+        draw(dst, box, dp, 0, intensity, Theme.NEON_WHITE, phase);
+    }
+
+    /** 旧 API(色の並び)。先頭色で描く。 */
+    void draw(Canvas dst, RectF box, float dp, float depthDp, float intensity, int[] palette, float phase) {
+        draw(dst, box, dp, depthDp, intensity, palette[0], phase);
+    }
+
+    static int mix(int a, int b, float f) {
         int ar = (a >> 16) & 0xFF, ag = (a >> 8) & 0xFF, ab = a & 0xFF;
         int br = (b >> 16) & 0xFF, bg = (b >> 8) & 0xFF, bb = b & 0xFF;
         return 0xFF000000 | (Math.round(ar + (br - ar) * f) << 16) | (Math.round(ag + (bg - ag) * f) << 8) | Math.round(ab + (bb - ab) * f);
