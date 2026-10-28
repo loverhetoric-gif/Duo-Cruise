@@ -12,6 +12,19 @@ struct Palette {
     let surface, edge, key, icon, glow: Color
     /// 暗い地か(光は暗い地でだけにじませる)。
     var dark = false
+
+    /// 普段の光の色の流れ。夜は白の濃淡、昼はアイコン(白地版)と同じ暖色→寒色。
+    var flow: [Color] {
+        if dark { return [glow, glow.opacity(0.75), glow, glow.opacity(0.85)] }
+        return Palette.iconFlow
+    }
+
+    /// アイコン(白地版)の色: 朱 → オレンジ → 桃 → 淡い水色 → 空色 → 青。
+    static let iconFlow: [Color] = [
+        Color(red: 0.94, green: 0.41, blue: 0.29), Color(red: 0.99, green: 0.55, blue: 0.33),
+        Color(red: 1.00, green: 0.71, blue: 0.43), Color(red: 0.59, green: 0.82, blue: 1.00),
+        Color(red: 0.35, green: 0.63, blue: 0.96), Color(red: 0.16, green: 0.35, blue: 0.82),
+    ]
     static let day = Palette(surface: Color(white: 0.95), edge: Color(white: 0.82), key: Color(white: 0.905),
                              icon: Color(white: 0.30), glow: Color(red: 0.16, green: 0.38, blue: 0.94))
     static let night = Palette(surface: Color(white: 0.055), edge: Color(white: 0.15), key: Color(white: 0.09),
@@ -64,10 +77,12 @@ struct Notice: Equatable {
         // 昼の白い地では、白寄りの淡い色は溶けて見えない。同じ色相の、濃く澄んだ色を使う
         if !c.dark {
             switch kind {
-            case .duo: return [rgb(0.10, 0.36, 0.92), rgb(0.16, 0.52, 0.98), rgb(0.24, 0.30, 0.90), rgb(0.10, 0.62, 0.95)]
+            // 接続完了: アイコンの青(やや紫寄りの落ち着いた青)と分けるため、澄んだ鮮やかな青 1 色
+            case .duo: return [rgb(0.00, 0.45, 1.00), rgb(0.00, 0.50, 1.00), rgb(0.00, 0.45, 1.00), rgb(0.05, 0.52, 1.00)]
             case .bluetooth: return [rgb(0.05, 0.62, 0.42), rgb(0.02, 0.55, 0.55), rgb(0.30, 0.66, 0.15), rgb(0.05, 0.70, 0.52)]
-            case .lost: return [rgb(0.88, 0.22, 0.18), rgb(0.86, 0.15, 0.36), rgb(0.92, 0.38, 0.12), rgb(0.85, 0.25, 0.30)]
-            case .switched: return [c.glow, c.glow.opacity(0.7), c.glow, c.glow.opacity(0.8)]
+            // 切断: アイコンの朱(オレンジ寄り)と分けるため、青みのある深い赤 1 色
+            case .lost: return [rgb(0.80, 0.04, 0.22), rgb(0.76, 0.02, 0.26), rgb(0.80, 0.04, 0.22), rgb(0.84, 0.06, 0.24)]
+            case .switched: return Palette.iconFlow
             }
         }
         switch kind {
@@ -163,7 +178,7 @@ struct Lights: View {
                     shape.stroke(c.edge, lineWidth: 1)
                     if connected {
                         // 普段: 白い光。操作している側の半分を強く
-                        band(shape, [c.glow, c.glow.opacity(0.75), c.glow, c.glow.opacity(0.85)], spin: t * 8, strength: 0.55 * dim)
+                        band(shape, c.flow, spin: t * 8, strength: 0.55 * dim)
                             .mask(sideMask)
                     } else {
                         // 切れている間: うっすら赤が息をする
@@ -171,7 +186,7 @@ struct Lights: View {
                              strength: (0.22 + 0.12 * sin(t * 1.6)) * dim)
                     }
                     if let p = touch, touchGlow > 0 {
-                        band(shape, [c.glow, c.glow], spin: 0, strength: 0.6 * touchGlow * dim)
+                        band(shape, c.dark ? [c.glow, c.glow] : c.flow, spin: t * 8, strength: 0.6 * touchGlow * dim)
                             .mask(RadialGradient(colors: [.white, .clear],
                                                  center: UnitPoint(x: p.x / max(size.width, 1), y: p.y / max(size.height, 1)),
                                                  startRadius: 0, endRadius: 260))

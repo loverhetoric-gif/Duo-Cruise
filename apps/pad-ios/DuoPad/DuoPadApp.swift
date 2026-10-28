@@ -46,6 +46,10 @@ struct PadScreen: View {
         return theme == 2 || (theme == 0 && scheme == .dark)
     }
     private var c: Palette {
+        #if DEBUG
+        // 確認用: 環境変数 DUO_DAY=1 で、つながっていても昼の配色にする
+        if ProcessInfo.processInfo.environment["DUO_DAY"] == "1" { return .day }
+        #endif
         if connected { return link.mode == "generic" ? .grey : .night }
         return (theme == 2 || (theme == 0 && scheme == .dark)) ? .night : .day
     }
