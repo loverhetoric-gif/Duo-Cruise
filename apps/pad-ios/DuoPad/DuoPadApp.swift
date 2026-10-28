@@ -6,7 +6,7 @@ import UIKit
 struct DuoPadApp: App {
     @StateObject private var link = PadLink()
     @Environment(\.scenePhase) private var phase
-    /// 配色: 0＝自動(iPhone の昼・夜に合わせる)、1＝昼、2＝夜。
+    /// ダークモード: 0＝デバイスの設定に合わせる、1＝オフ(ライト)、2＝オン(ダーク)。
     @AppStorage("theme") private var theme = 0
 
     var body: some Scene {
@@ -30,8 +30,6 @@ struct PadScreen: View {
     @AppStorage("sensitivity") private var sensitivity = 1.0
     @AppStorage("acceleration") private var acceleration = 1.0
     @AppStorage("theme") private var theme = 0
-    /// 昼夜の切り替え。オンなら、Duo Cruise につながっている間も昼・夜で配色を変える。オフなら、つながっている間は夜の配色。
-    @AppStorage("dayNight") private var dayNight = false
     /// 面の色とネオンの配色(昼・夜それぞれ)。設定で選ぶ。
     @AppStorage("dayTone") private var dayTone = PadTone.white.rawValue
     @AppStorage("nightTone") private var nightTone = PadTone.black.rawValue
@@ -46,10 +44,8 @@ struct PadScreen: View {
     /// いま知らせている出来事(青・緑・赤の光)。普段は nil(白)。
     @State private var notice: Notice?
 
-    // 接続中は、モードで色を決める: Duo Cruise の中＝昼夜問わず暗く / ホーム等＝グレー。
-    // つながっていない間は、いつもの昼・夜に合わせる。
+    // 配色は設定のダークモード(オン/オフ/デバイスの設定)に従う。ホーム等を操作中だけはグレー。
     private var night: Bool {
-        if connected && !dayNight { return true }
         return theme == 2 || (theme == 0 && scheme == .dark)
     }
     private var c: Palette {
@@ -60,7 +56,6 @@ struct PadScreen: View {
         if ProcessInfo.processInfo.environment["DUO_DAY"] == "1" { return dayPal }
         #endif
         if connected && link.mode == "generic" { return .grey }
-        if connected && !dayNight { return nightPal }
         return (theme == 2 || (theme == 0 && scheme == .dark)) ? nightPal : dayPal
     }
 
@@ -115,7 +110,7 @@ struct PadScreen: View {
         .onChange(of: link.bluetoothUps) { _, _ in notice = Notice(kind: .bluetooth) }
         .onChange(of: link.switches) { _, _ in notice = Notice(kind: .switched) }
         .sheet(isPresented: $settings) {
-            SettingsSheet(sensitivity: $sensitivity, acceleration: $acceleration, theme: $theme, dayNight: $dayNight,
+            SettingsSheet(sensitivity: $sensitivity, acceleration: $acceleration, theme: $theme,
                           dayTone: $dayTone, nightTone: $nightTone, dayNeon: $dayNeon, nightNeon: $nightNeon)
         }
     }
@@ -236,7 +231,6 @@ struct SettingsSheet: View {
     @Binding var sensitivity: Double
     @Binding var acceleration: Double
     @Binding var theme: Int
-    @Binding var dayNight: Bool
     @Binding var dayTone: String
     @Binding var nightTone: String
     @Binding var dayNeon: String
@@ -257,24 +251,19 @@ struct SettingsSheet: View {
                         Slider(value: $acceleration, in: 0...3, step: 0.1)
                     }
                 }
-                Section {
-                    Toggle("昼夜の切り替え", isOn: $dayNight)
-                    Picker("配色", selection: $theme) {
-                        Text("自動").tag(0); Text("昼").tag(1); Text("夜").tag(2)
+                Section("ダークモード") {
+                    Picker("ダークモード", selection: $theme) {
+                        Text("オン").tag(2); Text("オフ").tag(1); Text("デバイスの設定").tag(0)
                     }
                     .pickerStyle(.segmented)
-                } header: { Text("配色") } footer: {
-                    Text(dayNight
-                         ? "Duo Cruise の操作中も、昼・夜に合わせて配色が変わります。「自動」は iPhone の外観モードに合わせます。"
-                         : "Duo Cruise の操作中は、いつも夜の配色です。昼・夜の配色は、つながっていない間だけ使います。")
                 }
                 Section {
-                    ToneRow(title: "昼", tones: PadTone.dayTones, selection: $dayTone)
-                    ToneRow(title: "夜", tones: PadTone.nightTones, selection: $nightTone)
+                    ToneRow(title: "ライト", tones: PadTone.dayTones, selection: $dayTone)
+                    ToneRow(title: "ダーク", tones: PadTone.nightTones, selection: $nightTone)
                 } header: { Text("タッチパッドの配色") }
                 Section("ネオンの配色") {
-                    NeonRow(title: "昼", dark: false, selection: $dayNeon)
-                    NeonRow(title: "夜", dark: true, selection: $nightNeon)
+                    NeonRow(title: "ライト", dark: false, selection: $dayNeon)
+                    NeonRow(title: "ダーク", dark: true, selection: $nightNeon)
                 }
                 Section {
                     TextField("空欄のままで大丈夫です(例 192.168.43.1)", text: $host)
@@ -284,9 +273,8 @@ struct SettingsSheet: View {
                 } header: { Text("接続先の指定(通常は不要)") } footer: {
                     Text("通常は空欄のままにしてください。車の Wi-Fi から OTTO を自動で見つけます。うまくつながらないときだけ、OTTO の IP アドレスを入力します。")
                 }
-                Section("つながり") {
-                    Text("つなぎ直した回数 \(link.reconnects)")
-                    Button("今すぐつなぎ直す") { link.restart() }
+                Section("接続") {
+                    Button("OTTO に接続し直す") { link.restart() }
                 }
             }
             .navigationTitle("Duo Slate の設定")
@@ -304,7 +292,7 @@ struct ToneRow: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            Text(title).frame(width: 28, alignment: .leading)
+            Text(title).font(.subheadline).frame(width: 52, alignment: .leading)
             ForEach(tones) { t in
                 Button { selection = t.rawValue } label: {
                     VStack(spacing: 6) {
@@ -334,7 +322,7 @@ struct NeonRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            Text(title).frame(width: 28, alignment: .leading).padding(.top, 8)
+            Text(title).font(.subheadline).frame(width: 52, alignment: .leading).padding(.top, 8)
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 10)], spacing: 10) {
                 ForEach(NeonPreset.allCases) { n in
                     Button { selection = n.rawValue } label: {
