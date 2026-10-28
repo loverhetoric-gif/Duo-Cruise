@@ -348,7 +348,7 @@ final class PanelView extends ViewGroup {
         for (int i = 0; i < list.getChildCount() && i < items.size(); i++) {
             Row r = (Row) list.getChildAt(i);
             ((TextView) r.getChildAt(0)).setText(items.get(i).label.get());
-            paintRow(i, r.isFocused());
+            paintRow(i, i == focus);  // 選択中の行(高さと文字の大きさを必ず揃える)
         }
         if (page == LOG) {
             List<String> all = DuoLog.snapshot();
@@ -369,6 +369,8 @@ final class PanelView extends ViewGroup {
         if (list.getChildCount() == 0) return;
         focus = Math.max(0, Math.min(list.getChildCount() - 1, i));
         list.getChildAt(focus).requestFocus();
+        list.requestLayout();  // タッチ操作中はフォーカスが付かないこともあるので、必ず描き直す
+        refresh();
     }
 
     // ───────── キー(コマンダー) ─────────
