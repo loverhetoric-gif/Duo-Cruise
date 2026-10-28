@@ -104,10 +104,11 @@ final class SplitRoot extends ViewGroup {
         frame.invalidate();
     }
 
-    void showLabel(String text) { frame.label(text); }
-
-    /** 操作側を切り替えた直後: 操作側の輪郭を細い虹色の光が一瞬だけ囲う。 */
+    /** 操作側(ターゲット)を切り替えた直後: 操作中の画面の縁をひときわ強く光らせる。 */
     void glow() { frame.glow(); }
+
+    /** 発光の色を状態に合わせて変える(白＝既定／ティール＝CarPlay接続中／青＝ナビ中 など)。 */
+    void setGlowColor(int color) { frame.setColor(color); }
 
     /**
      * 入れ替えの動き: 2つの枠が左右に「くるっと」すれ違う。
@@ -195,107 +196,61 @@ final class SplitRoot extends ViewGroup {
     }
 
     @Override public boolean onInterceptTouchEvent(MotionEvent e) {
-        if (!padScrolling && e.getActionMasked() == MotionEvent.ACTION_DOWN && (panel == null || panel.getVisibility() != VISIBLE)) {
+        if (panel != null && panel.getVisibility() == VISIBLE) {
+            // メニュー表示中: メニューの中はメニューが扱う。外(後ろの YouTube など)への操作は一切通さない
+            float x = e.getX(), y = e.getY();
+            boolean inPanel = x >= panel.getLeft() && x < panel.getRight() && y >= panel.getTop() && y < panel.getBottom();
+            return !inPanel; // 外側は横取りして捨てる
+        }
+        if (!padScrolling && e.getActionMasked() == MotionEvent.ACTION_DOWN) {
             float x = e.getX() - getPaddingLeft();
             listener.touched(x < contentW() / 2f ? SplitGeometry.SIDE_LEFT : SplitGeometry.SIDE_RIGHT);
         }
         return false;
     }
 
-    /** 操作している側の周りの線(3dp)と、切り替えたときに少しだけ出る札。 */
+    @Override public boolean onTouchEvent(MotionEvent e) {
+        // メニュー表示中に横取りした「メニュー外」のタッチを飲み込む(後ろの画面を操作させない)
+        return panel != null && panel.getVisibility() == VISIBLE;
+    }
+
+    /**
+     * 操作中(ターゲット)の画面の縁を、白いネオンでほのかに常時光らせる。切り替えた直後だけ強く光る。
+     * アプリ全体で同じ発光(Theme.neonEdge)を使い、統一感を出す。余計な文字札などは出さない。
+     */
     private final class Frame extends View {
-        private final Paint line = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final Paint pill = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final Paint text = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final Paint rainbow = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final Paint halo = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final Matrix spin = new Matrix();
+        private static final float STEADY = 0.42f; // 操作中の画面の、常時のほのかな発光の強さ
         private ValueAnimator glowAnim;
-        /** 虹色の光の強さ(0〜1)と、光の回り具合(0〜1)。 */
-        private float glow = 0, turn = 0;
-        /** 入れ替えで動いている間は、操作側の線を描かない。 */
+        private float pulse = 0;                    // 切り替え直後の増光(1→0 へ減衰)
+        private int color = Theme.NEON_WHITE;       // 発光の色(状態で変わる。既定は白)
+        /** 入れ替えで動いている間は縁を描かない。 */
         boolean moving;
-        private String label = "";
-        private float alpha = 0;
-        private final Runnable fade = new Runnable() {
-            @Override public void run() {
-                alpha -= 0.1f;
-                if (alpha > 0) postDelayed(this, 30); else alpha = 0;
-                invalidate();
-            }
-        };
 
         Frame(Context c) {
             super(c);
-            line.setStyle(Paint.Style.STROKE);
-            line.setStrokeWidth(3 * dp);
-            line.setColor(Theme.ACCENT);
-            pill.setColor(Theme.ACCENT);
-            text.setColor(Color.WHITE);
-            text.setTextSize(16 * dp);
-            text.setFakeBoldText(true);
-            rainbow.setStyle(Paint.Style.STROKE);
-            rainbow.setStrokeWidth(2 * dp);
-            halo.setStyle(Paint.Style.STROKE);
-            halo.setStrokeWidth(7 * dp);
+            setLayerType(LAYER_TYPE_SOFTWARE, null); // 発光のぼかしに必要
             setWillNotDraw(false);
         }
 
+        void setColor(int c) { if (c != color) { color = c; invalidate(); } }
+
         void glow() {
             if (glowAnim != null) glowAnim.cancel();
-            glowAnim = ValueAnimator.ofFloat(0f, 1f);
+            glowAnim = ValueAnimator.ofFloat(1f, 0f);
             glowAnim.setDuration(GLOW_MS);
-            glowAnim.addUpdateListener(a -> {
-                float f = (float) a.getAnimatedValue();
-                turn = f;
-                glow = f < 0.2f ? f / 0.2f : 1 - (f - 0.2f) / 0.8f; // すっと出て、ゆっくり消える
-                invalidate();
-            });
+            glowAnim.setInterpolator(new AccelerateDecelerateInterpolator());
+            glowAnim.addUpdateListener(a -> { pulse = (float) a.getAnimatedValue(); invalidate(); });
             glowAnim.start();
         }
 
-        private void drawGlow(Canvas cv, RectF box) {
-            if (glow <= 0) return;
-            float cx = box.centerX(), cy = box.centerY();
-            SweepGradient g = new SweepGradient(cx, cy, new int[]{
-                    0xFFFF3B30, 0xFFFF9500, 0xFFFFCC00, 0xFF34C759, 0xFF00C7FF, 0xFF5856D6, 0xFFFF2D9A, 0xFFFF3B30}, null);
-            spin.setRotate(360 * turn, cx, cy); // 光が輪郭を回る
-            g.setLocalMatrix(spin);
-            rainbow.setShader(g);
-            halo.setShader(g);
-            rainbow.setAlpha(Math.round(255 * glow));
-            halo.setAlpha(Math.round(70 * glow));
-            float r = 6 * dp;
-            cv.drawRoundRect(box, r, r, halo);
-            cv.drawRoundRect(box, r, r, rainbow);
-        }
-
-        void label(String s) {
-            label = s;
-            alpha = 1;
-            removeCallbacks(fade);
-            postDelayed(fade, 1400);
-            invalidate();
-        }
-
         @Override protected void onDraw(Canvas cv) {
+            // 操作盤が出ている間、入れ替えで動いている間は、画面の縁は描かない
+            if (moving || (panel != null && panel.getVisibility() == VISIBLE)) return;
             int w = getWidth(), h = getHeight();
             int[] r = activeRect(w, h);
-            float s = line.getStrokeWidth() / 2;
-            // 操作側の太い線は常には描かない(本人: 邪魔)。切り替えた直後の虹色の光だけ
-            if ((panel == null || panel.getVisibility() != VISIBLE) && !moving) {
-                RectF box = new RectF(r[0] + s, r[1] + s, r[2] - s, r[3] - s);
-                drawGlow(cv, box);
-            }
-            if (alpha > 0 && !label.isEmpty()) {
-                float tw = text.measureText(label);
-                float pw = tw + 28 * dp, ph = 36 * dp;
-                float cx = (r[0] + r[2]) / 2f, top = r[1] + 16 * dp;
-                pill.setAlpha(Math.round(230 * alpha));
-                text.setAlpha(Math.round(255 * alpha));
-                cv.drawRoundRect(new RectF(cx - pw / 2, top, cx + pw / 2, top + ph), ph / 2, ph / 2, pill);
-                cv.drawText(label, cx - tw / 2, top + ph / 2 + text.getTextSize() * 0.35f, text);
-            }
+            float s = 3 * dp;
+            RectF box = new RectF(r[0] + s, r[1] + s, r[2] - s, r[3] - s);
+            Theme.neonEdge(cv, box, dp, 12 * dp, STEADY + (1 - STEADY) * pulse, color);
         }
     }
 }

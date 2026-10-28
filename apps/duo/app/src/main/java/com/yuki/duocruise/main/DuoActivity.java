@@ -349,8 +349,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         Store.setSide(this, side);
         relayout();
         focusActive();
-        root.showLabel("操作: " + active().name());
-        root.glow();
+        root.glow(); // ターゲット切り替え: 操作中の画面の縁をひときわ光らせる
         DuoLog.log("操作する側: " + sideText());
     }
 
@@ -363,6 +362,15 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         if (curYt < 0) curYt = Store.splitYt(this);
         root.setSingle(Store.single(this));
         root.apply(Store.swapped(this), Store.side(this), Store.panelHalf(this), curYt);
+        updateGlow();
+    }
+
+    /** 操作中の画面の縁の発光色を、状態に合わせて決める。基本は白。 */
+    private void updateGlow() {
+        int c = Theme.NEON_WHITE;
+        if (navEngaged) c = Theme.NEON_NAV;                                   // ナビ案内中: 青
+        else if (carOn() && carBluetooth(safeStatus(car))) c = Theme.NEON_LINK; // CarPlay 接続中: ティール
+        root.setGlowColor(c);
     }
 
     /** 比率をなめらかに変える。 */
@@ -431,6 +439,19 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         if (!navEngaged) animateYt(v);
     }
     @Override public void cycleNavYt() { int v = Store.navYt(this) + 10; if (v > 100) v = 30; Store.setNavYt(this, v); if (navEngaged) animateYt(v); }
+    // スライダーでの増減(左右で 5% ずつ)。
+    @Override public int splitYtPct() { return Store.splitYt(this); }
+    @Override public int navYtPct() { return Store.navYt(this); }
+    @Override public void adjustSplitYt(int dir) {
+        int v = SplitGeometry.clampYt(Store.splitYt(this) + dir * 5);
+        Store.setSplitYt(this, v);
+        if (!navEngaged) animateYt(v);
+    }
+    @Override public void adjustNavYt(int dir) {
+        int v = SplitGeometry.clampYt(Store.navYt(this) + dir * 5);
+        Store.setNavYt(this, v);
+        if (navEngaged) animateYt(v);
+    }
     @Override public void toggleAutoSplit() { Store.setAutoSplit(this, !Store.autoSplit(this)); updateNavSplit(); }
     @Override public void toggleAutoSwap() { Store.setAutoSwap(this, !Store.autoSwap(this)); }
     @Override public void cycleNavHold() { long v = Store.navHoldMs(this) / 1000 + 2; if (v > 12) v = 3; Store.setNavHoldMs(this, v * 1000); }
@@ -445,8 +466,6 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         Store.setSingle(this, !Store.single(this));
         relayout();
         focusActive();
-        root.showLabel(Store.single(this) ? active().name() + " だけ" : "2画面");
-        root.glow();
         DuoLog.log("表示: " + (Store.single(this) ? "1画面 " + active().name() : "2画面"));
     }
 
@@ -457,7 +476,6 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         Store.setSide(this, Store.side(this) == SplitGeometry.SIDE_LEFT ? SplitGeometry.SIDE_RIGHT : SplitGeometry.SIDE_LEFT);
         relayout();
         focusActive();
-        root.showLabel(layoutText());
         DuoLog.log("入れ替え: " + layoutText());
     }
 
@@ -695,9 +713,9 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     /** タスクボタン長押し: 設定メニューを開く。 */
     @Override public void openMenu() { if (panel.getVisibility() != View.VISIBLE) openPanel(); }
 
-    /** 2本指スクロールは、操作中の画面本来の送り方(YouTube=矢印、CarPlay=ダイヤル)に渡す。 */
-    @Override public void scroll(float dx, float dy) { active().scroll(dx, dy); }
-    @Override public void scrollEnd() { active().scrollEnd(); }
+    /** 2本指スクロールは、操作中の画面本来の送り方(YouTube=矢印、CarPlay=ダイヤル)に渡す。メニュー表示中は裏へ渡さない。 */
+    @Override public void scroll(float dx, float dy) { if (panel.getVisibility() == View.VISIBLE) return; active().scroll(dx, dy); }
+    @Override public void scrollEnd() { if (panel.getVisibility() == View.VISIBLE) return; active().scrollEnd(); }
 
     @Override public void touched(int side) {
         if (side != Store.side(this)) setSide(side);
@@ -761,6 +779,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         DuoActivity a = live;
         if (a == null) return;
         if (a.padServer != null) a.padServer.setBluetooth(carBluetooth(safeStatus(a.car)));
+        a.updateGlow();
         a.main.removeCallbacks(a.sendState);
         a.main.postDelayed(a.sendState, 800);
     }

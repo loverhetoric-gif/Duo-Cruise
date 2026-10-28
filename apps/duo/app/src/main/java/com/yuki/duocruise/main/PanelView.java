@@ -1,7 +1,6 @@
 package com.yuki.duocruise.main;
 
 import android.content.Context;
-import android.graphics.BlurMaskFilter;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
@@ -21,13 +20,11 @@ import java.util.List;
 /**
  * 操作メニュー。2画面の上に重ねて出す。コマンダー(ダイヤル)だけで全部操作できる。
  *
- * 車載向け: 行は大きく、ひと目で読める。背景は黒の透過で後ろの映像をうっすら通す。
- * 選んでいる行だけ、Duo Pad と同じ白い発光(ネオン)で縁取って強調する。
- * 操作:
- *  ・ダイヤルを回す / 上下 … 選ぶ行を上下に動かす(選択行は画面中央に送られる)
- *  ・左右 … 値のある行(比率・オン/オフなど)を、その場で切り替える
- *  ・押す … 決定(サブページへ入る・実行・値を1つ送る)
- *  ・戻る … 1つ前へ(主メニューでは閉じる)
+ * 考え方(Apple 流): 余計なものは出さない。非選択の行は文字だけ、強調は選んでいる行ひとつに集める。
+ * 強調は、このアプリ共通の白いネオンの発光(Theme.neonEdge)で縁取る。メニューを開いている間は枠も発光させる。
+ * 背景は黒の透過。後ろの映像をうっすら通す。全項目が必ず画面に収まるよう高さを割り付ける(切れない)。
+ *
+ * 操作: ダイヤル/上下=行移動、左右=値の変更(分割比はスライダー)、押す=決定、戻る=前へ。
  */
 final class PanelView extends ViewGroup {
 
@@ -49,6 +46,8 @@ final class PanelView extends ViewGroup {
         // 左右の比率・ナビ連動
         void cycleSplitYt(); String splitYtText();
         void cycleNavYt(); String navYtText();
+        int splitYtPct(); void adjustSplitYt(int dir);
+        int navYtPct(); void adjustNavYt(int dir);
         void toggleAutoSplit(); boolean autoSplitOn();
         void toggleAutoSwap(); boolean autoSwapOn();
         void cycleNavHold(); String navHoldText();
@@ -64,24 +63,31 @@ final class PanelView extends ViewGroup {
     static final int MAIN = 0, KEYS = 1, LOG = 2, SYS = 3, SPLIT = 4;
 
     private interface Text { String get(); }
+    /** 左右で変える、割合のスライダー。pct は 0〜100(YouTube の割合)。 */
+    private interface Slider { int pct(); void nudge(int dir); }
 
     private static final class Item {
         final Text label, value;
         final Runnable run;      // 押したとき
         final boolean adj;       // 左右でその場で変えられる値か
-        Item(Text label, Text value, Runnable run) { this(label, value, run, false); }
-        Item(Text label, Text value, Runnable run, boolean adj) {
-            this.label = label; this.value = value; this.run = run; this.adj = adj;
+        final Slider slider;     // スライダーならその中身(なければ null)
+        Item(Text label, Text value, Runnable run) { this(label, value, run, false, null); }
+        Item(Text label, Text value, Runnable run, boolean adj) { this(label, value, run, adj, null); }
+        Item(Text label, Runnable run, Slider slider) { this(label, () -> "", run, true, slider); }
+        private Item(Text label, Text value, Runnable run, boolean adj, Slider slider) {
+            this.label = label; this.value = value; this.run = run; this.adj = adj; this.slider = slider;
         }
     }
 
-    // 車載向けの寸法(dp)。行間は詰め、強調は選択行の塗りに集約する(Apple の考え方)。
-    private static final float ROW_H = 64, ROW_GAP = 4, HEADER = 66, PAD = 20, LIST_MAX = 1120;
+    // 寸法(dp)。行は画面高に収まる範囲でできるだけ大きく。
+    private static final float ROW_MAX = 72, ROW_GAP = 6, HEADER = 56, PAD = 18, LIST_MAX = 1120;
+    private static final int VALUE = 0xFFBFCBDE; // 黒の透過でも読めるよう、値の文字は明るめ
 
     private final Host host;
     private final float dp;
     private final TextView title, logText;
     private final ListPane list;
+    private final RectF frameBox = new RectF();
     private final List<Item> items = new ArrayList<>();
     private int page = MAIN, focus = 0, logPage = 0, logLines = 8;
 
@@ -91,7 +97,9 @@ final class PanelView extends ViewGroup {
         dp = c.getResources().getDisplayMetrics().density;
         setBackgroundColor(0xC2000000); // 黒の透過(後ろの映像をうっすら通す)
         setClickable(true);             // 下の2画面へタッチを通さない
-        title = text(27, Theme.TEXT, true);
+        setLayerType(LAYER_TYPE_SOFTWARE, null); // メニュー枠の発光(ぼかし)に必要
+        setWillNotDraw(false);
+        title = text(26, Theme.TEXT, true);
         logText = text(14, Theme.TEXT, false);
         logText.setTypeface(Typeface.MONOSPACE);
         logText.setPadding(px(14), px(10), px(14), px(10));
@@ -114,6 +122,15 @@ final class PanelView extends ViewGroup {
         t.setSingleLine(true);
         t.setIncludeFontPadding(false);
         return t;
+    }
+
+    // ───────── メニュー枠の発光 ─────────
+
+    @Override protected void onDraw(Canvas cv) {
+        // メニューを開いている間は、窓の縁を白いネオンで光らせる(車内でも「設定中」がひと目で分かる)
+        float m = px(PAD) * 0.6f;
+        frameBox.set(m, m, getWidth() - m, getHeight() - m);
+        Theme.neonEdge(cv, frameBox, dp, 22 * dp, 0.7f);
     }
 
     // ───────── ページの中身 ─────────
@@ -156,9 +173,11 @@ final class PanelView extends ViewGroup {
             items.add(new Item(() -> "戻る", () -> "", () -> show(MAIN)));
         } else if (p == SPLIT) {
             title.setText("画面分割とナビ連動");
-            items.add(new Item(() -> "通常の分割比", host::splitYtText, () -> { host.cycleSplitYt(); refresh(); }, true));
+            items.add(new Item(() -> "通常の分割比", () -> { host.adjustSplitYt(1); refresh(); },
+                    new Slider() { public int pct() { return host.splitYtPct(); } public void nudge(int d) { host.adjustSplitYt(d); } }));
             items.add(new Item(() -> "ナビ案内中に自動で調整", () -> host.autoSplitOn() ? "オン" : "オフ", () -> { host.toggleAutoSplit(); refresh(); }, true));
-            items.add(new Item(() -> "ナビ案内中の分割比", host::navYtText, () -> { host.cycleNavYt(); refresh(); }, true));
+            items.add(new Item(() -> "ナビ案内中の分割比", () -> { host.adjustNavYt(1); refresh(); },
+                    new Slider() { public int pct() { return host.navYtPct(); } public void nudge(int d) { host.adjustNavYt(d); } }));
             items.add(new Item(() -> "ナビ案内中は地図を右に配置", () -> host.autoSwapOn() ? "オン" : "オフ", () -> { host.toggleAutoSwap(); refresh(); }, true));
             items.add(new Item(() -> "通常の配置に戻るまでの時間", host::navHoldText, () -> { host.cycleNavHold(); refresh(); }, true));
             items.add(new Item(() -> "戻る", () -> "", () -> show(MAIN)));
@@ -182,47 +201,54 @@ final class PanelView extends ViewGroup {
             final int idx = i;
             Item it = items.get(i);
             Row r = new Row(getContext());
-            r.setPadding(px(34), 0, px(30), 0);
+            r.setPadding(px(30), 0, px(28), 0);
 
-            TextView label = text(22, Theme.TEXT, true);
+            TextView label = text(21, Theme.TEXT, true);
             label.setGravity(Gravity.CENTER_VERTICAL);
-            label.setAutoSizeTextTypeUniformWithConfiguration(15, 22, 1, TypedValue.COMPLEX_UNIT_SP);
+            label.setAutoSizeTextTypeUniformWithConfiguration(14, 21, 1, TypedValue.COMPLEX_UNIT_SP);
             r.addView(label, new LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1f));
 
-            TextView value = text(16, Theme.SUB, false);
+            TextView value = text(15, VALUE, false);
             value.setGravity(Gravity.CENTER_VERTICAL | Gravity.END);
             value.setPadding(px(14), 0, 0, 0);
-            value.setAutoSizeTextTypeUniformWithConfiguration(12, 16, 1, TypedValue.COMPLEX_UNIT_SP);
+            value.setAutoSizeTextTypeUniformWithConfiguration(11, 15, 1, TypedValue.COMPLEX_UNIT_SP);
             r.addView(value, new LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1.1f));
+
+            SliderBar bar = new SliderBar(getContext());
+            bar.setVisibility(it.slider == null ? GONE : VISIBLE);
+            r.addView(bar, new LinearLayout.LayoutParams(px(300), LayoutParams.MATCH_PARENT));
 
             r.setOnClickListener(v -> { focus = idx; it.run.run(); refresh(); });
             r.setOnFocusChangeListener((v, has) -> {
                 ((Row) v).setOn(has);
-                v.animate().scaleX(has ? 1.05f : 1f).scaleY(has ? 1.05f : 1f).setDuration(150).start();
-                if (has) { focus = idx; list.scrollToFocus(idx); }
+                v.animate().scaleX(has ? 1.04f : 1f).scaleY(has ? 1.04f : 1f).setDuration(150).start();
+                if (has) focus = idx;
                 paintRow(idx, has);
             });
             list.addView(r);
         }
     }
 
-    /** 選んでいる行は文字を純白に、値のある行には左右で変えられる印(‹ ›)を添える。 */
+    /** 選んでいる行は白い発光の縁と濃い黒の下地で、文字をはっきり出す。 */
     private void paintRow(int i, boolean on) {
         if (i < 0 || i >= list.getChildCount() || i >= items.size()) return;
         Row r = (Row) list.getChildAt(i);
         Item it = items.get(i);
-        // 選択行は明るい塗りの上なので濃い文字に、非選択は暗い背景なので明るい文字にする
-        ((TextView) r.getChildAt(0)).setTextColor(on ? 0xFF0E1420 : Theme.TEXT);
+        ((TextView) r.getChildAt(0)).setTextColor(on ? Color.WHITE : Theme.TEXT);
         TextView value = (TextView) r.getChildAt(1);
-        String s = it.value.get();
-        if (it.adj && on && !s.isEmpty()) {
-            value.setTextColor(0xFF2A3550);
-            value.setText("‹ " + s + " ›");
+        SliderBar bar = (SliderBar) r.getChildAt(2);
+        if (it.slider != null) {
+            value.setVisibility(GONE);
+            bar.setVisibility(VISIBLE);
+            bar.set(it.slider.pct(), on);
         } else {
-            value.setTextColor(on ? 0xFF55617A : Theme.SUB);
-            value.setText(s);
+            bar.setVisibility(GONE);
+            String s = it.value.get();
+            if (it.adj && on && !s.isEmpty()) value.setText("‹ " + s + " ›");
+            else value.setText(s);
+            value.setTextColor(on ? Color.WHITE : VALUE);
+            value.setVisibility(s.isEmpty() ? GONE : VISIBLE);
         }
-        value.setVisibility(s.isEmpty() ? GONE : VISIBLE);
     }
 
     /** 文字を今の状態に合わせて書き直す。 */
@@ -269,8 +295,10 @@ final class PanelView extends ViewGroup {
                 if (down) move(-1);
                 return true;
             case KeyEvent.KEYCODE_DPAD_RIGHT:
+                if (down) adjust(1);
+                return true;
             case KeyEvent.KEYCODE_DPAD_LEFT:
-                if (down) adjust();
+                if (down) adjust(-1);
                 return true;
             case KeyEvent.KEYCODE_DPAD_CENTER: case KeyEvent.KEYCODE_ENTER: case KeyEvent.KEYCODE_NUMPAD_ENTER:
                 if (!down && list.getChildCount() > 0) list.getChildAt(focus).performClick();
@@ -294,11 +322,12 @@ final class PanelView extends ViewGroup {
         focusRow(((focus + delta) % n + n) % n);
     }
 
-    /** 左右: 選んでいる行が値を持つなら、その場で1つ送る(押したときと同じ切り替え)。 */
-    private void adjust() {
+    /** 左右: スライダーはその場で増減、オン/オフ等の値は切り替え。 */
+    private void adjust(int dir) {
         if (focus < 0 || focus >= items.size()) return;
         Item it = items.get(focus);
-        if (it.adj) { it.run.run(); refresh(); }
+        if (it.slider != null) { it.slider.nudge(dir); refresh(); }
+        else if (it.adj) { it.run.run(); refresh(); }
     }
 
     void back() {
@@ -306,7 +335,7 @@ final class PanelView extends ViewGroup {
         else host.closePanel();
     }
 
-    // ───────── 並べ方 ─────────
+    // ───────── 並べ方(縦1列・画面高に収める) ─────────
 
     @Override protected void onMeasure(int wSpec, int hSpec) {
         int w = MeasureSpec.getSize(wSpec), h = MeasureSpec.getSize(hSpec);
@@ -328,76 +357,64 @@ final class PanelView extends ViewGroup {
         int pad = px(PAD), head = px(HEADER);
         int listW = Math.min(w - pad * 2, px(LIST_MAX));
         int left = (w - listW) / 2;
-        // 大きなタイトルをリストの左端にそろえる(Apple の大見出しのように)
-        place(title, left, pad, left + listW, pad + px(40), measure);
+        place(title, left, pad, left + listW, pad + px(38), measure);
 
         int top = pad + head;
         int bottom = h - pad;
-
         if (page == LOG) {
-            int listH = h / 2;                       // 下半分に3つの行、上半分に本文
+            int listH = (bottom - top) * 3 / 5;        // 下に行、上に本文
             int logBottom = bottom - listH;
             logText.setBackground(Theme.round(0x4D000000, 12 * dp));
-            place(logText, left, top, left + listW, Math.max(top, logBottom), measure);
+            place(logText, left, top, left + listW, Math.max(top, logBottom - px(8)), measure);
             if (!measure && logText.getLineHeight() > 0) {
                 int fit = Math.max(1, (logBottom - top - px(20)) / logText.getLineHeight());
                 if (fit != logLines) { logLines = fit; post(this::refresh); }
             }
-            place(list, left, bottom - listH, left + listW, bottom, measure);
+            place(list, left, logBottom, left + listW, bottom, measure);
             return;
         }
         place(list, left, top, left + listW, bottom, measure);
     }
 
-    /**
-     * 行を縦に積み、選択行が見えるように上下へ送る(スクロール)。はみ出た行は縁で切る。
-     */
+    /** 行を縦に積み、必ず全部が収まるように1行の高さを割り付ける(切れない)。発光のため子は切り取らない。 */
     private final class ListPane extends ViewGroup {
-        private int scroll;
+        ListPane(Context c) { super(c); setClipChildren(false); setClipToPadding(false); }
 
-        ListPane(Context c) { super(c); setClipChildren(true); setClipToPadding(true); }
-
-        int pitch() { return px(ROW_H) + px(ROW_GAP); }
-        int contentH() { int n = getChildCount(); return n == 0 ? 0 : n * px(ROW_H) + (n - 1) * px(ROW_GAP); }
-
-        /** 選んだ行を、できるだけ中央に送る。 */
-        void scrollToFocus(int i) {
-            int vh = getHeight();
-            if (vh <= 0) return;
-            int center = i * pitch() + px(ROW_H) / 2;
-            int max = Math.max(0, contentH() - vh);
-            int s = Math.max(0, Math.min(max, center - vh / 2));
-            if (s != scroll) { scroll = s; requestLayout(); }
+        private int rowH(int n, int h) {
+            if (n <= 0) return 0;
+            int gap = px(ROW_GAP);
+            return Math.max(px(28), Math.min(px(ROW_MAX), (h - gap * (n - 1)) / n));
         }
 
         @Override protected void onMeasure(int wSpec, int hSpec) {
             int w = MeasureSpec.getSize(wSpec), h = MeasureSpec.getSize(hSpec);
             setMeasuredDimension(w, h);
-            int rh = MeasureSpec.makeMeasureSpec(px(ROW_H), MeasureSpec.EXACTLY);
+            int n = getChildCount();
+            int rh = MeasureSpec.makeMeasureSpec(rowH(n, h), MeasureSpec.EXACTLY);
             int rw = MeasureSpec.makeMeasureSpec(w, MeasureSpec.EXACTLY);
-            for (int i = 0; i < getChildCount(); i++) getChildAt(i).measure(rw, rh);
-            // 行数が少なくて全部収まるなら、上端に合わせる
-            if (contentH() <= h) scroll = 0;
+            for (int i = 0; i < n; i++) getChildAt(i).measure(rw, rh);
         }
 
         @Override protected void onLayout(boolean changed, int l, int t, int r, int b) {
-            int w = r - l, pitch = pitch();
-            for (int i = 0; i < getChildCount(); i++) {
-                int y = i * pitch - scroll;
-                getChildAt(i).layout(0, y, w, y + px(ROW_H));
+            int w = r - l, h = b - t, n = getChildCount();
+            int rh = rowH(n, h), gap = px(ROW_GAP);
+            int listH = n * rh + (n - 1) * gap;
+            int y = Math.max(0, (h - listH) / 2);  // 少なければ中央寄せ
+            for (int i = 0; i < n; i++) {
+                getChildAt(i).layout(0, y, w, y + rh);
+                y += rh + gap;
             }
         }
     }
 
     /**
-     * 1行。黒の透過を敷き、選んでいる間だけ Duo Pad と同じ白い発光で縁取る(ネオン)。
-     * 発光は software 描画でしか効かないので、選択時だけ software にする。
+     * 1行。非選択は文字だけ。選んでいる間だけ、黒の下地＋白いネオンの発光で縁取る(視認性と統一感)。
+     * 発光は software でしか効かないので、選択時だけ software にする。
      */
     private final class Row extends LinearLayout {
-        private final Paint halo = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final RectF box = new RectF();
-        private final float insetX = 8 * dp, insetY = 5 * dp, radius = 16 * dp;
+        private final float insetX = 8 * dp, insetY = 4 * dp, radius = 16 * dp;
         private boolean on;
 
         Row(Context c) {
@@ -407,12 +424,7 @@ final class PanelView extends ViewGroup {
             setFocusable(true);
             setFocusableInTouchMode(false);
             setWillNotDraw(false);
-
-            // 選択行の柔らかな光(わずかなネオン)。発光は software でしか効かない
-            halo.setColor(0x59FFFFFF);
-            halo.setMaskFilter(new BlurMaskFilter(16 * dp, BlurMaskFilter.Blur.NORMAL));
-            // 選択行の明るい塗り(この上に濃い文字をのせる)
-            fill.setColor(0xFFF4F7FC);
+            fill.setColor(0x73000000); // 選択行の黒い下地(文字をはっきり読ませる)
         }
 
         void setOn(boolean b) {
@@ -423,10 +435,52 @@ final class PanelView extends ViewGroup {
         }
 
         @Override protected void onDraw(Canvas cv) {
-            if (!on) return; // 非選択は文字だけ(箱・枠は出さない)
+            if (!on) return; // 非選択は文字だけ(箱も枠も出さない)
             box.set(insetX, insetY, getWidth() - insetX, getHeight() - insetY);
-            cv.drawRoundRect(box, radius, radius, halo);
             cv.drawRoundRect(box, radius, radius, fill);
+            Theme.neonEdge(cv, box, dp, radius, 1f); // 白いネオンの発光の縁(売りの見た目)
+        }
+    }
+
+    /** 分割比のスライダー。左右で YouTube の割合を増減する。 */
+    private final class SliderBar extends View {
+        private final Paint track = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint knob = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint txt = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private int pct = 50;
+
+        SliderBar(Context c) {
+            super(c);
+            track.setColor(0x40FFFFFF);
+            fill.setColor(0xFFFFFFFF);
+            knob.setColor(0xFFFFFFFF);
+            txt.setColor(0xFFFFFFFF);
+            txt.setTextSize(14 * dp);
+            txt.setTextAlign(Paint.Align.RIGHT);
+            txt.setFakeBoldText(true);
+        }
+
+        void set(int pct, boolean on) {
+            this.pct = Math.max(0, Math.min(100, pct));
+            track.setColor(on ? 0x59FFFFFF : 0x33FFFFFF);
+            fill.setColor(on ? 0xFFFFFFFF : 0xCCFFFFFF);
+            knob.setColor(on ? 0xFFFFFFFF : 0xCCFFFFFF);
+            txt.setColor(on ? 0xFFFFFFFF : VALUE);
+            invalidate();
+        }
+
+        @Override protected void onDraw(Canvas cv) {
+            int w = getWidth(), h = getHeight();
+            float cy = h / 2f;
+            float labelW = 58 * dp;                 // 右に「YT 60%」の文字ぶん
+            float x0 = 4 * dp, x1 = w - labelW;
+            float th = 6 * dp, r = th / 2;
+            cv.drawRoundRect(new RectF(x0, cy - r, x1, cy + r), r, r, track);
+            float kx = x0 + (x1 - x0) * (pct / 100f);
+            cv.drawRoundRect(new RectF(x0, cy - r, kx, cy + r), r, r, fill);
+            cv.drawCircle(kx, cy, 9 * dp, knob);
+            cv.drawText("YT " + pct + "%", w, cy + txt.getTextSize() * 0.35f, txt);
         }
     }
 }
