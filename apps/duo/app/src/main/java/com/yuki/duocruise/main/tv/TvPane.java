@@ -113,6 +113,20 @@ public final class TvPane {
     /** コマンダーのキーを YouTube へ。届けたら true。戻る=Esc、決定=Enter、上下左右=矢印。 */
     public boolean onKey(KeyEvent e) {
         if (web == null || destroyed) return false;
+        // 再生・一時停止のキー(ステアリング等)は、TV 版がキーとして受けないので、動画を直接操作する
+        switch (e.getKeyCode()) {
+            case KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE: case KeyEvent.KEYCODE_HEADSETHOOK:
+                if (e.getAction() == KeyEvent.ACTION_UP) web.evaluateJavascript(
+                        "(function(){var v=document.querySelector('video');if(!v)return;if(v.paused)v.play();else v.pause();})()", null);
+                return true;
+            case KeyEvent.KEYCODE_MEDIA_PLAY:
+                if (e.getAction() == KeyEvent.ACTION_UP) playVideo();
+                return true;
+            case KeyEvent.KEYCODE_MEDIA_PAUSE:
+                if (e.getAction() == KeyEvent.ACTION_UP) pauseVideo();
+                return true;
+            default: break;
+        }
         KeyEvent k = translate(e);
         if (k == null) return false;
         if (!web.hasFocus()) web.requestFocus();

@@ -26,14 +26,14 @@ import android.view.View;
  */
 final class GuideView extends View {
     private static final String[][] PAGES = {
-        { "Duo Cruise へようこそ",
-          "左に CarPlay、右に YouTube。\nひとつの画面で、二つを同時に使えます。" },
-        { "iPhone をつなぐ",
-          "iPhone の Bluetooth と Wi-Fi をオンにして、\n設定 › 一般 › CarPlay から「Duo Cruise」を選びます。\n次からは、エンジンをかけるだけでつながります。" },
+        { "ふたつの画面を、ひとつに",
+          "左に CarPlay、右に YouTube。\n地図を見ながら、映像も楽しめます。" },
+        { "iPhone と接続する",
+          "iPhone の Bluetooth と Wi-Fi をオンにして、\n［設定］›［一般］›［CarPlay］から「Duo Cruise」を選択してください。\n次回からは、エンジンを始動するだけで自動的に接続されます。" },
         { "コマンダーで操作する",
-          "回す・倒す\t選ぶ\n押す\t決める\n押すを 2 回\t操作する画面を切り替える\n押すを 3 回\tメニューを開く\n戻るを 2 回\t左右を入れ替える\n戻るを 3 回\t1 画面と 2 画面を切り替える" },
-        { "YouTube を送る",
-          "iPhone の YouTube で送信ボタンを押し、\n「Duo Cruise」を選ぶと、こちらで再生されます。" },
+          "回す・倒す\t項目を選ぶ\n押す\t決定する\n2 回押す\t操作する画面を切り替える\n3 回押す\tメニューを開く\n戻るを 2 回\t左右の画面を入れ替える\n戻るを 3 回\t1 画面と 2 画面を切り替える" },
+        { "iPhone から YouTube を再生する",
+          "iPhone の YouTube で動画を開き、キャストボタンから\n「Duo Cruise」を選ぶと、この画面で再生が始まります。" },
     };
     /** ロゴと同じ差し色(暖色 → 寒色)。 */
     private static final int WARM_A = 0xFFFFA347, WARM_B = 0xFFFF5C3C, COOL_A = 0xFF3CA8FF, COOL_B = 0xFF2860F0;
@@ -212,7 +212,7 @@ final class GuideView extends View {
         }
         line.setShader(null);
         hint.setAlpha(Math.round(alphaOf(sub) * content));
-        cv.drawText(page == PAGES.length - 1 ? "押して始める" : "押して次へ", w - pad, by + hint.getTextSize() * 0.35f, hint);
+        cv.drawText(page == PAGES.length - 1 ? "押して開始" : "押して次へ", w - pad, by + hint.getTextSize() * 0.35f, hint);
     }
 
     private static int alphaOf(int c) { return (c >>> 24) & 0xFF; }
