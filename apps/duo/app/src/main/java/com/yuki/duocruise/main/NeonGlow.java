@@ -1,85 +1,87 @@
 package com.yuki.duocruise.main;
 
 import android.graphics.Canvas;
+import android.graphics.ComposeShader;
 import android.graphics.LinearGradient;
+import android.graphics.Matrix;
 import android.graphics.Paint;
-import android.graphics.RadialGradient;
+import android.graphics.PorterDuff;
 import android.graphics.RectF;
 import android.graphics.Shader;
+import android.graphics.SweepGradient;
 
 /**
- * 間接照明の発光。境界に光源を置き、そこから内側へ滑らかに減衰する光を落とす(LED の間接照明のように)。
+ * 画面の縁から内側へ流れる光(Siri・Gemini の起動時の光のように)。
  *
- * ・硬い輪郭線は出さない。各辺に「縁で明るく→内へ向かって透明」の線形グラデを敷くだけ。
- *   これで“帯”や“線”に見えず、ふわっと滲む本物の間接光になる。
- * ・角は四角(角丸にしない)。ぼかしも software レイヤーも使わないので、どの端末でも確実に出て、CarPlay も壊さない。
- * ・状態は「強弱(intensity)」と「色(color)」で表す。phase でゆっくり明滅させる。
+ * ・各辺の帯に「回転する多色の角度グラデ」×「縁で不透明→内側で透明」を合成して塗る。
+ *   色が縁に沿って流れ、内側へ柔らかく消える。硬い線は出ない。
+ * ・3層(広い裾／中間／細く明るい縁)を、別々の速さ・逆向きに回して重ね、流体のような動きにする。
+ * ・ぼかしも software レイヤーも使わない(ハードウェア描画)。CarPlay の映像も壊さない。
+ *
+ * phase は 0〜1 で一周。各層の回転は phase の整数倍なので、1 周で継ぎ目なくつながる。
  */
 final class NeonGlow {
+    /** Siri/Gemini 風の多色(最初と最後を同じにして継ぎ目を消す)。 */
+    static final int[] VIVID = { 0xFFFF5FA2, 0xFFB46CFF, 0xFF5E8BFF, 0xFF4FE3FF, 0xFF7CFFB2, 0xFFFFB25E, 0xFFFF5FA2 };
+
+    // 層: 深さの割合, 強さ, 回転の速さ(整数・符号=向き), 位相のずれ
+    private static final float[] DEPTH = { 1.00f, 0.42f, 0.10f };
+    private static final float[] ALPHA = { 0.55f, 0.75f, 1.00f };
+    private static final int[]   SPEED = { 1, -2, 3 };
+    private static final float[] SHIFT = { 0f, 0.33f, 0.66f };
+
     private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Matrix m = new Matrix();
 
-    NeonGlow() {}
-
-    private static int withAlpha(int color, int a) { return (Math.max(0, Math.min(255, a)) << 24) | (color & 0xFFFFFF); }
-
-    /** 既定(白)で描く。radius は使わない(間接照明は角丸にしない)。 */
-    void draw(Canvas dst, RectF box, float dp, float radius, float intensity, float phase) {
-        draw(dst, box, dp, radius, intensity, Theme.NEON_WHITE, phase);
-    }
-
-    /**
-     * box の各辺(ディスプレイの縁)から内側へ向けて発光させる。線やリムは出さず、
-     * 縁で明るく→内側へ広くゆるやかに減衰する「間接照明」だけを落とす。intensity 0〜1、phase 0〜1(明滅)。
-     * depthDp で光の届く深さ(内側への広がり)を指定できる(0 以下なら自動)。
-     */
+    /** 単色(状態色)で描く。色の濃淡で流れを作る。 */
     void draw(Canvas dst, RectF box, float dp, float depthDp, float intensity, int color, float phase) {
-        if (intensity <= 0 || box.width() < 2 || box.height() < 2) return;
-        float k = Math.min(1f, intensity);
-        float breath = 0.86f + 0.14f * (float) Math.sin(phase * 2 * Math.PI);
-        float shortSide = Math.min(box.width(), box.height());
-        float depth = depthDp > 0 ? depthDp * dp : 64 * dp;
-        depth = Math.min(depth, shortSide * 0.5f);
-        // 土台: 縁から内側へ一様な間接照明(控えめ)
-        edges(dst, box, depth, color, Math.round(58 * k * breath));
-        // 動き: 明るい光のかたまりが、縁をぐるっと巡る(速さ違いの2つで単調さをなくす)
-        blob(dst, box, depth * 2.1f, color, Math.round(165 * k), phase);
-        blob(dst, box, depth * 1.5f, color, Math.round(120 * k), frac(phase * 0.6f + 0.37f));
+        int light = mix(color, 0xFFFFFFFF, 0.55f), dim = mix(color, 0xFF000000, 0.35f);
+        draw(dst, box, dp, depthDp, intensity, new int[]{ color, light, dim, color, light, color }, phase);
     }
 
-    private static float frac(float v) { v -= (float) Math.floor(v); return v; }
-
-    /** 縁の周り(t: 0〜1 で一周)の点に、内側へ滲む明るい光のかたまりを置く。 */
-    private void blob(Canvas dst, RectF box, float r, int color, int a, float t) {
-        if (a <= 0 || r < 1) return;
-        float w = box.width(), h = box.height(), per = 2 * (w + h), d = frac(t) * per;
-        float x, y;
-        if (d < w) { x = box.left + d; y = box.top; }
-        else if (d < w + h) { x = box.right; y = box.top + (d - w); }
-        else if (d < 2 * w + h) { x = box.right - (d - w - h); y = box.bottom; }
-        else { x = box.left; y = box.bottom - (d - 2 * w - h); }
-        p.setShader(new RadialGradient(x, y, r, withAlpha(color, a), withAlpha(color, 0), Shader.TileMode.CLAMP));
-        dst.drawCircle(x, y, r, p);
-        p.setShader(null);
-    }
-
-    /** 既定の色・深さで描く(白)。 */
+    /** 既定(白)。 */
     void draw(Canvas dst, RectF box, float dp, float intensity, float phase) {
         draw(dst, box, dp, 0, intensity, Theme.NEON_WHITE, phase);
     }
 
-    /** 各辺に「縁で c0A → 内側へ透明」の線形グラデを depth ぶん敷く。 */
-    private void edges(Canvas dst, RectF box, float depth, int color, int c0A) {
-        if (depth < 1 || c0A <= 0) return;
-        int c0 = withAlpha(color, c0A), c1 = withAlpha(color, 0);
+    /** 多色で描く。 */
+    void draw(Canvas dst, RectF box, float dp, float depthDp, float intensity, int[] palette, float phase) {
+        if (intensity <= 0 || box.width() < 2 || box.height() < 2) return;
+        float k = Math.min(1.4f, intensity);
+        float depth = Math.min((depthDp > 0 ? depthDp : 64) * dp, Math.min(box.width(), box.height()) * 0.5f);
+        float cx = box.centerX(), cy = box.centerY();
+        for (int i = 0; i < DEPTH.length; i++) {
+            double t = 2 * Math.PI * (phase * (i + 1) + SHIFT[i]);
+            float wobble = 0.78f + 0.22f * (float) Math.sin(t);            // 層ごとに明るさが揺らぐ
+            SweepGradient sweep = new SweepGradient(cx, cy, palette, null);
+            m.setRotate((phase * SPEED[i] + SHIFT[i]) * 360f, cx, cy);      // 色が縁を流れる
+            sweep.setLocalMatrix(m);
+            int a = Math.round(255 * Math.min(1f, ALPHA[i] * wobble * k));
+            bands(dst, box, depth * DEPTH[i], sweep, a);
+        }
+    }
+
+    /** 4辺に「色(sweep) × 縁→内側の透明」の帯を塗る。 */
+    private void bands(Canvas dst, RectF box, float d, Shader color, int alpha) {
+        if (d < 1 || alpha <= 0) return;
         float l = box.left, t = box.top, r = box.right, b = box.bottom;
-        p.setShader(new LinearGradient(0, t, 0, t + depth, c0, c1, Shader.TileMode.CLAMP));
-        dst.drawRect(l, t, r, t + depth, p);
-        p.setShader(new LinearGradient(0, b, 0, b - depth, c0, c1, Shader.TileMode.CLAMP));
-        dst.drawRect(l, b - depth, r, b, p);
-        p.setShader(new LinearGradient(l, 0, l + depth, 0, c0, c1, Shader.TileMode.CLAMP));
-        dst.drawRect(l, t, l + depth, b, p);
-        p.setShader(new LinearGradient(r, 0, r - depth, 0, c0, c1, Shader.TileMode.CLAMP));
-        dst.drawRect(r - depth, t, r, b, p);
+        int on = 0xFFFFFFFF, off = 0x00FFFFFF;
+        p.setAlpha(alpha);
+        band(dst, color, new LinearGradient(0, t, 0, t + d, on, off, Shader.TileMode.CLAMP), l, t, r, t + d);
+        band(dst, color, new LinearGradient(0, b, 0, b - d, on, off, Shader.TileMode.CLAMP), l, b - d, r, b);
+        band(dst, color, new LinearGradient(l, 0, l + d, 0, on, off, Shader.TileMode.CLAMP), l, t, l + d, b);
+        band(dst, color, new LinearGradient(r, 0, r - d, 0, on, off, Shader.TileMode.CLAMP), r - d, t, r, b);
         p.setShader(null);
+    }
+
+    private void band(Canvas dst, Shader color, Shader mask, float l, float t, float r, float b) {
+        p.setShader(new ComposeShader(color, mask, PorterDuff.Mode.DST_IN)); // 色を、縁→内側の透明で切り抜く
+        dst.drawRect(l, t, r, b, p);
+    }
+
+    private static int mix(int a, int b, float f) {
+        int ar = (a >> 16) & 0xFF, ag = (a >> 8) & 0xFF, ab = a & 0xFF;
+        int br = (b >> 16) & 0xFF, bg = (b >> 8) & 0xFF, bb = b & 0xFF;
+        return 0xFF000000 | (Math.round(ar + (br - ar) * f) << 16) | (Math.round(ag + (bg - ag) * f) << 8) | Math.round(ab + (bb - ab) * f);
     }
 }

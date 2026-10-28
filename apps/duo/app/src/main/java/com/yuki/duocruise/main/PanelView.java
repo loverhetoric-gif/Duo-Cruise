@@ -142,7 +142,9 @@ final class PanelView extends ViewGroup {
     @Override protected void onDraw(Canvas cv) {
         // メニュー表示中は、ディスプレイの縁(画面端)から内側へ向けて間接照明で発光させる(枠線は出さない)。
         frameBox.set(0, 0, getWidth(), getHeight());
-        frameGlow.draw(cv, frameBox, dp, 100, 0.95f, Theme.NEON_WHITE, phase);
+        // 開いた瞬間に光がふわっと膨らみ(強く・深く)、すぐ落ち着く
+        float burst = intro < 0.35f ? intro / 0.35f * 1.35f : 1.35f - 0.35f * (intro - 0.35f) / 0.65f;
+        frameGlow.draw(cv, frameBox, dp, 110 * (0.6f + 0.4f * intro), burst, NeonGlow.VIVID, phase);
         // 色編集ページ: 今の色・強さを「発光する丸いネオン」として見出しの右にプレビュー
         if (page == NEON_EDIT) drawOrb(cv, host.neonColor(neonWhich) | 0xFF000000, host.neonLevel(neonWhich) / 100f);
     }
@@ -180,17 +182,30 @@ final class PanelView extends ViewGroup {
     @Override protected void onDetachedFromWindow() { stopShimmer(); super.onDetachedFromWindow(); }
 
     /** 発光の“巡り”と明滅を動かす(メニューを開いている間だけ)。 */
+    private float intro = 1f;
+    private android.animation.ValueAnimator introAnim;
+
     private void startShimmer() {
         if (shimmer != null) return;
+        // 導入: 開いた瞬間に光が膨らむ
+        intro = 0f;
+        introAnim = android.animation.ValueAnimator.ofFloat(0f, 1f);
+        introAnim.setDuration(700);
+        introAnim.setInterpolator(new android.view.animation.DecelerateInterpolator(1.5f));
+        introAnim.addUpdateListener(a -> { intro = (float) a.getAnimatedValue(); invalidate(); });
+        introAnim.start();
         shimmer = android.animation.ValueAnimator.ofFloat(0f, 1f);
-        shimmer.setDuration(2800);
+        shimmer.setDuration(12000); // 1 周 12 秒。層ごとに 1・2・3 倍の速さで回る
         shimmer.setRepeatCount(android.animation.ValueAnimator.INFINITE);
         shimmer.setInterpolator(new android.view.animation.LinearInterpolator());
         shimmer.addUpdateListener(a -> { phase = (float) a.getAnimatedValue(); invalidate(); list.invalidate(); });
         shimmer.start();
     }
 
-    private void stopShimmer() { if (shimmer != null) { shimmer.cancel(); shimmer = null; } }
+    private void stopShimmer() {
+        if (shimmer != null) { shimmer.cancel(); shimmer = null; }
+        if (introAnim != null) { introAnim.cancel(); introAnim = null; }
+    }
 
     // ───────── ページの中身 ─────────
 
