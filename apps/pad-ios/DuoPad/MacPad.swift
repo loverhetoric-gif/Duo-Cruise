@@ -15,11 +15,12 @@ struct DuoPadMacApp: App {
     /// OTTO が切れたとみなして往復 11 秒・つなぎ直し 25 回になっていた(2026-10-27)。動いている間は眠らせない。
     private let awake = ProcessInfo.processInfo.beginActivity(
         options: [.userInitiated, .latencyCritical, .idleSystemSleepDisabled],
-        reason: "Duo Pad: OTTO をタッチパッドで操作中")
+        reason: "Duo Slate: OTTO をタッチパッドで操作中")
 
     var body: some Scene {
-        WindowGroup("Duo Pad") {
+        WindowGroup("Duo Slate") {
             MacPadScreen(link: link)
+                .withSplash()
                 .frame(minWidth: 420, minHeight: 300)
                 .onAppear { link.start() }
         }

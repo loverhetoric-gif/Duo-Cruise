@@ -118,7 +118,7 @@ final class PadLink: ObservableObject {
                 case .waiting(let e):
                     // ローカルネットワークの許可を断られた(-65570)か、Wi-Fi につながっていない
                     if case .dns(let code) = e, code == -65570 {
-                        self.state = .failed("ローカルネットワークの許可が必要です(iPhone の設定 → Duo Pad → ローカルネットワーク)")
+                        self.state = .failed("ローカルネットワークの許可が必要です(iPhone の設定 → Duo Slate → ローカルネットワーク)")
                     } else {
                         self.state = .failed("Wi-Fi につながっていません")
                     }

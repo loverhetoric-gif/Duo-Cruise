@@ -12,6 +12,7 @@ struct DuoPadApp: App {
     var body: some Scene {
         WindowGroup {
             PadScreen(link: link)
+                .withSplash()
                 .preferredColorScheme(theme == 1 ? .light : theme == 2 ? .dark : nil)
                 .environmentObject(link)
                 .onAppear { link.start(); UIApplication.shared.isIdleTimerDisabled = true }
@@ -230,7 +231,7 @@ struct SettingsSheet: View {
                     Button("今すぐつなぎ直す") { link.restart() }
                 }
             }
-            .navigationTitle("Duo Pad の設定")
+            .navigationTitle("Duo Slate の設定")
             .toolbar { Button("閉じる") { dismiss() } }
             // 下スワイプで閉じたときも住所を保存する(変わっていなければ、つなぎ直さない)
             .onDisappear { link.manualHost = host.trimmingCharacters(in: .whitespaces) }
