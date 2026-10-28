@@ -22,6 +22,14 @@ final class Store {
     static void setKeyMap(Context c, KeyMap m) { p(c).edit().putString("keymap4", m.serialize()).apply(); }
 
     /** true のとき1画面(操作中の側だけを出す)。 */
+    /** 起動音を鳴らすか(初期値: 鳴らす)。 */
+    static boolean bootSound(Context c) { return p(c).getBoolean("bootSound", true); }
+    static void setBootSound(Context c, boolean v) { p(c).edit().putBoolean("bootSound", v).apply(); }
+
+    /** はじめての案内を見終えたか。 */
+    static boolean guided(Context c) { return p(c).getBoolean("guided", false); }
+    static void setGuided(Context c, boolean v) { p(c).edit().putBoolean("guided", v).apply(); }
+
     static boolean single(Context c) { return p(c).getBoolean("single", false); }
     static void setSingle(Context c, boolean v) { p(c).edit().putBoolean("single", v).apply(); }
 

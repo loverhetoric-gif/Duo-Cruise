@@ -31,6 +31,9 @@ final class PanelView extends ViewGroup {
     interface Host {
         void switchSide();
         void swap();
+        /** はじめての案内を出す。 */
+        void showGuide();
+        boolean bootSound(); void toggleBootSound();
         void closePanel();
         void toggleCar();
         boolean carOn();
@@ -300,6 +303,8 @@ final class PanelView extends ViewGroup {
             items.add(new Item(() -> "ユーザー補助", () -> host.accessOn() ? "オン" : "オフ", host::openAccessibility));
             items.add(new Item(() -> "ホームアプリ", () -> host.isDefaultHome() ? "Duo Cruise" : host.otherHomeName(), host::chooseHome));
             items.add(new Item(() -> "Android の設定を開く", () -> "", host::openSettings));
+            items.add(new Item(() -> "起動音", () -> host.bootSound() ? "オン" : "オフ", () -> { host.toggleBootSound(); refresh(); }, true));
+            items.add(new Item(() -> "はじめての案内", () -> "", host::showGuide));
             items.add(new Item(() -> "動作記録", () -> GO, () -> show(LOG)));
             items.add(new Item(() -> "ホーム画面を開く", host::otherHomeName, host::goHome));
             items.add(back("メニューへ"));

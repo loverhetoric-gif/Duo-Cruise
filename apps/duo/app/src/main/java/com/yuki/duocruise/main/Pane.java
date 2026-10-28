@@ -25,6 +25,8 @@ interface Pane {
     String command(String cmd);
     /** 音量を下げる(1＝そのまま、0.2＝小さく、0＝消す)。音を出す部品だけが使う。 */
     default void duck(float level) {}
+    /** 電話・Siri の間は止め(on)、終わったら止める前の状態に戻す(off)。音を出す部品だけが使う。 */
+    default void hold(boolean on) {}
     /** タッチパッドのキーボードの文字・キー。文字を受ける部品だけが使う。 */
     default void typeText(String text) {}
     default void typeKey(int keyCode) {}

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Android 12 以降の標準の起動画面は、背景色だけにする(アイコンは出さない)。演出は直後の自前の画面で出す -->
+    <style name="Duo" parent="@android:style/Theme.DeviceDefault.NoActionBar">
+        <item name="android:windowBackground">@android:color/white</item>
+        <item name="android:windowSplashScreenBackground">@android:color/white</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/boot_blank</item>
+    </style>
+</resources>

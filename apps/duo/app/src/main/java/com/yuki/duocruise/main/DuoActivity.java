@@ -68,6 +68,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     private PadServer padServer;
     private PaneService service;
     private String sizes = "-", insets = "-";
+    private GuideView guide;
     private final Runnable learnTimeout = () -> {
         if (learnAction != null) { DuoLog.log("割り当ての登録: 時間切れで取りやめ"); cancelLearn(); }
     };
@@ -78,6 +79,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
         DuoLog.init(this);
+        Crash.install(this);
         // 二重に開かれたら、前の画面を閉じる(CarPlay の Wi-Fi・Bluetooth とタッチパッドの口を取り合わないように)
         DuoActivity old = live;
         if (old != null && old != this && !old.isFinishing()) {
@@ -101,7 +103,21 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         pad = new PadInput(this, this);
         root.cursor = pad.cursorView();
         root.setPanes(car.view(), tv.view(), panel);
-        setContentView(root);
+        guide = new GuideView(this);
+        guide.setVisibility(View.GONE);
+        android.widget.FrameLayout stage = new android.widget.FrameLayout(this);
+        stage.setBackgroundColor(android.graphics.Color.BLACK); // 起動の地(白/黒)は演出の後ろに隠し、2 画面の地は黒
+        stage.addView(root);
+        stage.addView(guide);
+        if (b == null) {          // エンジンをかけて開いたとき(作り直しでは出さない)
+            SplashView splash = new SplashView(this);
+            stage.addView(splash);
+            splash.play(Store.bootSound(this), () -> {
+                stage.removeView(splash);
+                if (!Store.guided(this)) showGuide(); // 初めてなら、続けて案内
+            });
+        } else if (!Store.guided(this)) main.post(this::showGuide);
+        setContentView(stage);
         setupInsets();
         applyLayout();
 
@@ -248,6 +264,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
             float v = e.getAxisValue(MotionEvent.AXIS_SCROLL);
             if (v == 0) v = -e.getAxisValue(MotionEvent.AXIS_VSCROLL);
             DuoLog.keys("回転 " + v);
+            if (guiding()) { guide.rotate(v > 0 ? 1 : v < 0 ? -1 : 0); return true; }
             if (panel.getVisibility() == View.VISIBLE) {
                 panel.rotate(v > 0 ? 1 : v < 0 ? -1 : 0);
                 return true;
@@ -270,12 +287,32 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     @Override public void deliver(int code, int action, long downTime, Object raw) {
         KeyEvent ev = raw instanceof KeyEvent ? (KeyEvent) raw
                 : new KeyEvent(downTime, SystemClock.uptimeMillis(), action, code, 0);
+        if (guiding()) { guide.onKey(ev); return; }
         if (panel.getVisibility() == View.VISIBLE) { panel.onKey(ev); return; }
+        if (isMediaKey(code)) { mediaTarget().onKey(ev); return; }
         try { active().onKey(ev); }
         catch (Throwable t) { DuoLog.error(active().name() + " へキーを渡せません: " + DuoLog.why(t)); }
     }
 
+    /** ステアリングの曲送り・曲戻し・再生/一時停止。 */
+    private static boolean isMediaKey(int code) {
+        switch (code) {
+            case KeyEvent.KEYCODE_MEDIA_NEXT: case KeyEvent.KEYCODE_MEDIA_PREVIOUS:
+            case KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE: case KeyEvent.KEYCODE_MEDIA_PLAY: case KeyEvent.KEYCODE_MEDIA_PAUSE:
+            case KeyEvent.KEYCODE_MEDIA_FAST_FORWARD: case KeyEvent.KEYCODE_MEDIA_REWIND: case KeyEvent.KEYCODE_HEADSETHOOK:
+                return true;
+            default: return false;
+        }
+    }
+
+    /**
+     * 曲送り等を渡す側。CarPlay で音楽が鳴っていれば CarPlay、そうでなければ YouTube。
+     * (操作中の画面とは別に決める。地図を見ながら YouTube を送れるように)
+     */
+    private Pane mediaTarget() { return carSounds.contains("media") ? car : tv; }
+
     @Override public void action(KeyMap.Action a) {
+        if (guiding()) return; // 案内の間は、裏の画面を動かさない
         DuoLog.log("ボタン操作: " + a.label);
         switch (a) {
             case SWITCH_SIDE: switchSide(); break;
@@ -339,6 +376,17 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         if (panel.getVisibility() == View.VISIBLE) panel.refresh();
         stateChanged();
     }
+
+    @Override public void showGuide() {
+        if (panel.getVisibility() == View.VISIBLE) { panel.setVisibility(View.GONE); applyLayout(); }
+        guide.bringToFront();
+        guide.open(() -> { Store.setGuided(this, true); focusActive(); });
+    }
+
+    @Override public boolean bootSound() { return Store.bootSound(this); }
+    @Override public void toggleBootSound() { Store.setBootSound(this, !Store.bootSound(this)); }
+
+    private boolean guiding() { return guide != null && guide.getVisibility() == View.VISIBLE; }
 
     @Override public void switchSide() {
         int now = Store.side(this) == SplitGeometry.SIDE_LEFT ? SplitGeometry.SIDE_RIGHT : SplitGeometry.SIDE_LEFT;
@@ -729,7 +777,8 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
 
     /** MAZDA コマンダー: 回す。メニュー表示中は項目移動、それ以外は操作中の画面のスクロールに回す。 */
     @Override public void commanderRotate(int steps) {
-        if (panel.getVisibility() == View.VISIBLE) panel.rotate(steps);
+        if (guiding()) guide.rotate(steps);
+        else if (panel.getVisibility() == View.VISIBLE) panel.rotate(steps);
         else { try { active().scroll(0, steps * 40f); active().scrollEnd(); } catch (Throwable ignored) {} }
     }
 
@@ -801,17 +850,19 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     /**
      * Apple の機器と同じ考え方: 基本は YouTube。CarPlay の
      * ・ナビの声・通知音(default/alert/compatibility) → YouTube を 20% に下げて重ねる
-     * ・電話・Siri(telephony/speechrecognition) → YouTube を消す(再生は止めない)
+     * ・電話・Siri(telephony/speechrecognition) → YouTube を一時停止し、終わったら再開
      * ・音楽(media) → 何もしない
      * 鳴り終わったら元の音量に戻す。
      */
     private void applyDuck() {
         float level = 1f;
+        boolean call = false;
         for (String t : carSounds) {
-            if (t.equals("telephony") || t.equals("speechrecognition")) level = 0f;
+            if (t.equals("telephony") || t.equals("speechrecognition")) { level = 0f; call = true; }
             else if (!t.equals("media")) level = Math.min(level, DUCK_NAV);
         }
         tv.duck(level);
+        tv.hold(call); // 電話・Siri の間は一時停止。終わったら、止める前に再生していれば再開
     }
 
     /** 状態が変わったら、少し待ってまとめて1回送る。 */

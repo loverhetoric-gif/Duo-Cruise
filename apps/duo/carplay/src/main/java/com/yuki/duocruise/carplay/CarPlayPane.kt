@@ -137,10 +137,11 @@ class CarPlayPane(context: Context, private val listener: Listener?) {
             FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT,
         ))
         label.setTextColor(Color.WHITE)
-        label.textSize = 16f
+        label.textSize = 18f
+        label.setLineSpacing(0f, 1.5f)
         label.gravity = Gravity.CENTER
         label.setPadding(24, 24, 24, 24)
-        label.text = statusText
+        label.text = forPeople(statusText)
         root.addView(label, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT,
         ))
@@ -544,8 +545,24 @@ class CarPlayPane(context: Context, private val listener: Listener?) {
 
     private fun setStatus(text: String) {
         statusText = text
-        label.text = text
+        label.text = forPeople(text)
         listener?.onStatus(text)
+    }
+
+    /**
+     * 枠に出す文。記録と判定には [statusText](技術的な文)をそのまま使い、画面には利用者向けの言葉だけを出す。
+     * 失敗・切断は Duo Cruise が自動でつなぎ直すので、そのことを伝える(英語の内部メッセージは出さない)。
+     */
+    private fun forPeople(s: String): String = when {
+        s.startsWith("権限が足りません") -> "CarPlay を使う許可が足りません\nメニュー › システム › Android の設定を開く から許可してください"
+        s.startsWith("パスワード") || s.contains("文字です") -> s
+        s.startsWith("失敗") || s.startsWith("始められません") -> "iPhone とつながりませんでした\n自動でつなぎ直しています"
+        s.startsWith("CarPlay が切れました") || s.startsWith("iPhone との接続が終わりました") -> "CarPlay が切れました\n自動でつなぎ直しています"
+        s.startsWith("ペアリング済みの iPhone") -> "iPhone を待っています\niPhone の Bluetooth と Wi-Fi をオンにしてください"
+        s.startsWith("Bluetooth で iPhone") -> "iPhone に接続しています"
+        s.startsWith("iPhone と準備中") || s.startsWith("無線 CarPlay") || s.startsWith("CarPlay 表示中") -> "CarPlay を開始しています"
+        s == "停止中" -> "CarPlay は停止しています"
+        else -> "CarPlay を準備しています"
     }
 
     private fun record(kind: String, text: String) {
