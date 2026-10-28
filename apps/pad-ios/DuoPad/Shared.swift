@@ -6,14 +6,14 @@ import UIKit
 // iPhone と Mac で共通の見た目(配色・知らせる光・文字・ボタンの形)。
 
 /// 昼・夜の配色。面・縁・ボタンはほぼ同じ明るさにして、ボタンが周りに溶け込むようにする。
-/// 昼: 明るい面。光は白だと見えないため、柔らかい灰色。
+/// 昼: 明るい面。光は白だと見えないため、ロゴと同じ青で、色を重ねて見せる。
 /// 夜: ほぼ黒の面。光は白。眩しくならないよう全体に控えめ。
 struct Palette {
     let surface, edge, key, icon, glow: Color
     /// 暗い地か(光は暗い地でだけにじませる)。
     var dark = false
     static let day = Palette(surface: Color(white: 0.95), edge: Color(white: 0.82), key: Color(white: 0.905),
-                             icon: Color(white: 0.30), glow: Color(white: 0.42))
+                             icon: Color(white: 0.30), glow: Color(red: 0.16, green: 0.38, blue: 0.94))
     static let night = Palette(surface: Color(white: 0.055), edge: Color(white: 0.15), key: Color(white: 0.09),
                                icon: Color(white: 0.52), glow: .white, dark: true)
     /// 汎用モード(ホーム等)の背景。Duo Cruise の中とひと目で見分けられるグレー。
@@ -61,6 +61,15 @@ struct Notice: Equatable {
 
     /// Siri のように、近い色を何色か混ぜる(どれも少し白寄り。濃い色は外側の細い線だけに出る)。
     func colors(_ c: Palette) -> [Color] {
+        // 昼の白い地では、白寄りの淡い色は溶けて見えない。同じ色相の、濃く澄んだ色を使う
+        if !c.dark {
+            switch kind {
+            case .duo: return [rgb(0.10, 0.36, 0.92), rgb(0.16, 0.52, 0.98), rgb(0.24, 0.30, 0.90), rgb(0.10, 0.62, 0.95)]
+            case .bluetooth: return [rgb(0.05, 0.62, 0.42), rgb(0.02, 0.55, 0.55), rgb(0.30, 0.66, 0.15), rgb(0.05, 0.70, 0.52)]
+            case .lost: return [rgb(0.88, 0.22, 0.18), rgb(0.86, 0.15, 0.36), rgb(0.92, 0.38, 0.12), rgb(0.85, 0.25, 0.30)]
+            case .switched: return [c.glow, c.glow.opacity(0.7), c.glow, c.glow.opacity(0.8)]
+            }
+        }
         switch kind {
         case .duo: return [rgb(0.42, 0.66, 1.0), rgb(0.62, 0.84, 1.0), rgb(0.50, 0.52, 0.98), rgb(0.62, 0.95, 1.0)]
         case .bluetooth: return [rgb(0.46, 0.93, 0.74), rgb(0.36, 0.82, 0.78), rgb(0.72, 0.94, 0.50), rgb(0.70, 1.0, 0.86)]
@@ -204,10 +213,12 @@ struct Lights: View {
     private func band(_ shape: RoundedRectangle, _ colors: [Color], spin: Double, strength: Double) -> some View {
         let g = AngularGradient(colors: colors + [colors[0]], center: .center, angle: .degrees(spin))
         let soft = AngularGradient(colors: (colors + [colors[0]]).map { $0.opacity(0.85) }, center: .center, angle: .degrees(spin))
+        // 夜は光を「足す」(screen)。昼の白い地では足しても見えないので、色を「重ねる」(multiply)で見せ、少し強める
+        let k = c.dark ? 1.0 : 2.0
         return ZStack {
-            shape.stroke(soft, lineWidth: 46).blur(radius: 28).opacity(0.38 * strength).blendMode(.screen)
-            shape.stroke(g, lineWidth: 10).blur(radius: 7).opacity(0.6 * strength)
-            shape.stroke(g, lineWidth: 1.6).opacity(min(1, 1.1 * strength))
+            shape.stroke(soft, lineWidth: 46).blur(radius: 28).opacity(min(1, 0.38 * strength * k)).blendMode(c.dark ? .screen : .multiply)
+            shape.stroke(g, lineWidth: 10).blur(radius: 7).opacity(min(1, 0.6 * strength * k))
+            shape.stroke(g, lineWidth: 1.6).opacity(min(1, 1.1 * strength * k))
         }
     }
 }

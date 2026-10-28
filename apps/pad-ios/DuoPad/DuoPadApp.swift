@@ -56,7 +56,13 @@ struct PadScreen: View {
         GeometryReader { geo in content(geo.safeAreaInsets) }
     }
 
-    private var connected: Bool { if case .connected = link.state { return true }; return false }
+    private var connected: Bool {
+        #if DEBUG
+        // 確認用: 環境変数 DUO_OFFLINE=1 で、つながっていない時の見た目(昼・夜)を出す
+        if ProcessInfo.processInfo.environment["DUO_OFFLINE"] == "1" { return false }
+        #endif
+        if case .connected = link.state { return true }; return false
+    }
 
     private func content(_ ins: EdgeInsets) -> some View {
         ZStack {
