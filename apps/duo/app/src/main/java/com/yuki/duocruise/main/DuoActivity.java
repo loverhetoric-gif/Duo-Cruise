@@ -349,7 +349,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         Store.setSide(this, side);
         relayout();
         focusActive();
-        root.glow(); // ターゲット切り替え: 操作中の画面の縁をひときわ光らせる
+        root.glow(Store.neonTarget(this), Store.neonLevel(this, 0) / 100f); // ターゲット切替: 設定の色・強さで一瞬
         DuoLog.log("操作する側: " + sideText());
     }
 
@@ -362,16 +362,26 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         if (curYt < 0) curYt = Store.splitYt(this);
         root.setSingle(Store.single(this));
         root.apply(Store.swapped(this), Store.side(this), Store.panelHalf(this), curYt);
-        updateGlow();
     }
 
-    /** 操作中の画面の縁の発光色を、状態に合わせて決める。基本は白。 */
-    private void updateGlow() {
-        int c = Theme.NEON_WHITE;
-        if (navEngaged) c = Theme.NEON_NAV;                                   // ナビ案内中: 青
-        else if (carOn() && carBluetooth(safeStatus(car))) c = Theme.NEON_LINK; // CarPlay 接続中: ティール
-        root.setGlowColor(c);
+    /** CarPlay の接続状態(前回値)。変化した瞬間だけ、メインビューを色で知らせる。 */
+    private boolean lastConn;
+
+    /** 接続状態が変わったら、メインビューの縁を一瞬だけ光らせる(完了=青／不良=赤)。 */
+    private void onConnChanged() {
+        boolean conn = carOn() && carBluetooth(safeStatus(car));
+        if (conn == lastConn) return;
+        lastConn = conn;
+        int which = conn ? 1 : 2;
+        root.glow(Store.neon(this, which), Store.neonLevel(this, which) / 100f); // 完了 / 不良(切断)。色・強さは設定可
     }
+
+    // ネオンの色・強さ(設定から RGB・強さを個別に変更)。which: 0=ターゲット切替 / 1=接続完了 / 2=接続不良。
+    @Override public int neonColor(int which) { return Store.neon(this, which); }
+    @Override public void setNeonColor(int which, int color) { Store.setNeon(this, which, color); }
+    @Override public int neonLevel(int which) { return Store.neonLevel(this, which); }
+    @Override public void setNeonLevel(int which, int lv) { Store.setNeonLevel(this, which, lv); }
+    @Override public String neonColorText(int which) { int c = Store.neon(this, which); return String.format("#%06X", c & 0xFFFFFF); }
 
     /** 比率をなめらかに変える。 */
     private void animateYt(int target) {
@@ -779,7 +789,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         DuoActivity a = live;
         if (a == null) return;
         if (a.padServer != null) a.padServer.setBluetooth(carBluetooth(safeStatus(a.car)));
-        a.updateGlow();
+        a.onConnChanged();
         a.main.removeCallbacks(a.sendState);
         a.main.postDelayed(a.sendState, 800);
     }

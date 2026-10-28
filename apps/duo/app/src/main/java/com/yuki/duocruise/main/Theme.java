@@ -22,6 +22,18 @@ final class Theme {
     /** 注意・切断など。 */
     static final int NEON_ALERT = 0xFFFF6B6B;  // コーラル
 
+    /** 設定で選べるネオンの色と、その名前。 */
+    static final int[] NEON_PALETTE = { NEON_WHITE, NEON_NAV, NEON_LINK, 0xFF7CE36A, 0xFFFFC24F, NEON_ALERT, 0xFFB07BFF, 0xFFFF7BC2 };
+    static final String[] NEON_NAMES = { "白", "青", "ティール", "緑", "アンバー", "赤", "紫", "ピンク" };
+
+    static int neonIndex(int color) {
+        for (int i = 0; i < NEON_PALETTE.length; i++) if (NEON_PALETTE[i] == color) return i;
+        return 0;
+    }
+    /** 次の色へ(パレットを一巡)。 */
+    static int neonNext(int color) { return NEON_PALETTE[(neonIndex(color) + 1) % NEON_PALETTE.length]; }
+    static String neonName(int color) { return NEON_NAMES[neonIndex(color)]; }
+
     private static final Paint NEON = new Paint(Paint.ANTI_ALIAS_FLAG);
     static { NEON.setStyle(Paint.Style.STROKE); NEON.setStrokeJoin(Paint.Join.ROUND); }
 

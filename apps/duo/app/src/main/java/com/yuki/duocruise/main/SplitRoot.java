@@ -104,11 +104,11 @@ final class SplitRoot extends ViewGroup {
         frame.invalidate();
     }
 
-    /** 操作側(ターゲット)を切り替えた直後: 操作中の画面の縁をひときわ強く光らせる。 */
-    void glow() { frame.glow(); }
-
-    /** 発光の色を状態に合わせて変える(白＝既定／ティール＝CarPlay接続中／青＝ナビ中 など)。 */
-    void setGlowColor(int color) { frame.setColor(color); }
+    /**
+     * メインビューのイベント発光(瞬間のみ)。操作中の画面の縁を、その色・強さで一瞬だけ光らせて消す。
+     * 色・強さはイベントごとに設定で変えられる(ターゲット切替／接続完了／接続不良)。strength は 0〜1。
+     */
+    void glow(int color, float strength) { frame.glow(color, strength); }
 
     /**
      * 入れ替えの動き: 2つの枠が左右に「くるっと」すれ違う。
@@ -221,9 +221,10 @@ final class SplitRoot extends ViewGroup {
     private final class Frame extends View {
         private final NeonGlow glow = new NeonGlow();
         private ValueAnimator glowAnim;
-        private float pulse = 0;                    // ターゲット切替の瞬間だけ光る(1→0 へ減衰)。常時は出さない
+        private float pulse = 0;                    // イベントの瞬間だけ光る(1→0 へ減衰)。常時は出さない
         private float phase = 0;                     // 発光の揺らぎ
-        private int color = Theme.NEON_WHITE;        // 発光の色(状態で変わる。既定は白)
+        private float strength = 0.55f;              // そのイベントの発光の強さ(設定で変わる)
+        private int color = Theme.NEON_WHITE;        // 発光の色(イベント・設定で変わる)
         /** 入れ替えで動いている間は縁を描かない。 */
         boolean moving;
 
@@ -232,10 +233,10 @@ final class SplitRoot extends ViewGroup {
             setWillNotDraw(false);
         }
 
-        void setColor(int c) { if (c != color) { color = c; invalidate(); } }
-
-        /** 操作側(ターゲット)を切り替えた瞬間だけ、操作中の画面の縁を柔らかく光らせて消す。 */
-        void glow() {
+        /** イベントの瞬間だけ、操作中の画面の縁をその色・強さで柔らかく光らせて消す。 */
+        void glow(int c, float s) {
+            color = c;
+            strength = Math.max(0f, Math.min(1f, s));
             if (glowAnim != null) glowAnim.cancel();
             glowAnim = ValueAnimator.ofFloat(0f, 1f);
             glowAnim.setDuration(GLOW_MS);
@@ -253,10 +254,11 @@ final class SplitRoot extends ViewGroup {
             if (pulse <= 0 || moving || (panel != null && panel.getVisibility() == VISIBLE)) return;
             int w = getWidth(), h = getHeight();
             int[] r = activeRect(w, h);
-            // 切り替わったペインの端にぴたりと合わせる。ペインは角丸なしなので、四角(半径0)で描く
+            // 切り替わったペインの端にぴたりと合わせる。ペインは角丸なしなので、四角(半径0)で描く。
+            // メインビューは没入優先なので控えめに(強さを抑える)
             float s = 1.5f * dp;
             RectF box = new RectF(r[0] + s, r[1] + s, r[2] - s, r[3] - s);
-            glow.draw(cv, box, dp, 0, pulse, color, phase);
+            glow.draw(cv, box, dp, 0, pulse * strength, color, phase);
         }
     }
 }

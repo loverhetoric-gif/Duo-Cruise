@@ -51,6 +51,10 @@ final class PanelView extends ViewGroup {
         void toggleAutoSplit(); boolean autoSplitOn();
         void toggleAutoSwap(); boolean autoSwapOn();
         void cycleNavHold(); String navHoldText();
+        // ネオン(メインビューのイベント発光)の色(RGB)と強さを、項目ごとに設定する。
+        int neonColor(int which); void setNeonColor(int which, int color);
+        int neonLevel(int which); void setNeonLevel(int which, int lv);
+        String neonColorText(int which);
         String layoutText();
         String sideText();
         KeyMap keyMap();
@@ -60,11 +64,11 @@ final class PanelView extends ViewGroup {
         void resetKeys();
     }
 
-    static final int MAIN = 0, KEYS = 1, LOG = 2, SYS = 3, SPLIT = 4;
+    static final int MAIN = 0, KEYS = 1, LOG = 2, SYS = 3, SPLIT = 4, NEON = 5, NEON_EDIT = 6;
 
     private interface Text { String get(); }
-    /** 左右で変える、割合のスライダー。pct は 0〜100(YouTube の割合)。 */
-    private interface Slider { int pct(); void nudge(int dir); }
+    /** 左右(調整モードのダイヤル)で変えるスライダー。value は 0〜max。色のヒントと表示文字も持つ。 */
+    private interface Slider { int value(); int max(); void nudge(int dir); String text(); int tint(); }
 
     private static final class Item {
         final Text label, value;
@@ -95,6 +99,9 @@ final class PanelView extends ViewGroup {
     private int page = MAIN, focus = 0, logPage = 0, logLines = 8;
     /** スライダーの調整モード中の行(押して入る)。-1 なら通常(回す=選択移動)。 */
     private int editing = -1;
+    /** ネオンの色編集ページで、どのイベントを編集中か(0=ターゲット/1=完了/2=不良)。 */
+    private int neonWhich = 0;
+    private final RectF swatch = new RectF();
 
     PanelView(Context c, Host host) {
         super(c);
@@ -135,8 +142,33 @@ final class PanelView extends ViewGroup {
         // Duo Pad と同じく、柔らかい光が縁をゆっくり巡る。
         float m = px(PAD) * 0.6f;
         frameBox.set(m, m, getWidth() - m, getHeight() - m);
-        frameGlow.draw(cv, frameBox, dp, 24 * dp, 0.7f, Theme.NEON_WHITE, phase);
+        frameGlow.draw(cv, frameBox, dp, 24 * dp, 0.5f, Theme.NEON_WHITE, phase); // 境界は間接照明(控えめ)
+        // 色編集ページ: 今の色・強さを「発光する丸いネオン」として見出しの右にプレビュー
+        if (page == NEON_EDIT) drawOrb(cv, host.neonColor(neonWhich) | 0xFF000000, host.neonLevel(neonWhich) / 100f);
     }
+
+    /** 発光する丸いネオン(オーブ)。色と強さを反映。NEON_EDIT のプレビューに使う。 */
+    private void drawOrb(Canvas cv, int color, float level) {
+        float k = Math.max(0.3f, level);                 // 0 でも消えないように下限
+        float breath = 0.9f + 0.1f * (float) Math.sin(phase * 2 * Math.PI);
+        float r = 20 * dp;
+        float cx = getWidth() - px(PAD) - r - 4 * dp, cy = px(PAD) + 13 * dp;
+        int a0 = Math.round(210 * k * breath), a1 = Math.round(95 * k * breath);
+        android.graphics.RadialGradient rg = new android.graphics.RadialGradient(cx, cy, r,
+                new int[]{ withA(color, a0), withA(color, a1), withA(color, 0) },
+                new float[]{ 0f, 0.42f, 1f }, android.graphics.Shader.TileMode.CLAMP);
+        orbP.setShader(rg);
+        cv.drawCircle(cx, cy, r, orbP);
+        orbP.setShader(null);
+        orbP.setColor(withA(color, Math.round(235 * k)));      // 色の芯
+        cv.drawCircle(cx, cy, r * 0.34f, orbP);
+        orbP.setColor(withA(0xFFFFFF, Math.round(210 * k)));   // 白いハイライト
+        cv.drawCircle(cx, cy, r * 0.15f, orbP);
+    }
+
+    private static int withA(int c, int a) { return (Math.max(0, Math.min(255, a)) << 24) | (c & 0xFFFFFF); }
+
+    private final Paint orbP = new Paint(Paint.ANTI_ALIAS_FLAG);
 
     @Override protected void onVisibilityChanged(View changed, int visibility) {
         super.onVisibilityChanged(changed, visibility);
@@ -197,18 +229,30 @@ final class PanelView extends ViewGroup {
             items.add(new Item(() -> "メニューの表示範囲", () -> host.panelHalf() ? "操作中の画面のみ" : "画面全体", host::togglePanelHalf, true));
             items.add(new Item(() -> "ユーザー補助", () -> host.accessOn() ? "オン" : "オフ（ホーム・タスク操作が行えません）",
                     host::openAccessibility));
+            items.add(new Item(() -> "ネオンの色・強さ", () -> "", () -> show(NEON)));
             items.add(new Item(() -> "ホーム画面を開く", host::otherHomeName, host::goHome));
             items.add(new Item(() -> "戻る", () -> "", () -> show(MAIN)));
         } else if (p == SPLIT) {
             title.setText("画面分割とナビ連動");
-            items.add(new Item(() -> "通常の分割比", () -> { host.adjustSplitYt(1); refresh(); },
-                    new Slider() { public int pct() { return host.splitYtPct(); } public void nudge(int d) { host.adjustSplitYt(d); } }));
+            items.add(new Item(() -> "通常の分割比", () -> {}, pctSlider(true)));
             items.add(new Item(() -> "ナビ案内中に自動で調整", () -> host.autoSplitOn() ? "オン" : "オフ", () -> { host.toggleAutoSplit(); refresh(); }, true));
-            items.add(new Item(() -> "ナビ案内中の分割比", () -> { host.adjustNavYt(1); refresh(); },
-                    new Slider() { public int pct() { return host.navYtPct(); } public void nudge(int d) { host.adjustNavYt(d); } }));
+            items.add(new Item(() -> "ナビ案内中の分割比", () -> {}, pctSlider(false)));
             items.add(new Item(() -> "ナビ案内中は地図を右に配置", () -> host.autoSwapOn() ? "オン" : "オフ", () -> { host.toggleAutoSwap(); refresh(); }, true));
             items.add(new Item(() -> "通常の配置に戻るまでの時間", host::navHoldText, () -> { host.cycleNavHold(); refresh(); }, true));
             items.add(new Item(() -> "戻る", () -> "", () -> show(MAIN)));
+        } else if (p == NEON) {
+            title.setText("ネオンの色・強さ");
+            items.add(new Item(() -> "ターゲット切替", () -> host.neonColorText(0), () -> { neonWhich = 0; show(NEON_EDIT); }));
+            items.add(new Item(() -> "接続完了", () -> host.neonColorText(1), () -> { neonWhich = 1; show(NEON_EDIT); }));
+            items.add(new Item(() -> "接続不良", () -> host.neonColorText(2), () -> { neonWhich = 2; show(NEON_EDIT); }));
+            items.add(new Item(() -> "戻る", () -> "", () -> show(SYS)));
+        } else if (p == NEON_EDIT) {
+            title.setText(neonWhich == 0 ? "ターゲット切替の色" : neonWhich == 1 ? "接続完了の色" : "接続不良の色");
+            items.add(new Item(() -> "赤 (R)", () -> {}, channelSlider(0)));
+            items.add(new Item(() -> "緑 (G)", () -> {}, channelSlider(1)));
+            items.add(new Item(() -> "青 (B)", () -> {}, channelSlider(2)));
+            items.add(new Item(() -> "発光の強さ", () -> {}, levelSlider()));
+            items.add(new Item(() -> "戻る", () -> "", () -> show(NEON)));
         } else {
             title.setText("動作記録");
             logPage = 0;
@@ -268,7 +312,8 @@ final class PanelView extends ViewGroup {
         if (it.slider != null) {
             value.setVisibility(GONE);
             bar.setVisibility(VISIBLE);
-            bar.set(it.slider.pct(), on, editing == i);
+            Slider sl = it.slider;
+            bar.set(sl.value(), sl.max(), sl.text(), sl.tint(), on, editing == i);
         } else {
             bar.setVisibility(GONE);
             String s = it.value.get();
@@ -372,8 +417,49 @@ final class PanelView extends ViewGroup {
     }
 
     void back() {
-        if (page != MAIN) { host.cancelLearn(); show(MAIN); }
+        if (page != MAIN) { host.cancelLearn(); show(page == NEON_EDIT ? NEON : page == NEON ? SYS : MAIN); }
         else host.closePanel();
+    }
+
+    // ───────── スライダーの中身 ─────────
+
+    /** 分割比のスライダー(通常/ナビ中)。 */
+    private Slider pctSlider(boolean normal) {
+        return new Slider() {
+            public int value() { return normal ? host.splitYtPct() : host.navYtPct(); }
+            public int max() { return 100; }
+            public void nudge(int d) { if (normal) host.adjustSplitYt(d); else host.adjustNavYt(d); }
+            public String text() { return value() + "%"; }
+            public int tint() { return Theme.NEON_WHITE; }
+        };
+    }
+
+    /** ネオンの色の1チャンネル(R/G/B)。ch: 0=R,1=G,2=B。0〜255。 */
+    private Slider channelSlider(int ch) {
+        final int shift = 16 - ch * 8;
+        final int hint = ch == 0 ? 0xFFFF5B5B : ch == 1 ? 0xFF5BE37C : 0xFF5B8CFF;
+        return new Slider() {
+            public int value() { return (host.neonColor(neonWhich) >> shift) & 0xFF; }
+            public int max() { return 255; }
+            public void nudge(int d) {
+                int c = host.neonColor(neonWhich);
+                int v = Math.max(0, Math.min(255, value() + d * 8));
+                host.setNeonColor(neonWhich, (c & ~(0xFF << shift)) | (v << shift));
+            }
+            public String text() { return String.valueOf(value()); }
+            public int tint() { return hint; }
+        };
+    }
+
+    /** 発光の強さ(0〜100%)。つまみの色は今の色そのもの。 */
+    private Slider levelSlider() {
+        return new Slider() {
+            public int value() { return host.neonLevel(neonWhich); }
+            public int max() { return 100; }
+            public void nudge(int d) { host.setNeonLevel(neonWhich, Math.max(0, Math.min(100, value() + d * 5))); }
+            public String text() { return value() + "%"; }
+            public int tint() { return host.neonColor(neonWhich); }
+        };
     }
 
     // ───────── 並べ方(縦1列・画面高に収める) ─────────
@@ -484,14 +570,20 @@ final class PanelView extends ViewGroup {
         }
     }
 
-    /** 分割比のスライダー。押して「調整モード」に入ると、ダイヤルで増減できる。 */
+    /**
+     * スライダー。押して「調整モード」に入ると、ダイヤルで増減できる。
+     * 値は“ネオンの位置”で示す(発光するつまみ)。色は項目に合わせて tint する(R=赤み等・色は現在色)。
+     */
     private final class SliderBar extends View {
         private final Paint track = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Paint knob = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint glowP = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Paint txt = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Paint chev = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private int pct = 50;
+        private float frac = 0.5f;
+        private int tint = 0xFFFFFFFF;
+        private String label = "";
         private boolean on, editing;
 
         SliderBar(Context c) {
@@ -504,34 +596,44 @@ final class PanelView extends ViewGroup {
             chev.setFakeBoldText(true);
         }
 
-        void set(int pct, boolean on, boolean editing) {
-            this.pct = Math.max(0, Math.min(100, pct));
-            this.on = on; this.editing = editing;
+        void set(int value, int max, String label, int tint, boolean on, boolean editing) {
+            this.frac = max <= 0 ? 0 : Math.max(0f, Math.min(1f, value / (float) max));
+            this.tint = tint | 0xFF000000;
+            this.label = label; this.on = on; this.editing = editing;
             track.setColor(on ? 0x59FFFFFF : 0x33FFFFFF);
-            fill.setColor(on ? 0xFFFFFFFF : 0xCCFFFFFF);
-            knob.setColor(on ? 0xFFFFFFFF : 0xCCFFFFFF);
+            fill.setColor(withA(this.tint, on ? 255 : 200));
+            knob.setColor(0xFFFFFFFF);
             txt.setColor(on ? 0xFFFFFFFF : VALUE);
             chev.setColor(0xFFFFFFFF);
             invalidate();
         }
 
+        private int withA(int c, int a) { return (a << 24) | (c & 0xFFFFFF); }
+
         @Override protected void onDraw(Canvas cv) {
             int w = getWidth(), h = getHeight();
             float cy = h / 2f;
-            float labelW = 56 * dp;                 // 右に「60%」の文字ぶん
-            // 調整モード中は左右に ◀ ▶ を出して「回して変えられる」ことを示す
+            float labelW = 52 * dp;
             float chevW = editing ? 22 * dp : 0;
-            float x0 = 4 * dp + chevW, x1 = w - labelW - chevW;
-            float th = 6 * dp, r = th / 2;
+            float x0 = 6 * dp + chevW, x1 = w - labelW - chevW;
+            float th = 5 * dp, r = th / 2;
             cv.drawRoundRect(new RectF(x0, cy - r, x1, cy + r), r, r, track);
-            float kx = x0 + (x1 - x0) * (pct / 100f);
+            float kx = x0 + (x1 - x0) * frac;
             cv.drawRoundRect(new RectF(x0, cy - r, kx, cy + r), r, r, fill);
-            cv.drawCircle(kx, cy, (editing ? 12 : 9) * dp, knob);   // 調整中はノブを大きく
+            // 発光するつまみ(ネオンの位置＝値)。外側ほど薄い円を重ねて、ぼかし無しで光らせる
+            float kr = (editing ? 11 : 8) * dp;
+            int steps = 5;
+            for (int i = steps; i >= 1; i--) {
+                glowP.setColor(withA(tint, Math.round((on ? 46 : 30) * (i / (float) steps))));
+                cv.drawCircle(kx, cy, kr + i * 2.2f * dp, glowP);
+            }
+            knob.setColor(0xFFFFFFFF);
+            cv.drawCircle(kx, cy, kr * 0.55f, knob);     // 白い芯
             if (editing) {
                 cv.drawText("‹", x0 - 12 * dp, cy + chev.getTextSize() * 0.36f, chev);
                 cv.drawText("›", x1 + 12 * dp, cy + chev.getTextSize() * 0.36f, chev);
             }
-            cv.drawText(pct + "%", w, cy + txt.getTextSize() * 0.35f, txt);
+            cv.drawText(label, w, cy + txt.getTextSize() * 0.35f, txt);
         }
     }
 }
