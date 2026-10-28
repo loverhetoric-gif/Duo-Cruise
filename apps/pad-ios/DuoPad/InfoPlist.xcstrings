@@ -1,0 +1,64 @@
+{
+  "sourceLanguage": "ja",
+  "strings": {
+    "NSLocalNetworkUsageDescription": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wird verwendet, um das Verbindungsziel im selben WLAN zu finden und es als Touchpad zu bedienen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Used to find the device to connect to on the same Wi-Fi and control it as a touchpad."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se usa para encontrar el destino en la misma red Wi-Fi y controlarlo como un panel táctil."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sert à trouver la destination sur le même réseau Wi-Fi et à la commander comme un pavé tactile."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Serve a trovare la destinazione sulla stessa rete Wi-Fi e a controllarla come un touchpad."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同じ Wi-Fi にある接続先を見つけて、タッチパッドとして操作するために使います。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "같은 Wi-Fi에 있는 연결 대상을 찾아 터치패드로 조작하는 데 사용합니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用于在同一 Wi-Fi 中找到连接目标,并作为触控板进行操作。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用於在同一 Wi-Fi 中找到連線目標,並作為觸控板進行操作。"
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

@@ -66,12 +66,12 @@ enum PadTone: String, CaseIterable, Identifiable {
 
     var name: String {
         switch self {
-        case .white: return "ホワイト"
-        case .paper: return "ペーパー"
-        case .mist: return "ミスト"
-        case .black: return "ブラック"
-        case .sumi: return "スミ"
-        case .slate: return "スレート"
+        case .white: return String(localized: "ホワイト")
+        case .paper: return String(localized: "ペーパー")
+        case .mist: return String(localized: "ミスト")
+        case .black: return String(localized: "ブラック")
+        case .sumi: return String(localized: "スミ")
+        case .slate: return String(localized: "スレート")
         }
     }
     /// 面の色。
@@ -116,9 +116,9 @@ enum NeonPreset: String, CaseIterable, Identifiable {
     var name: String {
         switch self {
         case .duoNeon: return "DuoNEON"
-        case .white: return "ホワイト"
-        case .ocean: return "オーシャン"
-        case .amber: return "アンバー"
+        case .white: return String(localized: "ホワイト")
+        case .ocean: return String(localized: "オーシャン")
+        case .amber: return String(localized: "アンバー")
         }
     }
     /// 縁を巡る色の流れ。昼(明るい地)は色を重ねて見せるので、白は灰青に置き換える。
@@ -186,7 +186,7 @@ struct Notice: Equatable {
         switch kind {
         case .duo: return "Duo Cruise"
         case .bluetooth: return "Bluetooth"
-        case .lost: return "未接続"
+        case .lost: return String(localized: "未接続")
         case .switched: return "Duo Cruise"
         }
     }
@@ -219,7 +219,7 @@ struct StatusText: View {
             let active = env > 0.02 ? notice : nil
             let base: Color = connected ? c.glow : Notice(kind: .lost).colors(c)[0]
             let color = active?.colors(c)[0] ?? base
-            let text = active?.label ?? (connected ? "Duo Cruise" : "未接続")
+            let text = active?.label ?? (connected ? "Duo Cruise" : String(localized: "未接続"))
             let level = active != nil ? 0.55 + 0.45 * env : (connected ? 0.55 : 0.45 + 0.2 * sin(ctx.date.timeIntervalSinceReferenceDate * 1.6))
             Text(text)
                 .font(.system(size: 12, weight: .semibold))

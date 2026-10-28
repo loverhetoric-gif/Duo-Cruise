@@ -149,9 +149,9 @@ struct PadScreen: View {
 
     private var statusText: String {
         switch link.state {
-        case .searching: return "Duo Cruise を探しています…"
-        case .connecting(let n): return "\(n) につないでいます…"
-        case .connected(let n): return "\(n) に接続中・往復 \(String(format: "%.0f", link.rttMs)) ms"
+        case .searching: return String(localized: "Duo Cruise を探しています…")
+        case .connecting(let n): return String(localized: "\(n) につないでいます…")
+        case .connected(let n): return String(localized: "\(n) に接続中・往復 \(String(format: "%.0f", link.rttMs)) ms")
         case .failed(let w): return w
         }
     }
@@ -258,12 +258,12 @@ struct SettingsSheet: View {
                     .pickerStyle(.segmented)
                 }
                 Section {
-                    ToneRow(title: "ライト", tones: PadTone.dayTones, selection: $dayTone)
-                    ToneRow(title: "ダーク", tones: PadTone.nightTones, selection: $nightTone)
+                    ToneRow(title: String(localized: "ライト"), tones: PadTone.dayTones, selection: $dayTone)
+                    ToneRow(title: String(localized: "ダーク"), tones: PadTone.nightTones, selection: $nightTone)
                 } header: { Text("タッチパッドの配色") }
                 Section("ネオンの配色") {
-                    NeonRow(title: "ライト", dark: false, selection: $dayNeon)
-                    NeonRow(title: "ダーク", dark: true, selection: $nightNeon)
+                    NeonRow(title: String(localized: "ライト"), dark: false, selection: $dayNeon)
+                    NeonRow(title: String(localized: "ダーク"), dark: true, selection: $nightNeon)
                 }
                 Section {
                     TextField("空欄のままで大丈夫です(例 192.168.43.1)", text: $host)
@@ -275,6 +275,11 @@ struct SettingsSheet: View {
                 }
                 Section("接続") {
                     Button("再接続") { link.restart() }
+                }
+                Section {
+                    NavigationLink("Duo Slate について") {
+                        AboutView().navigationTitle("Duo Slate について").navigationBarTitleDisplayMode(.inline)
+                    }
                 }
             }
             .navigationTitle("Duo Slate の設定")
@@ -292,7 +297,7 @@ struct ToneRow: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            Text(title).font(.subheadline).frame(width: 52, alignment: .leading)
+            Text(title).font(.subheadline).lineLimit(1).minimumScaleFactor(0.7).frame(width: 52, alignment: .leading)
             ForEach(tones) { t in
                 Button { selection = t.rawValue } label: {
                     VStack(spacing: 6) {
@@ -322,7 +327,7 @@ struct NeonRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            Text(title).font(.subheadline).frame(width: 52, alignment: .leading).padding(.top, 8)
+            Text(title).font(.subheadline).lineLimit(1).minimumScaleFactor(0.7).frame(width: 52, alignment: .leading).padding(.top, 8)
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 10)], spacing: 10) {
                 ForEach(NeonPreset.allCases) { n in
                     Button { selection = n.rawValue } label: {

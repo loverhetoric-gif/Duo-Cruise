@@ -25,7 +25,20 @@ struct DuoPadMacApp: App {
                 .onAppear { link.start() }
         }
         .windowResizability(.contentMinSize)
+        .commands {
+            // アプリのメニューの「Duo Slate について」を、起動演出と同じロゴの窓にする
+            CommandGroup(replacing: .appInfo) { AboutMenuItem() }
+        }
+        Window("Duo Slate について", id: "about") {
+            AboutView().frame(width: 360, height: 420)
+        }
+        .windowResizability(.contentSize)
     }
+}
+
+private struct AboutMenuItem: View {
+    @Environment(\.openWindow) private var openWindow
+    var body: some View { Button("Duo Slate について") { openWindow(id: "about") } }
 }
 
 struct MacPadScreen: View {
@@ -57,7 +70,7 @@ struct MacPadScreen: View {
             Lights(c: c, night: night, connected: connected, target: link.target,
                    touch: nil, touchGlow: 0, notice: notice)
                 .allowsHitTesting(false)
-            Text(captured ? "Esc で解除" : "クリックで操作開始")
+            (captured ? Text("Esc で解除") : Text("クリックで操作開始"))
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(c.icon.opacity(captured ? 0.35 : 0.7))
                 .allowsHitTesting(false)
@@ -99,9 +112,9 @@ struct MacPadScreen: View {
             VStack(alignment: .leading, spacing: 10) {
                 Text("感度 \(String(format: "%.1f", sensitivity))")
                 Slider(value: $sensitivity, in: 0.3...3, step: 0.1).frame(width: 220)
-                Picker("配色", selection: $theme) { Text("自動").tag(0); Text("昼").tag(1); Text("夜").tag(2) }
+                Picker("ダークモード", selection: $theme) { Text("オン").tag(2); Text("オフ").tag(1); Text("デバイスの設定").tag(0) }
                     .pickerStyle(.segmented)
-                Button("今すぐつなぎ直す") { link.restart() }
+                Button("再接続") { link.restart() }
             }
             .padding(16)
         }
@@ -154,7 +167,7 @@ struct CommanderPanel: View {
         }
     }
 
-    private func hard(_ icon: String, _ label: String, _ action: @escaping () -> Void) -> some View {
+    private func hard(_ icon: String, _ label: LocalizedStringKey, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
             VStack(spacing: 3) {
                 Image(systemName: icon).font(.system(size: 16, weight: .regular))

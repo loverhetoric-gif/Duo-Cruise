@@ -118,12 +118,12 @@ final class PadLink: ObservableObject {
                 case .waiting(let e):
                     // ローカルネットワークの許可を断られた(-65570)か、Wi-Fi につながっていない
                     if case .dns(let code) = e, code == -65570 {
-                        self.state = .failed("ローカルネットワークの許可が必要です(iPhone の設定 → Duo Slate → ローカルネットワーク)")
+                        self.state = .failed(String(localized: "ローカルネットワークの許可が必要です(iPhone の設定 → Duo Slate → ローカルネットワーク)"))
                     } else {
-                        self.state = .failed("Wi-Fi につながっていません")
+                        self.state = .failed(String(localized: "Wi-Fi につながっていません"))
                     }
                 case .failed:
-                    self.drop("探せませんでした")
+                    self.drop(String(localized: "探せませんでした"))
                 default:
                     break
                 }
@@ -158,9 +158,9 @@ final class PadLink: ObservableObject {
             send("h 1 \(UIDeviceName.name)")
             receive(c)
         case .failed(let e):
-            drop("つながりません: \(e.localizedDescription)")
+            drop(String(localized: "つながりません: \(e.localizedDescription)"))
         case .waiting(let e):
-            drop("待っています: \(e.localizedDescription)")
+            drop(String(localized: "待っています: \(e.localizedDescription)"))
         case .cancelled:
             break
         default:
@@ -185,7 +185,7 @@ final class PadLink: ObservableObject {
             Task { @MainActor in
                 guard let self, c === self.conn else { return }
                 if let data { self.buffer.append(data); self.lines() }
-                if done || err != nil { self.drop("切れました"); return }
+                if done || err != nil { self.drop(String(localized: "切れました")); return }
                 self.receive(c)
             }
         }
@@ -220,7 +220,7 @@ final class PadLink: ObservableObject {
 
     private func ping() {
         guard case .connected = state else { return }
-        if CACurrentMediaTime() - lastPong > 4 { drop("返事がありません"); return } // 4秒返事が無ければつなぎ直す
+        if CACurrentMediaTime() - lastPong > 4 { drop(String(localized: "返事がありません")); return } // 4秒返事が無ければつなぎ直す
         pingId += 1
         pingSent[pingId] = CACurrentMediaTime()
         if pingSent.count > 20 { pingSent.removeValue(forKey: pingSent.keys.min()!) }
