@@ -30,6 +30,11 @@ struct PadScreen: View {
     @AppStorage("sensitivity") private var sensitivity = 1.0
     @AppStorage("acceleration") private var acceleration = 1.0
     @AppStorage("theme") private var theme = 0
+    /// 面の色とネオンの配色(昼・夜それぞれ)。設定で選ぶ。
+    @AppStorage("dayTone") private var dayTone = PadTone.white.rawValue
+    @AppStorage("nightTone") private var nightTone = PadTone.black.rawValue
+    @AppStorage("dayNeon") private var dayNeon = NeonPreset.duoNeon.rawValue
+    @AppStorage("nightNeon") private var nightNeon = NeonPreset.white.rawValue
     @Environment(\.colorScheme) private var scheme
     @State private var typing = false
     @State private var settings = false
@@ -46,12 +51,14 @@ struct PadScreen: View {
         return theme == 2 || (theme == 0 && scheme == .dark)
     }
     private var c: Palette {
+        let dayPal = Palette.make(dark: false, tone: PadTone(rawValue: dayTone) ?? .white, neon: NeonPreset(rawValue: dayNeon) ?? .duoNeon)
+        let nightPal = Palette.make(dark: true, tone: PadTone(rawValue: nightTone) ?? .black, neon: NeonPreset(rawValue: nightNeon) ?? .white)
         #if DEBUG
         // 確認用: 環境変数 DUO_DAY=1 で、つながっていても昼の配色にする
-        if ProcessInfo.processInfo.environment["DUO_DAY"] == "1" { return .day }
+        if ProcessInfo.processInfo.environment["DUO_DAY"] == "1" { return dayPal }
         #endif
-        if connected { return link.mode == "generic" ? .grey : .night }
-        return (theme == 2 || (theme == 0 && scheme == .dark)) ? .night : .day
+        if connected { return link.mode == "generic" ? .grey : nightPal }
+        return (theme == 2 || (theme == 0 && scheme == .dark)) ? nightPal : dayPal
     }
 
     var body: some View {
@@ -78,9 +85,10 @@ struct PadScreen: View {
                 .allowsHitTesting(false)
             VStack {
                 // 角の丸みの内側に収める(横向きでは上の余白が 0 になるため、角の丸みから下げる)
-                HStack { Spacer(); statusLabel }
+                HStack(alignment: .center) { settingLabel; Spacer(); statusLabel }
                     .padding(.top, max(ins.top, Screen.cornerRadius * 0.45))
                     .padding(.trailing, max(ins.trailing, Screen.cornerRadius * 0.45))
+                    .padding(.leading, max(ins.leading, Screen.cornerRadius * 0.45))
                 Spacer()
                 HStack(spacing: 8) {
                     key("arrow.uturn.backward") { link.send("k b") }
@@ -103,7 +111,10 @@ struct PadScreen: View {
         }
         .onChange(of: link.bluetoothUps) { _, _ in notice = Notice(kind: .bluetooth) }
         .onChange(of: link.switches) { _, _ in notice = Notice(kind: .switched) }
-        .sheet(isPresented: $settings) { SettingsSheet(sensitivity: $sensitivity, acceleration: $acceleration, theme: $theme) }
+        .sheet(isPresented: $settings) {
+            SettingsSheet(sensitivity: $sensitivity, acceleration: $acceleration, theme: $theme,
+                          dayTone: $dayTone, nightTone: $nightTone, dayNeon: $dayNeon, nightNeon: $nightNeon)
+        }
     }
 
     private func touched(_ p: CGPoint?) {
@@ -113,6 +124,19 @@ struct PadScreen: View {
         } else {
             withAnimation(.easeInOut(duration: 0.6)) { touchGlow = 0 }
         }
+    }
+
+    /// 左上: 小さな SETTING。押すと設定。
+    private var settingLabel: some View {
+        Button { settings = true } label: {
+            Text("SETTING")
+                .font(.system(size: 11, weight: .semibold))
+                .kerning(1.6)
+                .foregroundStyle(c.icon.opacity(c.dark ? 0.9 : 0.85))
+                .padding(.vertical, 8).padding(.horizontal, 4)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("設定")
     }
 
     /// 右上(ステータスバーのすぐ下): 縁の光と同じ色・同じ動きの文字だけ。押すと設定。
@@ -209,6 +233,10 @@ struct SettingsSheet: View {
     @Binding var sensitivity: Double
     @Binding var acceleration: Double
     @Binding var theme: Int
+    @Binding var dayTone: String
+    @Binding var nightTone: String
+    @Binding var dayNeon: String
+    @Binding var nightNeon: String
     @State private var host = UserDefaults.standard.string(forKey: "host") ?? ""
     @Environment(\.dismiss) private var dismiss
 
@@ -232,6 +260,14 @@ struct SettingsSheet: View {
                     .pickerStyle(.segmented)
                 }
                 Section {
+                    ToneRow(title: "昼", tones: PadTone.dayTones, selection: $dayTone)
+                    ToneRow(title: "夜", tones: PadTone.nightTones, selection: $nightTone)
+                } header: { Text("タッチパッドの配色") } footer: { Text("Duo Cruise につながっている間は、夜の配色になります。") }
+                Section("ネオンの配色") {
+                    NeonRow(title: "昼", dark: false, selection: $dayNeon)
+                    NeonRow(title: "夜", dark: true, selection: $nightNeon)
+                }
+                Section {
                     TextField("空欄なら自動で探す(例 192.168.43.1)", text: $host)
                         .keyboardType(.numbersAndPunctuation)
                         .autocorrectionDisabled()
@@ -247,6 +283,71 @@ struct SettingsSheet: View {
             // 下スワイプで閉じたときも住所を保存する(変わっていなければ、つなぎ直さない)
             .onDisappear { link.manualHost = host.trimmingCharacters(in: .whitespaces) }
         }
+    }
+}
+/// 面の色を選ぶ行: 小さな色見本を並べ、選んだものに輪を付ける。
+struct ToneRow: View {
+    let title: String
+    let tones: [PadTone]
+    @Binding var selection: String
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Text(title).frame(width: 28, alignment: .leading)
+            ForEach(tones) { t in
+                Button { selection = t.rawValue } label: {
+                    VStack(spacing: 6) {
+                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            .fill(t.surface)
+                            .frame(width: 54, height: 38)
+                            .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                .stroke(selection == t.rawValue ? Color.accentColor : Color.secondary.opacity(0.3),
+                                        lineWidth: selection == t.rawValue ? 2.5 : 1))
+                        Text(t.name).font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("\(title)の面 \(t.name)")
+                .accessibilityAddTraits(selection == t.rawValue ? .isSelected : [])
+            }
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+/// ネオンの配色を選ぶ行: 色の流れを細い帯で見せる。
+struct NeonRow: View {
+    let title: String
+    let dark: Bool
+    @Binding var selection: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Text(title).frame(width: 28, alignment: .leading).padding(.top, 8)
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 10)], spacing: 10) {
+                ForEach(NeonPreset.allCases) { n in
+                    Button { selection = n.rawValue } label: {
+                        VStack(alignment: .leading, spacing: 6) {
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(dark ? Color(white: 0.07) : Color(white: 0.95))
+                                .frame(height: 30)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        .strokeBorder(LinearGradient(colors: n.colors(dark: dark), startPoint: .leading, endPoint: .trailing), lineWidth: 3)
+                                        .blur(radius: 1.5)
+                                )
+                                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .stroke(selection == n.rawValue ? Color.accentColor : .clear, lineWidth: 2.5).padding(-3))
+                            Text(n.name).font(.caption).foregroundStyle(selection == n.rawValue ? .primary : .secondary)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("\(title)のネオン \(n.name)")
+                    .accessibilityAddTraits(selection == n.rawValue ? .isSelected : [])
+                }
+            }
+        }
+        .padding(.vertical, 4)
     }
 }
 #endif

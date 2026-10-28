@@ -12,11 +12,17 @@ struct Palette {
     let surface, edge, key, icon, glow: Color
     /// 暗い地か(光は暗い地でだけにじませる)。
     var dark = false
+    /// ネオン(縁の光)の配色。設定で選ぶ。
+    var neon: NeonPreset = .white
 
-    /// 普段の光の色の流れ。夜は白の濃淡、昼はアイコン(白地版)と同じ暖色→寒色。
-    var flow: [Color] {
-        if dark { return [glow, glow.opacity(0.75), glow, glow.opacity(0.85)] }
-        return Palette.iconFlow
+    /// 普段の光の色の流れ。配色のプリセットで決まる。
+    var flow: [Color] { neon.colors(dark: dark) }
+
+    /// 設定(面の色・ネオンの配色)から配色を作る。
+    static func make(dark: Bool, tone: PadTone, neon: NeonPreset) -> Palette {
+        let base = dark ? Palette.night : Palette.day
+        return Palette(surface: tone.surface, edge: tone.edge, key: tone.key, icon: base.icon,
+                       glow: base.glow, dark: dark, neon: neon)
     }
 
     /// アイコン(白地版)の色: 朱 → オレンジ → 桃 → 淡い水色 → 空色 → 青。
@@ -26,7 +32,7 @@ struct Palette {
         Color(red: 0.35, green: 0.63, blue: 0.96), Color(red: 0.16, green: 0.35, blue: 0.82),
     ]
     static let day = Palette(surface: Color(white: 0.95), edge: Color(white: 0.82), key: Color(white: 0.905),
-                             icon: Color(white: 0.30), glow: Color(red: 0.16, green: 0.38, blue: 0.94))
+                             icon: Color(white: 0.30), glow: Color(red: 0.16, green: 0.38, blue: 0.94), neon: .duoNeon)
     static let night = Palette(surface: Color(white: 0.055), edge: Color(white: 0.15), key: Color(white: 0.09),
                                icon: Color(white: 0.52), glow: .white, dark: true)
     /// 汎用モード(ホーム等)の背景。Duo Cruise の中とひと目で見分けられるグレー。
@@ -49,6 +55,90 @@ enum Screen {
 /// 下のボタン。枠も地も持たず、アイコンだけが淡く光る(縁の光と同じ「光で見せる」作り)。
 /// ・普段: アイコンは光の色で、周りにうっすら光がにじむ(夜)。昼は濃いめの灰で読みやすく
 /// ・押した瞬間: 光が強まり、少し沈む。離すとゆっくり戻る
+/// タッチパッドの面の色(昼・夜それぞれ 3 つ)。最初の 1 つが元の色。
+enum PadTone: String, CaseIterable, Identifiable {
+    case white, paper, mist      // 昼
+    case black, sumi, slate      // 夜
+    var id: String { rawValue }
+
+    static let dayTones: [PadTone] = [.white, .paper, .mist]
+    static let nightTones: [PadTone] = [.black, .sumi, .slate]
+
+    var name: String {
+        switch self {
+        case .white: return "ホワイト"
+        case .paper: return "ペーパー"
+        case .mist: return "ミスト"
+        case .black: return "ブラック"
+        case .sumi: return "スミ"
+        case .slate: return "スレート"
+        }
+    }
+    /// 面の色。
+    var surface: Color {
+        switch self {
+        case .white: return Color(white: 0.95)
+        case .paper: return Color(red: 0.915, green: 0.905, blue: 0.885)   // わずかに暖かい灰(紙)
+        case .mist: return Color(red: 0.875, green: 0.885, blue: 0.905)    // わずかに青い灰(霧)
+        case .black: return Color(white: 0.055)
+        case .sumi: return Color(red: 0.075, green: 0.080, blue: 0.095)    // 青みのある深い墨
+        case .slate: return Color(red: 0.115, green: 0.120, blue: 0.135)   // 一段明るい石板
+        }
+    }
+    /// 縁の線と、押したときの地(面から少しだけずらす)。
+    var edge: Color {
+        switch self {
+        case .white: return Color(white: 0.82)
+        case .paper: return Color(red: 0.80, green: 0.79, blue: 0.77)
+        case .mist: return Color(red: 0.76, green: 0.77, blue: 0.80)
+        case .black: return Color(white: 0.15)
+        case .sumi: return Color(red: 0.17, green: 0.18, blue: 0.20)
+        case .slate: return Color(red: 0.21, green: 0.22, blue: 0.24)
+        }
+    }
+    var key: Color {
+        switch self {
+        case .white: return Color(white: 0.905)
+        case .paper: return Color(red: 0.87, green: 0.86, blue: 0.84)
+        case .mist: return Color(red: 0.83, green: 0.84, blue: 0.86)
+        case .black: return Color(white: 0.09)
+        case .sumi: return Color(red: 0.11, green: 0.115, blue: 0.13)
+        case .slate: return Color(red: 0.15, green: 0.155, blue: 0.17)
+        }
+    }
+}
+
+/// ネオン(縁の光)の配色のプリセット。
+enum NeonPreset: String, CaseIterable, Identifiable {
+    case duoNeon, white, ocean, amber
+    var id: String { rawValue }
+
+    var name: String {
+        switch self {
+        case .duoNeon: return "DuoNEON"
+        case .white: return "ホワイト"
+        case .ocean: return "オーシャン"
+        case .amber: return "アンバー"
+        }
+    }
+    /// 縁を巡る色の流れ。昼(明るい地)は色を重ねて見せるので、白は灰青に置き換える。
+    func colors(dark: Bool) -> [Color] {
+        switch self {
+        case .duoNeon:
+            return Palette.iconFlow
+        case .white:
+            let w = dark ? Color.white : Color(red: 0.42, green: 0.46, blue: 0.55)
+            return [w, w.opacity(0.75), w, w.opacity(0.85)]
+        case .ocean:
+            return [Color(red: 0.36, green: 0.86, blue: 0.96), Color(red: 0.20, green: 0.62, blue: 0.98),
+                    Color(red: 0.12, green: 0.38, blue: 0.92), Color(red: 0.30, green: 0.78, blue: 0.90)]
+        case .amber:
+            return [Color(red: 1.00, green: 0.78, blue: 0.40), Color(red: 1.00, green: 0.58, blue: 0.26),
+                    Color(red: 0.94, green: 0.42, blue: 0.22), Color(red: 1.00, green: 0.70, blue: 0.36)]
+        }
+    }
+}
+
 struct KeyStyle: ButtonStyle {
     let c: Palette
 
@@ -82,7 +172,7 @@ struct Notice: Equatable {
             case .bluetooth: return [rgb(0.05, 0.62, 0.42), rgb(0.02, 0.55, 0.55), rgb(0.30, 0.66, 0.15), rgb(0.05, 0.70, 0.52)]
             // 切断: アイコンの朱(オレンジ寄り)と分けるため、青みのある深い赤 1 色
             case .lost: return [rgb(0.80, 0.04, 0.22), rgb(0.76, 0.02, 0.26), rgb(0.80, 0.04, 0.22), rgb(0.84, 0.06, 0.24)]
-            case .switched: return Palette.iconFlow
+            case .switched: return c.flow
             }
         }
         switch kind {
