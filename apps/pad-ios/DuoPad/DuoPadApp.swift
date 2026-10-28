@@ -30,6 +30,8 @@ struct PadScreen: View {
     @AppStorage("sensitivity") private var sensitivity = 1.0
     @AppStorage("acceleration") private var acceleration = 1.0
     @AppStorage("theme") private var theme = 0
+    /// 昼夜の切り替え。オンなら、Duo Cruise につながっている間も昼・夜で配色を変える。オフなら、つながっている間は夜の配色。
+    @AppStorage("dayNight") private var dayNight = false
     /// 面の色とネオンの配色(昼・夜それぞれ)。設定で選ぶ。
     @AppStorage("dayTone") private var dayTone = PadTone.white.rawValue
     @AppStorage("nightTone") private var nightTone = PadTone.black.rawValue
@@ -47,7 +49,7 @@ struct PadScreen: View {
     // 接続中は、モードで色を決める: Duo Cruise の中＝昼夜問わず暗く / ホーム等＝グレー。
     // つながっていない間は、いつもの昼・夜に合わせる。
     private var night: Bool {
-        if connected { return true }
+        if connected && !dayNight { return true }
         return theme == 2 || (theme == 0 && scheme == .dark)
     }
     private var c: Palette {
@@ -57,7 +59,8 @@ struct PadScreen: View {
         // 確認用: 環境変数 DUO_DAY=1 で、つながっていても昼の配色にする
         if ProcessInfo.processInfo.environment["DUO_DAY"] == "1" { return dayPal }
         #endif
-        if connected { return link.mode == "generic" ? .grey : nightPal }
+        if connected && link.mode == "generic" { return .grey }
+        if connected && !dayNight { return nightPal }
         return (theme == 2 || (theme == 0 && scheme == .dark)) ? nightPal : dayPal
     }
 
@@ -112,7 +115,7 @@ struct PadScreen: View {
         .onChange(of: link.bluetoothUps) { _, _ in notice = Notice(kind: .bluetooth) }
         .onChange(of: link.switches) { _, _ in notice = Notice(kind: .switched) }
         .sheet(isPresented: $settings) {
-            SettingsSheet(sensitivity: $sensitivity, acceleration: $acceleration, theme: $theme,
+            SettingsSheet(sensitivity: $sensitivity, acceleration: $acceleration, theme: $theme, dayNight: $dayNight,
                           dayTone: $dayTone, nightTone: $nightTone, dayNeon: $dayNeon, nightNeon: $nightNeon)
         }
     }
@@ -233,6 +236,7 @@ struct SettingsSheet: View {
     @Binding var sensitivity: Double
     @Binding var acceleration: Double
     @Binding var theme: Int
+    @Binding var dayNight: Bool
     @Binding var dayTone: String
     @Binding var nightTone: String
     @Binding var dayNeon: String
@@ -253,26 +257,33 @@ struct SettingsSheet: View {
                         Slider(value: $acceleration, in: 0...3, step: 0.1)
                     }
                 }
-                Section("配色") {
+                Section {
+                    Toggle("昼夜の切り替え", isOn: $dayNight)
                     Picker("配色", selection: $theme) {
                         Text("自動").tag(0); Text("昼").tag(1); Text("夜").tag(2)
                     }
                     .pickerStyle(.segmented)
+                } header: { Text("配色") } footer: {
+                    Text(dayNight
+                         ? "Duo Cruise の操作中も、昼・夜に合わせて配色が変わります。「自動」は iPhone の外観モードに合わせます。"
+                         : "Duo Cruise の操作中は、いつも夜の配色です。昼・夜の配色は、つながっていない間だけ使います。")
                 }
                 Section {
                     ToneRow(title: "昼", tones: PadTone.dayTones, selection: $dayTone)
                     ToneRow(title: "夜", tones: PadTone.nightTones, selection: $nightTone)
-                } header: { Text("タッチパッドの配色") } footer: { Text("Duo Cruise につながっている間は、夜の配色になります。") }
+                } header: { Text("タッチパッドの配色") }
                 Section("ネオンの配色") {
                     NeonRow(title: "昼", dark: false, selection: $dayNeon)
                     NeonRow(title: "夜", dark: true, selection: $nightNeon)
                 }
                 Section {
-                    TextField("空欄なら自動で探す(例 192.168.43.1)", text: $host)
+                    TextField("空欄のままで大丈夫です(例 192.168.43.1)", text: $host)
                         .keyboardType(.numbersAndPunctuation)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
-                } header: { Text("OTTO の住所") } footer: { Text("いつもは空欄のままで、車の Wi-Fi で自動で見つけます。") }
+                } header: { Text("接続先の指定(通常は不要)") } footer: {
+                    Text("通常は空欄のままにしてください。車の Wi-Fi から OTTO を自動で見つけます。うまくつながらないときだけ、OTTO の IP アドレスを入力します。")
+                }
                 Section("つながり") {
                     Text("つなぎ直した回数 \(link.reconnects)")
                     Button("今すぐつなぎ直す") { link.restart() }
@@ -280,7 +291,7 @@ struct SettingsSheet: View {
             }
             .navigationTitle("Duo Slate の設定")
             .toolbar { Button("閉じる") { dismiss() } }
-            // 下スワイプで閉じたときも住所を保存する(変わっていなければ、つなぎ直さない)
+            // 下スワイプで閉じたときも接続先を保存する(変わっていなければ、つなぎ直さない)
             .onDisappear { link.manualHost = host.trimmingCharacters(in: .whitespaces) }
         }
     }
