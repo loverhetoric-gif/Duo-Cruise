@@ -109,14 +109,16 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         stage.setBackgroundColor(android.graphics.Color.BLACK); // 起動の地(白/黒)は演出の後ろに隠し、2 画面の地は黒
         stage.addView(root);
         stage.addView(guide);
+        boolean first = !Store.guided(this);
         if (b == null) {          // エンジンをかけて開いたとき(作り直しでは出さない)
             SplashView splash = new SplashView(this);
+            if (first) guide.prepare();   // 案内の地(演出と同じ色)を先に敷き、演出が消えたら案内が浮かぶ
             stage.addView(splash);
             splash.play(Store.bootSound(this), () -> {
                 stage.removeView(splash);
-                if (!Store.guided(this)) showGuide(); // 初めてなら、続けて案内
+                if (first) guide.reveal(this::guideDone);
             });
-        } else if (!Store.guided(this)) main.post(this::showGuide);
+        } else if (first) main.post(this::showGuide);
         setContentView(stage);
         setupInsets();
         applyLayout();
@@ -380,8 +382,10 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     @Override public void showGuide() {
         if (panel.getVisibility() == View.VISIBLE) { panel.setVisibility(View.GONE); applyLayout(); }
         guide.bringToFront();
-        guide.open(() -> { Store.setGuided(this, true); focusActive(); });
+        guide.open(this::guideDone);
     }
+
+    private void guideDone() { Store.setGuided(this, true); focusActive(); }
 
     @Override public boolean bootSound() { return Store.bootSound(this); }
     @Override public void toggleBootSound() { Store.setBootSound(this, !Store.bootSound(this)); }
@@ -885,6 +889,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
             case "state": return stateText();
             case "swap": swap(); return "入れ替えました: " + layoutText();
             case "side": switchSide(); return sideText();
+            case "guide-reset": Store.setGuided(this, false); return "次に開いたとき、はじめての案内を出します";
             case "panel": togglePanel(); return "操作盤 " + (panel.getVisibility() == View.VISIBLE ? "表示" : "非表示");
             case "keys-reset": resetKeys(); return "割り当てを初期値に戻しました: " + keyMap.serialize();
             // 遠くからは「止める」だけ。始めるのは OTTO の画面の操作盤からだけ
