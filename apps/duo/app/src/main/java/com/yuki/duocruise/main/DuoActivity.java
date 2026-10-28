@@ -497,14 +497,18 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     void openPanel() {
         panel.show(PanelView.MAIN);
         panel.setVisibility(View.VISIBLE);
+        panel.enter();
         applyLayout();
     }
 
     @Override public void closePanel() {
         cancelLearn();
-        panel.setVisibility(View.GONE);
-        applyLayout();
-        focusActive();
+        if (panel.getVisibility() != View.VISIBLE) return;
+        panel.leave(() -> {
+            panel.setVisibility(View.GONE);
+            applyLayout();
+            focusActive();
+        });
     }
 
     /** 操作盤の「CarPlay を開始/止める」。止めたら、次に開くか「開始」を押すまでつなぎ直さない。 */
@@ -737,8 +741,21 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     }
 
     /** 2本指スクロールは、操作中の画面本来の送り方(YouTube=矢印、CarPlay=ダイヤル)に渡す。メニュー表示中は裏へ渡さない。 */
-    @Override public void scroll(float dx, float dy) { if (panel.getVisibility() == View.VISIBLE) return; active().scroll(dx, dy); }
-    @Override public void scrollEnd() { if (panel.getVisibility() == View.VISIBLE) return; active().scrollEnd(); }
+    @Override public void scroll(float dx, float dy) {
+        if (panel.getVisibility() == View.VISIBLE) { menuScroll(dx, dy); return; }
+        active().scroll(dx, dy);
+    }
+    @Override public void scrollEnd() { if (panel.getVisibility() == View.VISIBLE) { menuAcc = 0; return; } active().scrollEnd(); }
+
+    /** メニュー表示中の2本指スクロール(DuoPad)。縦になぞった量を、ダイヤルの1目盛りずつに直す。調整中は値が動く。 */
+    private float menuAcc;
+    private void menuScroll(float dx, float dy) {
+        float v = Math.abs(dy) >= Math.abs(dx) ? dy : dx; // 横になぞっても回せる(スライダーで自然)
+        menuAcc += v;
+        float step = 28f;
+        while (menuAcc >= step) { menuAcc -= step; panel.rotate(1); }
+        while (menuAcc <= -step) { menuAcc += step; panel.rotate(-1); }
+    }
 
     @Override public void touched(int side) {
         if (side != Store.side(this)) setSide(side);

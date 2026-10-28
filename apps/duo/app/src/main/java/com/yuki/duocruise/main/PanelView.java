@@ -259,6 +259,7 @@ final class PanelView extends ViewGroup {
     // ───────── ページの中身 ─────────
 
     void show(int p) {
+        int from = page;
         page = p;
         items.clear();
         focus = 0;
@@ -333,6 +334,73 @@ final class PanelView extends ViewGroup {
         refresh();
         requestLayout();
         post(() -> focusRow(0));
+        if (getVisibility() == VISIBLE && from != p) transition(depth(p) - depth(from));
+    }
+
+    // ───────── 移り変わり ─────────
+    //   メニューに入る : 黒い面が 0.26 秒で降り、中身が少し下から浮かぶ。縁の光は膨らんで落ち着く
+    //   下の階層へ     : 中身が右から滑り込む(奥へ進む)。行の縁が答える
+    //   戻る           : 中身が左から滑り込む(手前へ戻る)
+    //   メインに戻る   : 中身が少し沈みながら、面ごと 0.2 秒で消える
+    //   いずれも移動と透明度だけ(ハードウェア描画)。CarPlay の映像を壊さない。
+
+    private static int depth(int p) {
+        switch (p) {
+            case MAIN: return 0;
+            case DISPLAY: case CONTROLS: case SYS: return 1;
+            case NEON_EDIT: return 3;
+            default: return 2;
+        }
+    }
+
+    private View[] content() { return new View[]{ title, list, logText }; }
+
+    /** 階層の移動。dir>0 で奥へ(右から)、dir<0 で手前へ(左から)。 */
+    private void transition(int dir) {
+        float dx = (dir >= 0 ? 1 : -1) * 56 * dp;
+        long d = 0;
+        for (View v : content()) {
+            v.animate().cancel();
+            v.setTranslationX(dx);
+            v.setTranslationY(0);
+            v.setAlpha(0f);
+            v.animate().translationX(0).alpha(1f).setStartDelay(d).setDuration(280)
+                    .setInterpolator(new android.view.animation.DecelerateInterpolator(2f)).start();
+            d += 30; // 見出し→行の順に、わずかにずらして流れを作る
+        }
+    }
+
+    /** メニューに入る。 */
+    void enter() {
+        animate().cancel();
+        setAlpha(0f);
+        animate().alpha(1f).setDuration(260).setInterpolator(new android.view.animation.DecelerateInterpolator(1.5f)).start();
+        long d = 60;
+        for (View v : content()) {
+            v.animate().cancel();
+            v.setTranslationX(0);
+            v.setTranslationY(14 * dp);
+            v.setAlpha(0f);
+            v.animate().translationY(0).alpha(1f).setStartDelay(d).setDuration(340)
+                    .setInterpolator(new android.view.animation.DecelerateInterpolator(2f)).start();
+            d += 40;
+        }
+    }
+
+    /** メインに戻る。消え終わったら done を呼ぶ。 */
+    void leave(Runnable done) {
+        for (View v : content()) {
+            v.animate().cancel();
+            v.animate().translationY(10 * dp).alpha(0f).setStartDelay(0).setDuration(180)
+                    .setInterpolator(new android.view.animation.AccelerateInterpolator(1.5f)).start();
+        }
+        animate().cancel();
+        animate().alpha(0f).setDuration(220).setInterpolator(new android.view.animation.AccelerateInterpolator(1.5f))
+                .withEndAction(() -> {
+                    setAlpha(1f);
+                    for (View v : content()) { v.setAlpha(1f); v.setTranslationY(0); }
+                    done.run();
+                }).start();
     }
 
     private void rebuildRows() {
@@ -381,6 +449,7 @@ final class PanelView extends ViewGroup {
             value.setVisibility(GONE);
             bar.setVisibility(VISIBLE);
             Slider sl = it.slider;
+            bar.target = sl;
             bar.set(sl.value(), sl.max(), sl.text(), sl.tint(), on, editing == i);
         } else {
             bar.setVisibility(GONE);
@@ -487,6 +556,20 @@ final class PanelView extends ViewGroup {
         Item it = items.get(i);
         if (it.slider != null) { it.slider.nudge(dir); refresh(); }
         else if (editing < 0 && it.adj) { it.run.run(); refresh(); }
+    }
+
+    /** スライダーを v に近づける(値の刻みはスライダーごとに違うので、nudge を繰り返す)。 */
+    private void seek(Slider sl, int v) {
+        for (int guard = 0; guard < 64; guard++) {
+            int now = sl.value();
+            if (now == v) break;
+            int dir = v > now ? 1 : -1;
+            sl.nudge(dir);
+            int next = sl.value();
+            if (next == now || (dir > 0 ? next > v : next < v)) { if (Math.abs(next - v) > Math.abs(now - v)) sl.nudge(-dir); break; }
+        }
+        answer(focus, 1f);
+        refresh();
     }
 
     /** 今のページの1つ上(親)のページ。 */
@@ -672,6 +755,22 @@ final class PanelView extends ViewGroup {
             chev.setTextSize(15 * dp);
             chev.setTextAlign(Paint.Align.CENTER);
             chev.setFakeBoldText(true);
+        }
+
+        /** 指で触れた・なぞった位置の値にする(DuoPad のカーソルのドラッグも同じ)。 */
+        Slider target;
+
+        @Override public boolean onTouchEvent(android.view.MotionEvent e) {
+            if (target == null) return false;
+            int a = e.getActionMasked();
+            if (a == android.view.MotionEvent.ACTION_DOWN) getParent().requestDisallowInterceptTouchEvent(true);
+            if (a == android.view.MotionEvent.ACTION_DOWN || a == android.view.MotionEvent.ACTION_MOVE) {
+                float labelW = 52 * dp, x0 = 6 * dp, x1 = getWidth() - labelW;
+                float f = Math.max(0f, Math.min(1f, (e.getX() - x0) / Math.max(1f, x1 - x0)));
+                seek(target, Math.round(f * target.max()));
+                return true;
+            }
+            return a == android.view.MotionEvent.ACTION_UP || a == android.view.MotionEvent.ACTION_CANCEL;
         }
 
         void set(int value, int max, String label, int tint, boolean on, boolean editing) {
