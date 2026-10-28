@@ -766,8 +766,8 @@ final class PanelView extends ViewGroup {
             chev.setFakeBoldText(true);
         }
 
-        // 数字の欄の幅。数字は一目で読める大きさ(選択 34sp)
-        private float numW() { return 128 * dp; }
+        // 数字の欄の幅。数字は溝のすぐ右に置く(選択 34sp で「100%」が収まる幅)
+        private float numW() { return 96 * dp; }
         private float x0() { return 4 * dp + (editing ? 28 * dp : 0); }
         private float x1() { return getWidth() - numW() - (editing ? 28 * dp : 12 * dp); }
 
@@ -826,13 +826,22 @@ final class PanelView extends ViewGroup {
             // 溝
             cv.drawRect(x0, cy - th / 2, x1, cy + th / 2, track);
             // 値のぶんの光: 埋まった所の上下に、値の色の光がにじむ。値が動くと強まる(連動)
-            float k = (editing ? 0.75f : on ? 0.45f : 0.22f) + 0.55f * flare;
-            float hh = th * 2.6f;
-            halo.setShader(new android.graphics.LinearGradient(0, cy - hh, 0, cy + hh,
-                    new int[]{ withA(tint, 0), withA(tint, Math.round(110 * k)), withA(tint, Math.round(110 * k)), withA(tint, 0) },
-                    new float[]{ 0f, 0.42f, 0.58f, 1f }, android.graphics.Shader.TileMode.CLAMP));
-            cv.drawRect(x0, cy - hh, kx, cy + hh, halo);
-            halo.setShader(null);
+            // 箱に見えないよう、上下だけでなく両端も柔らかく消す(縦のにじみ × 横のにじみ)
+            float k = (editing ? 0.70f : on ? 0.42f : 0.20f) + 0.45f * flare;
+            float hh = th * 2.0f, fade = 22 * dp;
+            if (kx - x0 > 2) {
+                android.graphics.Shader vert = new android.graphics.LinearGradient(0, cy - hh, 0, cy + hh,
+                        new int[]{ withA(tint, 0), withA(tint, Math.round(80 * k)), withA(tint, Math.round(80 * k)), withA(tint, 0) },
+                        new float[]{ 0f, 0.40f, 0.60f, 1f }, android.graphics.Shader.TileMode.CLAMP);
+                float span = kx + fade - (x0 - fade);
+                float f = Math.min(0.45f, fade / span);
+                android.graphics.Shader horiz = new android.graphics.LinearGradient(x0 - fade, 0, kx + fade, 0,
+                        new int[]{ 0x00FFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0x00FFFFFF }, new float[]{ 0f, f, 1 - f, 1f },
+                        android.graphics.Shader.TileMode.CLAMP);
+                halo.setShader(new android.graphics.ComposeShader(vert, horiz, android.graphics.PorterDuff.Mode.DST_IN));
+                cv.drawRect(x0 - fade, cy - hh, kx + fade, cy + hh, halo);
+                halo.setShader(null);
+            }
             cv.drawRect(x0, cy - th / 2, kx, cy + th / 2, fill);
             // つまみ: 値の位置で光る。調整中・値が動いた瞬間は強く
             float kr = (editing ? 15 : on ? 12 : 9) * dp;
@@ -851,10 +860,11 @@ final class PanelView extends ViewGroup {
             // 数字: 一目で読める大きさ。「%」は小さく添える
             String n = label, u = "";
             if (n.endsWith("%")) { n = n.substring(0, n.length() - 1); u = "%"; }
-            float ux = w - unit.measureText(u);
+            float nx = x1 + (editing ? 28 : 12) * dp + 14 * dp; // 溝の終わり(と ›)のすぐ右から、左寄せ
             float base = cy + num.getTextSize() * 0.36f;
-            cv.drawText(u, ux, base, unit);
-            cv.drawText(n, ux - (u.isEmpty() ? 0 : 3 * dp), base, num);
+            num.setTextAlign(Paint.Align.LEFT);
+            cv.drawText(n, nx, base, num);
+            cv.drawText(u, nx + num.measureText(n) + 3 * dp, base, unit);
         }
     }
 }
