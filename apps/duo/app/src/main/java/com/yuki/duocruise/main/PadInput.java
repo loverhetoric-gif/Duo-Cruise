@@ -113,6 +113,8 @@ final class PadInput implements PadServer.Sink {
     }
 
     private void move(float dx, float dy) {
+        // 2本指スクロール中は、カーソルを動かさない(スクロールにカーソルが追従しないように)
+        if (scrolling) return;
         show();
         int[] wh = screen();
         x = clamp(x + dx, 0, wh[0] - 1);

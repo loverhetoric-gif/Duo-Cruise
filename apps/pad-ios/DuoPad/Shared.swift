@@ -14,6 +14,9 @@ struct Palette {
                              icon: Color(white: 0.30), glow: Color(white: 0.42))
     static let night = Palette(surface: Color(white: 0.055), edge: Color(white: 0.15), key: Color(white: 0.09),
                                icon: Color(white: 0.52), glow: .white)
+    /// 汎用モード(ホーム等)の背景。Duo Cruise の中とひと目で見分けられるグレー。
+    static let grey = Palette(surface: Color(white: 0.28), edge: Color(white: 0.42), key: Color(white: 0.34),
+                              icon: Color(white: 0.85), glow: .white)
 }
 
 /// 画面(窓)の角の丸み(pt)。iPhone は公開の方法では読めないため、画面の幅から近い値を選ぶ。Mac の窓は小さめ。

@@ -29,6 +29,7 @@ final class PadRouter implements PadServer.Sink {
     private volatile PadServer.Sink systemSink;
     /** いちばん前のアプリのパッケージ名(ユーザー補助のイベントで更新。控え)。 */
     private volatile String foreground = "";
+    private volatile Mode lastMode;
     /** いま前面のアプリを、その場で確かめる口(ユーザー補助)。イベントより確実。 */
     private volatile Foreground foregroundSource;
 
@@ -92,12 +93,23 @@ final class PadRouter implements PadServer.Sink {
     }
 
     @Override public void line(String s) {
+        pushMode();
         PadServer.Sink k = active();
         if (k != null) k.line(s);
     }
 
+    /** 今のモードを Pad に知らせる(変わったときだけ送られる)。 */
+    private void pushMode() {
+        Mode m = modeFor();
+        if (m == lastMode) return;
+        lastMode = m;
+        PadServer sv = server;
+        if (sv != null) sv.setMode(m == Mode.DUO ? "duo" : "generic");
+    }
+
     @Override public void connected(boolean on, String who) {
         // つながった/切れたは、どちらの受け口にも知らせる(それぞれが押しかけの状態を片付けられるように)
+        if (on) { lastMode = null; pushMode(); }
         PadServer.Sink d = duoSink, s = systemSink;
         if (d != null) d.connected(on, who);
         if (s != null) s.connected(on, who);

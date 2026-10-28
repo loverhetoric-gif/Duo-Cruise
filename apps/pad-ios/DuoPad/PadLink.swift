@@ -23,6 +23,8 @@ final class PadLink: ObservableObject {
     @Published private(set) var switches = 0
     /// CarPlay の Bluetooth が iPhone とつながっているか(OTTO が知らせる)。
     @Published private(set) var bluetooth = false
+    /// 今どちらのモードか: "duo"(Duo Cruise の中) / "generic"(ホーム等)。背景の色に使う。
+    @Published private(set) var mode = "duo"
     /// Bluetooth がつながるたびに1つ増える(縁を緑に灯す合図)。
     @Published private(set) var bluetoothUps = 0
 
@@ -182,6 +184,8 @@ final class PadLink: ObservableObject {
                 bluetooth = on
             } else if k == "i", p.count > 2, let w = Double(p[1]), let h = Double(p[2]) {
                 screen = CGSize(width: w, height: h)
+            } else if k == "g", p.count > 1 {
+                mode = String(p[1])
             }
         }
     }

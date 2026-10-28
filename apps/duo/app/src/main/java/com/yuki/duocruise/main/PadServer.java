@@ -60,6 +60,8 @@ final class PadServer {
     private final android.view.Choreographer.FrameCallback frame = t -> playFrame();
     private volatile String state = "s L";
     private volatile String bt = "b 0";
+    /** 今どちらのモードか(Duo Cruise の中＝duo／ホーム等＝generic)。Pad の見た目の切り替えに使う。 */
+    private volatile String modeMsg = "g duo";
     private final java.util.concurrent.ExecutorService writer = java.util.concurrent.Executors.newSingleThreadExecutor();
 
     private static PadServer shared;
@@ -157,6 +159,7 @@ final class PadServer {
             send(out, "i " + wh[0] + " " + wh[1]);
             send(out, state);
             send(out, bt);
+            send(out, modeMsg);
             BufferedReader in = new BufferedReader(new InputStreamReader(c.getInputStream(), StandardCharsets.UTF_8));
             PadPlayout po = new PadPlayout();
             playouts.add(po);
@@ -216,6 +219,14 @@ final class PadServer {
         String s = on ? "b 1" : "b 0";
         if (s.equals(bt)) return;
         bt = s;
+        broadcast(s);
+    }
+
+    /** モードが変わった(メインスレッドから)。Pad の背景を切り替える合図。 */
+    void setMode(String mode) {
+        String s = "g " + mode;
+        if (s.equals(modeMsg)) return;
+        modeMsg = s;
         broadcast(s);
     }
 

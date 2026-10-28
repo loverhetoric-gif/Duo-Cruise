@@ -36,8 +36,16 @@ struct MacPadScreen: View {
     @State private var notice: Notice?
     @State private var settings = false
 
-    private var night: Bool { theme == 2 || (theme == 0 && scheme == .dark) }
-    private var c: Palette { night ? .night : .day }
+    // 接続中は、モードで色を決める: Duo Cruise の中＝昼夜問わず暗く / ホーム等＝グレー。
+    // つながっていない間は、いつもの昼・夜に合わせる。
+    private var night: Bool {
+        if connected { return true }
+        return theme == 2 || (theme == 0 && scheme == .dark)
+    }
+    private var c: Palette {
+        if connected { return link.mode == "generic" ? .grey : .night }
+        return (theme == 2 || (theme == 0 && scheme == .dark)) ? .night : .day
+    }
     private var connected: Bool { if case .connected = link.state { return true }; return false }
 
     var body: some View {

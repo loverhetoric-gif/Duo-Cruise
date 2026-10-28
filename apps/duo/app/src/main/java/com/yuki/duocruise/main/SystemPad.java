@@ -113,7 +113,7 @@ final class SystemPad implements PadServer.Sink {
             case "c": show(); tap(x, y); break;
             case "d": show(); startDrag(); break;
             case "u": endDrag(); break;
-            case "w": wheel(a); break;
+            case "w": break; // 汎用モードでは2本指スクロールは使わない
             case "p": pinchUnsupported(); break;
             case "k":
                 switch (a[1]) {
