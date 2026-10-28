@@ -88,9 +88,6 @@ final class PanelView extends ViewGroup {
     private static final float ROW_MAX = 72, ROW_GAP = 6, HEADER = 56, PAD = 18, LIST_MAX = 1120;
     private static final int VALUE = 0xB3FFFFFF;     // 値の文字(白・70%)。青は使わない
     private static final int LABEL_DIM = 0x8CFFFFFF;  // 非選択のラベル(白・55%)
-    // 書体は太字にしない。硬い縁が光に浮いて見えるので、中太と細めで、文字の後ろに光を回す
-    private static final Typeface MEDIUM = Typeface.create("sans-serif-medium", Typeface.NORMAL);
-    private static final Typeface REGULAR = Typeface.create("sans-serif", Typeface.NORMAL);
 
     private final Host host;
     private final float dp;
@@ -116,7 +113,6 @@ final class PanelView extends ViewGroup {
         setClickable(true);             // 下の2画面へタッチを通さない
         setWillNotDraw(false);
         title = text(26, Color.WHITE, true);
-        title.setShadowLayer(9 * dp, 0, 0, 0x66FFFFFF);
         logText = text(14, Theme.TEXT, false);
         logText.setTypeface(Typeface.MONOSPACE);
         logText.setPadding(px(14), px(10), px(14), px(10));
@@ -135,7 +131,7 @@ final class PanelView extends ViewGroup {
         TextView t = new TextView(getContext());
         t.setTextSize(TypedValue.COMPLEX_UNIT_SP, sp);
         t.setTextColor(color);
-        t.setTypeface(bold ? MEDIUM : REGULAR);
+        if (bold) t.setTypeface(Typeface.DEFAULT_BOLD);
         t.setSingleLine(true);
         t.setIncludeFontPadding(false);
         return t;
@@ -148,51 +144,9 @@ final class PanelView extends ViewGroup {
         frameBox.set(0, 0, getWidth(), getHeight());
         // 開いた瞬間に光がふわっと膨らみ(強く・深く)、すぐ落ち着く
         float burst = intro < 0.35f ? intro / 0.35f * 1.35f : 1.35f - 0.35f * (intro - 0.35f) / 0.65f;
-        drawBacklight(cv, burst);
         frameGlow.draw(cv, frameBox, dp, 110 * (0.6f + 0.4f * intro), burst, NeonGlow.AURORA, phase);
         // 色編集ページ: 今の色・強さを「発光する丸いネオン」として見出しの右にプレビュー
         if (page == NEON_EDIT) drawOrb(cv, host.neonColor(neonWhich) | 0xFF000000, host.neonLevel(neonWhich) / 100f);
-    }
-
-    /**
-     * 後ろから当たる光。
-     * 選択している行の裏に、薄い光がそっと回り込む。文字が「光の前に置かれている」ように見える。
-     * 霧のように画面を覆う光は出さない。縁の光と同じ phase で動くので、全体が一つの光になる。
-     */
-    private void drawBacklight(Canvas cv, float burst) {
-        int w = getWidth(), h = getHeight();
-        double t = 2 * Math.PI * phase;
-        float breath = 0.80f + 0.20f * (float) Math.sin(t * 2);
-        float k = Math.min(1.4f, burst);
-        // 選択行の裏の光: 行の左側(文字のある所)を横長に照らす
-        if (focus >= 0 && focus < list.getChildCount() && list.getVisibility() == VISIBLE) {
-            View r = list.getChildAt(focus);
-            if (r.getHeight() > 0) {
-                float cy = list.getTop() + r.getTop() + r.getHeight() * 0.5f;
-                float cx = list.getLeft() + r.getPaddingLeft() + 110 * dp + 30 * dp * (float) Math.sin(t * 3);
-                float rr = r.getHeight() * 1.6f;
-                radial(cv, cx, cy, rr * 0.8f, 2.4f, 0.8f, Math.round(255 * Math.min(1f, 0.11f * breath * k)));
-            }
-        }
-    }
-
-    private final Paint backP = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final android.graphics.Matrix backM = new android.graphics.Matrix();
-    private android.graphics.RadialGradient backG;
-
-    /** 白い柔らかい光を一つ描く(sx・sy は縦横の伸び)。 */
-    private void radial(Canvas cv, float cx, float cy, float r, float sx, float sy, int alpha) {
-        if (alpha <= 0 || r < 1) return;
-        if (backG == null) backG = new android.graphics.RadialGradient(0, 0, 1,
-                new int[]{ 0xFFFFFFFF, 0x80FFFFFF, 0x1AFFFFFF, 0x00FFFFFF }, new float[]{ 0f, 0.3f, 0.7f, 1f },
-                android.graphics.Shader.TileMode.CLAMP);
-        backM.setScale(r * sx, r * sy);
-        backM.postTranslate(cx, cy);
-        backG.setLocalMatrix(backM);
-        backP.setShader(backG);
-        backP.setAlpha(alpha);
-        cv.drawRect(0, 0, getWidth(), getHeight(), backP);
-        backP.setShader(null);
     }
 
     /** 発光する丸いネオン(オーブ)。色と強さを反映。NEON_EDIT のプレビューに使う。 */
@@ -371,12 +325,8 @@ final class PanelView extends ViewGroup {
         TextView label = (TextView) r.getChildAt(0);
         label.setTextColor(on ? Color.WHITE : LABEL_DIM);   // 白のみ(選択=純白・非選択=薄い白)
         label.setTextSize(TypedValue.COMPLEX_UNIT_SP, on ? 30 : 19);  // 選択で拡大
-        label.setTypeface(on ? MEDIUM : REGULAR);
-        // 後ろから光が当たっているように、文字の縁を柔らかく滲ませる(選択行は強く)
-        label.setShadowLayer(on ? 11 * dp : 5 * dp, 0, 0, on ? 0x8CFFFFFF : 0x33FFFFFF);
         TextView value = (TextView) r.getChildAt(1);
         value.setTextSize(TypedValue.COMPLEX_UNIT_SP, on ? 17 : 14);
-        value.setShadowLayer(on ? 7 * dp : 4 * dp, 0, 0, on ? 0x66FFFFFF : 0x26FFFFFF);
         SliderBar bar = (SliderBar) r.getChildAt(2);
         if (it.slider != null) {
             value.setVisibility(GONE);
