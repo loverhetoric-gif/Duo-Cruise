@@ -65,42 +65,44 @@ final class NeonGlow {
         }
         bmp.eraseColor(0);
 
-        float s = dp * SCALE;
-        int blurR = Math.max(1, Math.round(13 * s));
-        if (blurFilter == null || blurKey != blurR) {
-            blurFilter = new BlurMaskFilter(blurR, BlurMaskFilter.Blur.NORMAL);
-            blurKey = blurR;
-        }
-        float inset = 8 * s;
-        RectF r = new RectF(inset, inset, w - inset, h - inset);
+        float cx = w / 2f, cy = h / 2f;
+        // ぼかし半径は絵の大きさに合わせる。細い光源を強くぼかして“柔らかいブルーム”にする(硬い線は出さない)
+        int blurR = Math.max(3, Math.round(Math.min(w, h) * 0.11f));
         float rad = Math.max(0, radius * SCALE);
 
-        // 角度グラデ(明るい弧が縁を巡る)。phase で回す = 光が縁を流れる動き(Duo Pad と同じ)
-        int bright = Math.round(220 * k * shimmer), dim = Math.round(55 * k * shimmer);
-        int[] cols = {
-                withAlpha(color, bright), withAlpha(color, dim), withAlpha(color, Math.round(170 * k * shimmer)),
-                withAlpha(color, dim), withAlpha(color, bright)
-        };
-        SweepGradient sg = new SweepGradient(w / 2f, h / 2f, cols, null);
-        sweepM.setRotate(phase * 360f, w / 2f, h / 2f);
+        // 角度グラデ(明るい弧が縁を巡る)。phase で回す = 光が縁を流れる(Duo Pad と同じ)
+        int hi = Math.round(165 * k * shimmer), lo = Math.round(28 * k * shimmer), mid = Math.round(95 * k * shimmer);
+        int[] cols = { withAlpha(color, hi), withAlpha(color, lo), withAlpha(color, mid), withAlpha(color, lo), withAlpha(color, hi) };
+        SweepGradient sg = new SweepGradient(cx, cy, cols, null);
+        sweepM.setRotate(phase * 360f, cx, cy);
         sg.setLocalMatrix(sweepM);
+
+        // 近い所の明るいブルーム(細い光源＋大きめのぼかし)
+        float inset1 = blurR + 2;
+        RectF r1 = new RectF(inset1, inset1, w - inset1, h - inset1);
         halo.setShader(sg);
-        halo.setMaskFilter(blurFilter);
-        halo.setStrokeWidth(8 * s);
-        bc.drawRoundRect(r, rad, rad, halo);       // 広く柔らかな光
-        halo.setStrokeWidth(3.5f * s);
-        bc.drawRoundRect(r, rad, rad, halo);       // 中くらいの光(芯に近い所を少し明るく)
+        halo.setMaskFilter(blur(blurR));
+        halo.setStrokeWidth(Math.max(1f, blurR * 0.5f));
+        bc.drawRoundRect(r1, rad, rad, halo);
         halo.setShader(null);
 
-        // 本体へ拡大合成(双線形でなめらか)
+        // 外へ広がる、ごく淡い光(一様)。輪郭の“帯”に見えないよう、さらに大きくぼかす
+        float inset2 = blurR * 1.6f + 2;
+        RectF r2 = new RectF(inset2, inset2, w - inset2, h - inset2);
+        halo.setMaskFilter(blur(Math.round(blurR * 2.1f)));
+        halo.setStrokeWidth(Math.max(1f, blurR * 0.4f));
+        halo.setColor(withAlpha(color, Math.round(42 * k * shimmer)));
+        bc.drawRoundRect(r2, rad, rad, halo);
+
+        // 本体へ拡大合成(双線形でなめらか)。くっきりした芯は描かない(安っぽく見えるため)
         m.setScale(box.width() / w, box.height() / h);
         m.postTranslate(box.left, box.top);
         dst.drawBitmap(bmp, m, blit);
+    }
 
-        // くっきりした芯(ベクタ・ぼけない)。ほんのり、巡る光に合わせて明暗
-        core.setStrokeWidth(1.5f * dp);
-        core.setColor(withAlpha(color, Math.round(170 * k)));
-        dst.drawRoundRect(box, radius, radius, core);
+    private BlurMaskFilter blur(int r) {
+        if (blurFilter == null || blurKey != r) { blurFilter = new BlurMaskFilter(Math.max(1, r), BlurMaskFilter.Blur.NORMAL); blurKey = r; }
+        return blurFilter;
     }
 
     private final Matrix sweepM = new Matrix();

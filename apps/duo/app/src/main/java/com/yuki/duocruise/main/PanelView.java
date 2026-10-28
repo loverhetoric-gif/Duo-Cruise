@@ -135,7 +135,7 @@ final class PanelView extends ViewGroup {
         // Duo Pad と同じく、柔らかい光が縁をゆっくり巡る。
         float m = px(PAD) * 0.6f;
         frameBox.set(m, m, getWidth() - m, getHeight() - m);
-        frameGlow.draw(cv, frameBox, dp, 24 * dp, 0.85f, Theme.NEON_WHITE, phase);
+        frameGlow.draw(cv, frameBox, dp, 24 * dp, 0.7f, Theme.NEON_WHITE, phase);
     }
 
     @Override protected void onVisibilityChanged(View changed, int visibility) {
@@ -480,7 +480,7 @@ final class PanelView extends ViewGroup {
             box.set(insetX, insetY, getWidth() - insetX, getHeight() - insetY);
             cv.drawRoundRect(box, radius, radius, fill);
             // 選択行も、メニュー枠と同じ“巡る”白いネオンで縁取る(売りの見た目・一体感)
-            glow.draw(cv, box, dp, radius, 1f, Theme.NEON_WHITE, PanelView.this.phase);
+            glow.draw(cv, box, dp, radius, 0.8f, Theme.NEON_WHITE, PanelView.this.phase);
         }
     }
 
