@@ -88,6 +88,8 @@ final class PanelView extends ViewGroup {
     private static final float ROW_MAX = 72, ROW_GAP = 6, HEADER = 56, PAD = 18, LIST_MAX = 1120;
     private static final int VALUE = 0xB3FFFFFF;     // 値の文字(白・70%)。青は使わない
     private static final int LABEL_DIM = 0x8CFFFFFF;  // 非選択のラベル(白・55%)
+    /** 項目の列の幅と、スライダーの幅(dp)。1480×480 で、項目と詳細が画面の左 2/3 にまとまる。 */
+    private static final int LABEL_COL = 480, SLIDER_W = 620;
 
     private final Host host;
     private final float dp;
@@ -411,18 +413,18 @@ final class PanelView extends ViewGroup {
             Row r = new Row(getContext());
             r.setPadding(px(34), 0, px(30), 0);
 
+            // 車載: 項目と詳細は離さない。項目の列は固定幅、詳細はそのすぐ右に左寄せで置く(視線が一度で届く)
             TextView label = text(19, Theme.TEXT, true);
             label.setGravity(Gravity.CENTER_VERTICAL);
-            r.addView(label, new LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1f));
+            r.addView(label, new LinearLayout.LayoutParams(px(LABEL_COL), LayoutParams.MATCH_PARENT));
 
             TextView value = text(14, VALUE, false);
-            value.setGravity(Gravity.CENTER_VERTICAL | Gravity.END);
-            value.setPadding(px(14), 0, 0, 0);
-            r.addView(value, new LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1.1f));
+            value.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
+            r.addView(value, new LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT));
 
             SliderBar bar = new SliderBar(getContext());
             bar.setVisibility(it.slider == null ? GONE : VISIBLE);
-            r.addView(bar, new LinearLayout.LayoutParams(px(320), LayoutParams.MATCH_PARENT));
+            r.addView(bar, new LinearLayout.LayoutParams(px(SLIDER_W), LayoutParams.MATCH_PARENT));
 
             r.setOnClickListener(v -> { focus = idx; activate(idx); });
             r.setOnFocusChangeListener((v, has) -> {
@@ -443,7 +445,7 @@ final class PanelView extends ViewGroup {
         label.setTextColor(on ? Color.WHITE : LABEL_DIM);   // 白のみ(選択=純白・非選択=薄い白)
         label.setTextSize(TypedValue.COMPLEX_UNIT_SP, on ? 30 : 19);  // 選択で拡大
         TextView value = (TextView) r.getChildAt(1);
-        value.setTextSize(TypedValue.COMPLEX_UNIT_SP, on ? 17 : 14);
+        value.setTextSize(TypedValue.COMPLEX_UNIT_SP, on ? 24 : 18);
         SliderBar bar = (SliderBar) r.getChildAt(2);
         if (it.slider != null) {
             value.setVisibility(GONE);
@@ -738,35 +740,43 @@ final class PanelView extends ViewGroup {
     private final class SliderBar extends View {
         private final Paint track = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint halo = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Paint knob = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Paint glowP = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final Paint txt = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint num = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint unit = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Paint chev = new Paint(Paint.ANTI_ALIAS_FLAG);
         private float frac = 0.5f;
         private int tint = 0xFFFFFFFF;
         private String label = "";
         private boolean on, editing;
+        private int lastValue = Integer.MIN_VALUE;
+        private float flare = 0;                       // 値が変わった瞬間に灯り、0.6 秒で引く
+        private android.animation.ValueAnimator flareAnim;
+        /** 指で触れた・なぞった位置の値にする(DuoPad のカーソルのドラッグも同じ)。 */
+        Slider target;
 
         SliderBar(Context c) {
             super(c);
-            txt.setTextSize(14 * dp);
-            txt.setTextAlign(Paint.Align.RIGHT);
-            txt.setFakeBoldText(true);
-            chev.setTextSize(15 * dp);
+            num.setTypeface(Typeface.DEFAULT_BOLD);
+            num.setTextAlign(Paint.Align.RIGHT);
+            unit.setTypeface(Typeface.DEFAULT_BOLD);
+            chev.setTextSize(22 * dp);
             chev.setTextAlign(Paint.Align.CENTER);
             chev.setFakeBoldText(true);
         }
 
-        /** 指で触れた・なぞった位置の値にする(DuoPad のカーソルのドラッグも同じ)。 */
-        Slider target;
+        // 数字の欄の幅。数字は一目で読める大きさ(選択 34sp)
+        private float numW() { return 128 * dp; }
+        private float x0() { return 4 * dp + (editing ? 28 * dp : 0); }
+        private float x1() { return getWidth() - numW() - (editing ? 28 * dp : 12 * dp); }
 
         @Override public boolean onTouchEvent(android.view.MotionEvent e) {
             if (target == null) return false;
             int a = e.getActionMasked();
             if (a == android.view.MotionEvent.ACTION_DOWN) getParent().requestDisallowInterceptTouchEvent(true);
             if (a == android.view.MotionEvent.ACTION_DOWN || a == android.view.MotionEvent.ACTION_MOVE) {
-                float labelW = 52 * dp, x0 = 6 * dp, x1 = getWidth() - labelW;
-                float f = Math.max(0f, Math.min(1f, (e.getX() - x0) / Math.max(1f, x1 - x0)));
+                float f = Math.max(0f, Math.min(1f, (e.getX() - x0()) / Math.max(1f, x1() - x0())));
                 seek(target, Math.round(f * target.max()));
                 return true;
             }
@@ -777,42 +787,74 @@ final class PanelView extends ViewGroup {
             this.frac = max <= 0 ? 0 : Math.max(0f, Math.min(1f, value / (float) max));
             this.tint = tint | 0xFF000000;
             this.label = label; this.on = on; this.editing = editing;
-            track.setColor(on ? 0x59FFFFFF : 0x33FFFFFF);
-            fill.setColor(withA(this.tint, on ? 255 : 200));
+            if (lastValue != Integer.MIN_VALUE && value != lastValue) flare();
+            lastValue = value;
+            track.setColor(on ? 0x40FFFFFF : 0x26FFFFFF);
+            fill.setColor(withA(this.tint, on ? 255 : 190));
             knob.setColor(0xFFFFFFFF);
-            txt.setColor(on ? 0xFFFFFFFF : VALUE);
+            num.setColor(on ? 0xFFFFFFFF : VALUE);
+            num.setTextSize((on ? 34 : 24) * dp);
+            unit.setColor(on ? 0xCCFFFFFF : 0x80FFFFFF);
+            unit.setTextSize((on ? 18 : 14) * dp);
             chev.setColor(0xFFFFFFFF);
             invalidate();
         }
 
-        private int withA(int c, int a) { return (a << 24) | (c & 0xFFFFFF); }
+        /** 値が動いた。光がふっと強まり、引いていく(Duo Pad の応答と同じ 0.15 秒→0.6 秒)。 */
+        private void flare() {
+            if (flareAnim != null) flareAnim.cancel();
+            float from = flare;
+            flareAnim = android.animation.ValueAnimator.ofFloat(0f, 750f);
+            flareAnim.setDuration(750);
+            flareAnim.setInterpolator(new android.view.animation.LinearInterpolator());
+            flareAnim.addUpdateListener(an -> {
+                float t = (float) an.getAnimatedValue();
+                flare = t < 150 ? from + (1 - from) * (t / 150f) : (float) (0.5 + 0.5 * Math.cos(Math.PI * (t - 150) / 600f));
+                invalidate();
+            });
+            flareAnim.start();
+        }
+
+        private int withA(int c, int a) { return (Math.max(0, Math.min(255, a)) << 24) | (c & 0xFFFFFF); }
 
         @Override protected void onDraw(Canvas cv) {
             int w = getWidth(), h = getHeight();
             float cy = h / 2f;
-            float labelW = 52 * dp;
-            float chevW = editing ? 22 * dp : 0;
-            float x0 = 6 * dp + chevW, x1 = w - labelW - chevW;
-            float th = 5 * dp, r = th / 2;
-            cv.drawRoundRect(new RectF(x0, cy - r, x1, cy + r), r, r, track);
+            float x0 = x0(), x1 = x1();
+            float th = (on ? 12 : 9) * dp;               // 車載: 太く。角は落とさない(四角)
             float kx = x0 + (x1 - x0) * frac;
-            cv.drawRoundRect(new RectF(x0, cy - r, kx, cy + r), r, r, fill);
-            // 発光するつまみ(ネオンの位置＝値)。普段は控えめ、調整中は応答として強く灯る
-            float kr = (editing ? 11 : 8) * dp;
-            float gr = kr * (editing ? 2.6f : 2.0f);
-            int a0 = editing ? 150 : on ? 90 : 55;
+            // 溝
+            cv.drawRect(x0, cy - th / 2, x1, cy + th / 2, track);
+            // 値のぶんの光: 埋まった所の上下に、値の色の光がにじむ。値が動くと強まる(連動)
+            float k = (editing ? 0.75f : on ? 0.45f : 0.22f) + 0.55f * flare;
+            float hh = th * 2.6f;
+            halo.setShader(new android.graphics.LinearGradient(0, cy - hh, 0, cy + hh,
+                    new int[]{ withA(tint, 0), withA(tint, Math.round(110 * k)), withA(tint, Math.round(110 * k)), withA(tint, 0) },
+                    new float[]{ 0f, 0.42f, 0.58f, 1f }, android.graphics.Shader.TileMode.CLAMP));
+            cv.drawRect(x0, cy - hh, kx, cy + hh, halo);
+            halo.setShader(null);
+            cv.drawRect(x0, cy - th / 2, kx, cy + th / 2, fill);
+            // つまみ: 値の位置で光る。調整中・値が動いた瞬間は強く
+            float kr = (editing ? 15 : on ? 12 : 9) * dp;
+            float gr = kr * (2.2f + 0.8f * flare);
+            int a0 = Math.round((editing ? 150 : on ? 95 : 55) + 100 * flare);
             glowP.setShader(new android.graphics.RadialGradient(kx, cy, gr,
                     new int[]{ withA(tint, a0), withA(tint, a0 * 2 / 5), withA(tint, 0) },
                     new float[]{ 0f, 0.38f, 1f }, android.graphics.Shader.TileMode.CLAMP));
             cv.drawCircle(kx, cy, gr, glowP);
             glowP.setShader(null);
-            knob.setColor(0xFFFFFFFF);
-            cv.drawCircle(kx, cy, kr * 0.55f, knob);     // 白い芯
+            cv.drawCircle(kx, cy, kr * 0.62f, knob);     // 白い芯
             if (editing) {
-                cv.drawText("‹", x0 - 12 * dp, cy + chev.getTextSize() * 0.36f, chev);
-                cv.drawText("›", x1 + 12 * dp, cy + chev.getTextSize() * 0.36f, chev);
+                cv.drawText("‹", x0 - 16 * dp, cy + chev.getTextSize() * 0.36f, chev);
+                cv.drawText("›", x1 + 16 * dp, cy + chev.getTextSize() * 0.36f, chev);
             }
-            cv.drawText(label, w, cy + txt.getTextSize() * 0.35f, txt);
+            // 数字: 一目で読める大きさ。「%」は小さく添える
+            String n = label, u = "";
+            if (n.endsWith("%")) { n = n.substring(0, n.length() - 1); u = "%"; }
+            float ux = w - unit.measureText(u);
+            float base = cy + num.getTextSize() * 0.36f;
+            cv.drawText(u, ux, base, unit);
+            cv.drawText(n, ux - (u.isEmpty() ? 0 : 3 * dp), base, num);
         }
     }
 }
