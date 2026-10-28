@@ -67,9 +67,10 @@ struct PadScreen: View {
                    touch: touch, touchGlow: touchGlow, notice: notice)
                 .allowsHitTesting(false)
             VStack {
+                // 角の丸みの内側に収める(横向きでは上の余白が 0 になるため、角の丸みから下げる)
                 HStack { Spacer(); statusLabel }
-                    .padding(.top, ins.top)
-                    .padding(.trailing, 18)
+                    .padding(.top, max(ins.top, Screen.cornerRadius * 0.45))
+                    .padding(.trailing, max(ins.trailing, Screen.cornerRadius * 0.45))
                 Spacer()
                 HStack(spacing: 8) {
                     key("arrow.uturn.backward") { link.send("k b") }
