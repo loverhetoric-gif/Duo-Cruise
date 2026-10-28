@@ -144,7 +144,7 @@ final class PanelView extends ViewGroup {
         frameBox.set(0, 0, getWidth(), getHeight());
         // 開いた瞬間に光がふわっと膨らみ(強く・深く)、すぐ落ち着く
         float burst = intro < 0.35f ? intro / 0.35f * 1.35f : 1.35f - 0.35f * (intro - 0.35f) / 0.65f;
-        frameGlow.draw(cv, frameBox, dp, 110 * (0.6f + 0.4f * intro), burst, NeonGlow.AURORA, phase);
+        frameGlow.draw(cv, frameBox, dp, 0, 0.55f * burst, NeonGlow.AURORA, phase); // 普段 0.55(Duo Pad と同じ)
         // 色編集ページ: 今の色・強さを「発光する丸いネオン」として見出しの右にプレビュー
         if (page == NEON_EDIT) drawOrb(cv, host.neonColor(neonWhich) | 0xFF000000, host.neonLevel(neonWhich) / 100f);
     }
@@ -152,7 +152,7 @@ final class PanelView extends ViewGroup {
     /** 発光する丸いネオン(オーブ)。色と強さを反映。NEON_EDIT のプレビューに使う。 */
     private void drawOrb(Canvas cv, int color, float level) {
         float k = Math.max(0.3f, level);                 // 0 でも消えないように下限
-        float breath = 0.9f + 0.1f * (float) Math.sin(phase * 2 * Math.PI);
+        float breath = 0.9f + 0.1f * (float) Math.sin(phase * 6 * 2 * Math.PI); // 6 秒で一呼吸
         float r = 20 * dp;
         float cx = getWidth() - px(PAD) - r - 4 * dp, cy = px(PAD) + 13 * dp;
         int a0 = Math.round(210 * k * breath), a1 = Math.round(95 * k * breath);
@@ -195,7 +195,7 @@ final class PanelView extends ViewGroup {
         introAnim.addUpdateListener(a -> { intro = (float) a.getAnimatedValue(); invalidate(); });
         introAnim.start();
         shimmer = android.animation.ValueAnimator.ofFloat(0f, 1f);
-        shimmer.setDuration(12000); // 1 周 12 秒。層ごとに 1・2・3 倍の速さで回る
+        shimmer.setDuration(36000); // 明るさの並びが 36 秒で縁を一周(10°/秒。Duo Pad の 8°/秒に揃える)
         shimmer.setRepeatCount(android.animation.ValueAnimator.INFINITE);
         shimmer.setInterpolator(new android.view.animation.LinearInterpolator());
         shimmer.addUpdateListener(a -> { phase = (float) a.getAnimatedValue(); invalidate(); list.invalidate(); });
