@@ -93,6 +93,8 @@ final class PanelView extends ViewGroup {
     float phase = 0; // 発光の揺らぎ(枠・選択行で共有)
     private final List<Item> items = new ArrayList<>();
     private int page = MAIN, focus = 0, logPage = 0, logLines = 8;
+    /** スライダーの調整モード中の行(押して入る)。-1 なら通常(回す=選択移動)。 */
+    private int editing = -1;
 
     PanelView(Context c, Host host) {
         super(c);
@@ -164,6 +166,7 @@ final class PanelView extends ViewGroup {
         page = p;
         items.clear();
         focus = 0;
+        editing = -1;
         if (p == MAIN) {
             title.setText("操作メニュー");
             items.add(new Item(() -> "操作対象の画面", host::sideText, host::switchSide, true));
@@ -243,7 +246,7 @@ final class PanelView extends ViewGroup {
             bar.setVisibility(it.slider == null ? GONE : VISIBLE);
             r.addView(bar, new LinearLayout.LayoutParams(px(300), LayoutParams.MATCH_PARENT));
 
-            r.setOnClickListener(v -> { focus = idx; it.run.run(); refresh(); });
+            r.setOnClickListener(v -> { focus = idx; activate(idx); });
             r.setOnFocusChangeListener((v, has) -> {
                 ((Row) v).setOn(has);
                 v.animate().scaleX(has ? 1.04f : 1f).scaleY(has ? 1.04f : 1f).setDuration(150).start();
@@ -265,7 +268,7 @@ final class PanelView extends ViewGroup {
         if (it.slider != null) {
             value.setVisibility(GONE);
             bar.setVisibility(VISIBLE);
-            bar.set(it.slider.pct(), on);
+            bar.set(it.slider.pct(), on, editing == i);
         } else {
             bar.setVisibility(GONE);
             String s = it.value.get();
@@ -313,32 +316,33 @@ final class PanelView extends ViewGroup {
             case KeyEvent.KEYCODE_DPAD_DOWN:
             case KeyEvent.KEYCODE_TAB:
             case KeyEvent.KEYCODE_NAVIGATE_NEXT:
-                if (down) move(1);
+                if (down) { if (editing >= 0) nudge(1); else move(1); }
                 return true;
             case KeyEvent.KEYCODE_DPAD_UP:
             case KeyEvent.KEYCODE_NAVIGATE_PREVIOUS:
-                if (down) move(-1);
+                if (down) { if (editing >= 0) nudge(-1); else move(-1); }
                 return true;
             case KeyEvent.KEYCODE_DPAD_RIGHT:
-                if (down) adjust(1);
+                if (down) nudge(1);
                 return true;
             case KeyEvent.KEYCODE_DPAD_LEFT:
-                if (down) adjust(-1);
+                if (down) nudge(-1);
                 return true;
             case KeyEvent.KEYCODE_DPAD_CENTER: case KeyEvent.KEYCODE_ENTER: case KeyEvent.KEYCODE_NUMPAD_ENTER:
-                if (!down && list.getChildCount() > 0) list.getChildAt(focus).performClick();
+                if (!down) activate(focus);
                 return true;
             case KeyEvent.KEYCODE_BACK: case KeyEvent.KEYCODE_ESCAPE:
-                if (!down) back();
+                if (!down) { if (editing >= 0) { editing = -1; refresh(); } else back(); }
                 return true;
             default:
                 return false;
         }
     }
 
-    /** ダイヤルを回した量(+1 / -1)で、選ぶ行を上下に動かす。 */
+    /** ダイヤルを回した量(+1 / -1)で、調整中なら値を、そうでなければ選ぶ行を上下に動かす。 */
     void rotate(int steps) {
-        for (int i = 0; i < Math.abs(steps); i++) move(steps > 0 ? 1 : -1);
+        int s = steps > 0 ? 1 : -1;
+        for (int i = 0; i < Math.abs(steps); i++) { if (editing >= 0) nudge(s); else move(s); }
     }
 
     private void move(int delta) {
@@ -347,12 +351,24 @@ final class PanelView extends ViewGroup {
         focusRow(((focus + delta) % n + n) % n);
     }
 
-    /** 左右: スライダーはその場で増減、オン/オフ等の値は切り替え。 */
-    private void adjust(int dir) {
-        if (focus < 0 || focus >= items.size()) return;
-        Item it = items.get(focus);
+    /**
+     * 押したとき。スライダーの行は「調整モード」に入る/出る(入ると回す＝値の増減)。
+     * それ以外(サブページ・オン/オフ・実行)はそのまま実行する。
+     */
+    private void activate(int idx) {
+        if (idx < 0 || idx >= items.size()) return;
+        Item it = items.get(idx);
+        if (it.slider != null) { editing = (editing == idx) ? -1 : idx; refresh(); }
+        else { editing = -1; it.run.run(); refresh(); }
+    }
+
+    /** 調整中(または左右)で、スライダーの値を増減、オン/オフ等の値を切り替える。 */
+    private void nudge(int dir) {
+        int i = editing >= 0 ? editing : focus;
+        if (i < 0 || i >= items.size()) return;
+        Item it = items.get(i);
         if (it.slider != null) { it.slider.nudge(dir); refresh(); }
-        else if (it.adj) { it.run.run(); refresh(); }
+        else if (editing < 0 && it.adj) { it.run.run(); refresh(); }
     }
 
     void back() {
@@ -468,45 +484,54 @@ final class PanelView extends ViewGroup {
         }
     }
 
-    /** 分割比のスライダー。左右で YouTube の割合を増減する。 */
+    /** 分割比のスライダー。押して「調整モード」に入ると、ダイヤルで増減できる。 */
     private final class SliderBar extends View {
         private final Paint track = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Paint knob = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Paint txt = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint chev = new Paint(Paint.ANTI_ALIAS_FLAG);
         private int pct = 50;
+        private boolean on, editing;
 
         SliderBar(Context c) {
             super(c);
-            track.setColor(0x40FFFFFF);
-            fill.setColor(0xFFFFFFFF);
-            knob.setColor(0xFFFFFFFF);
-            txt.setColor(0xFFFFFFFF);
             txt.setTextSize(14 * dp);
             txt.setTextAlign(Paint.Align.RIGHT);
             txt.setFakeBoldText(true);
+            chev.setTextSize(15 * dp);
+            chev.setTextAlign(Paint.Align.CENTER);
+            chev.setFakeBoldText(true);
         }
 
-        void set(int pct, boolean on) {
+        void set(int pct, boolean on, boolean editing) {
             this.pct = Math.max(0, Math.min(100, pct));
+            this.on = on; this.editing = editing;
             track.setColor(on ? 0x59FFFFFF : 0x33FFFFFF);
             fill.setColor(on ? 0xFFFFFFFF : 0xCCFFFFFF);
             knob.setColor(on ? 0xFFFFFFFF : 0xCCFFFFFF);
             txt.setColor(on ? 0xFFFFFFFF : VALUE);
+            chev.setColor(0xFFFFFFFF);
             invalidate();
         }
 
         @Override protected void onDraw(Canvas cv) {
             int w = getWidth(), h = getHeight();
             float cy = h / 2f;
-            float labelW = 58 * dp;                 // 右に「YT 60%」の文字ぶん
-            float x0 = 4 * dp, x1 = w - labelW;
+            float labelW = 56 * dp;                 // 右に「60%」の文字ぶん
+            // 調整モード中は左右に ◀ ▶ を出して「回して変えられる」ことを示す
+            float chevW = editing ? 22 * dp : 0;
+            float x0 = 4 * dp + chevW, x1 = w - labelW - chevW;
             float th = 6 * dp, r = th / 2;
             cv.drawRoundRect(new RectF(x0, cy - r, x1, cy + r), r, r, track);
             float kx = x0 + (x1 - x0) * (pct / 100f);
             cv.drawRoundRect(new RectF(x0, cy - r, kx, cy + r), r, r, fill);
-            cv.drawCircle(kx, cy, 9 * dp, knob);
-            cv.drawText("YT " + pct + "%", w, cy + txt.getTextSize() * 0.35f, txt);
+            cv.drawCircle(kx, cy, (editing ? 12 : 9) * dp, knob);   // 調整中はノブを大きく
+            if (editing) {
+                cv.drawText("‹", x0 - 12 * dp, cy + chev.getTextSize() * 0.36f, chev);
+                cv.drawText("›", x1 + 12 * dp, cy + chev.getTextSize() * 0.36f, chev);
+            }
+            cv.drawText(pct + "%", w, cy + txt.getTextSize() * 0.35f, txt);
         }
     }
 }
