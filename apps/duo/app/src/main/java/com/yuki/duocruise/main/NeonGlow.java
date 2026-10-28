@@ -70,7 +70,7 @@ final class NeonGlow {
         // 2. 中くらい
         halo(dst, box, MID_DP * dp, sweep, 0.55f * k, new float[]{ 0f, 0.5f, 1f }, new float[]{ 1f, 0.45f, 0f });
         // 1. 外側の細い線
-        halo(dst, box, LINE_DP * dp, sweep, Math.min(1f, 1.1f * k), new float[]{ 0f, 1f }, new float[]{ 1f, 1f });
+        halo(dst, box, LINE_DP * dp, sweep, Math.min(1f, 0.8f * k), new float[]{ 0f, 1f }, new float[]{ 1f, 1f });
     }
 
     /**
