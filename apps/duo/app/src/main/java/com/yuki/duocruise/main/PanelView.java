@@ -75,12 +75,12 @@ final class PanelView extends ViewGroup {
         }
     }
 
-    // 車載向けの大きめの寸法(dp)。
-    private static final float ROW_H = 74, ROW_GAP = 14, HEADER = 58, PAD = 18, LIST_MAX = 1180;
+    // 車載向けの寸法(dp)。行間は詰め、強調は選択行の塗りに集約する(Apple の考え方)。
+    private static final float ROW_H = 64, ROW_GAP = 4, HEADER = 66, PAD = 20, LIST_MAX = 1120;
 
     private final Host host;
     private final float dp;
-    private final TextView title, chipSide, chipAccess, logText;
+    private final TextView title, logText;
     private final ListPane list;
     private final List<Item> items = new ArrayList<>();
     private int page = MAIN, focus = 0, logPage = 0, logLines = 8;
@@ -91,16 +91,12 @@ final class PanelView extends ViewGroup {
         dp = c.getResources().getDisplayMetrics().density;
         setBackgroundColor(0xC2000000); // 黒の透過(後ろの映像をうっすら通す)
         setClickable(true);             // 下の2画面へタッチを通さない
-        title = text(24, Theme.TEXT, true);
-        chipSide = chip();
-        chipAccess = chip();
+        title = text(27, Theme.TEXT, true);
         logText = text(14, Theme.TEXT, false);
         logText.setTypeface(Typeface.MONOSPACE);
         logText.setPadding(px(14), px(10), px(14), px(10));
         list = new ListPane(c);
         addView(title);
-        addView(chipSide);
-        addView(chipAccess);
         addView(logText);
         addView(list);
         show(MAIN);
@@ -117,13 +113,6 @@ final class PanelView extends ViewGroup {
         if (bold) t.setTypeface(Typeface.DEFAULT_BOLD);
         t.setSingleLine(true);
         t.setIncludeFontPadding(false);
-        return t;
-    }
-
-    private TextView chip() {
-        TextView t = text(14, Color.WHITE, true);
-        t.setGravity(Gravity.CENTER);
-        t.setPadding(px(14), 0, px(14), 0);
         return t;
     }
 
@@ -209,7 +198,7 @@ final class PanelView extends ViewGroup {
             r.setOnClickListener(v -> { focus = idx; it.run.run(); refresh(); });
             r.setOnFocusChangeListener((v, has) -> {
                 ((Row) v).setOn(has);
-                v.animate().scaleX(has ? 1.03f : 1f).scaleY(has ? 1.03f : 1f).setDuration(130).start();
+                v.animate().scaleX(has ? 1.05f : 1f).scaleY(has ? 1.05f : 1f).setDuration(150).start();
                 if (has) { focus = idx; list.scrollToFocus(idx); }
                 paintRow(idx, has);
             });
@@ -222,14 +211,15 @@ final class PanelView extends ViewGroup {
         if (i < 0 || i >= list.getChildCount() || i >= items.size()) return;
         Row r = (Row) list.getChildAt(i);
         Item it = items.get(i);
-        ((TextView) r.getChildAt(0)).setTextColor(on ? Color.WHITE : Theme.TEXT);
+        // 選択行は明るい塗りの上なので濃い文字に、非選択は暗い背景なので明るい文字にする
+        ((TextView) r.getChildAt(0)).setTextColor(on ? 0xFF0E1420 : Theme.TEXT);
         TextView value = (TextView) r.getChildAt(1);
         String s = it.value.get();
         if (it.adj && on && !s.isEmpty()) {
-            value.setTextColor(Color.WHITE);
+            value.setTextColor(0xFF2A3550);
             value.setText("‹ " + s + " ›");
         } else {
-            value.setTextColor(Theme.SUB);
+            value.setTextColor(on ? 0xFF55617A : Theme.SUB);
             value.setText(s);
         }
         value.setVisibility(s.isEmpty() ? GONE : VISIBLE);
@@ -237,11 +227,6 @@ final class PanelView extends ViewGroup {
 
     /** 文字を今の状態に合わせて書き直す。 */
     void refresh() {
-        chipSide.setText(host.sideText());
-        chipSide.setBackground(Theme.round(0x33FFFFFF, 16 * dp));
-        boolean a = host.accessOn();
-        chipAccess.setText(a ? "ユーザー補助 有効" : "ユーザー補助 無効");
-        chipAccess.setBackground(Theme.round(a ? Theme.GREEN : Theme.AMBER, 16 * dp));
         for (int i = 0; i < list.getChildCount() && i < items.size(); i++) {
             Row r = (Row) list.getChildAt(i);
             ((TextView) r.getChildAt(0)).setText(items.get(i).label.get());
@@ -339,26 +324,15 @@ final class PanelView extends ViewGroup {
         else v.layout(x0, y0, x1, y1);
     }
 
-    private int chipW(TextView c) {
-        c.measure(MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED), MeasureSpec.makeMeasureSpec(px(32), MeasureSpec.EXACTLY));
-        return c.getMeasuredWidth();
-    }
-
     private void layoutChildren(int w, int h, boolean measure) {
         int pad = px(PAD), head = px(HEADER);
-        int chipH = px(32), cy = pad + (head - chipH) / 2;
-        int x = w - pad;
-        for (TextView c : new TextView[]{chipAccess, chipSide}) {
-            int cw = chipW(c);
-            place(c, x - cw, cy, x, cy + chipH, measure);
-            x -= cw + px(10);
-        }
-        place(title, pad, cy, Math.max(pad, x - px(10)), cy + chipH, measure);
+        int listW = Math.min(w - pad * 2, px(LIST_MAX));
+        int left = (w - listW) / 2;
+        // 大きなタイトルをリストの左端にそろえる(Apple の大見出しのように)
+        place(title, left, pad, left + listW, pad + px(40), measure);
 
         int top = pad + head;
         int bottom = h - pad;
-        int listW = Math.min(w - pad * 2, px(LIST_MAX));
-        int left = (w - listW) / 2;
 
         if (page == LOG) {
             int listH = h / 2;                       // 下半分に3つの行、上半分に本文
@@ -420,13 +394,10 @@ final class PanelView extends ViewGroup {
      * 発光は software 描画でしか効かないので、選択時だけ software にする。
      */
     private final class Row extends LinearLayout {
+        private final Paint halo = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final Paint hair = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final Paint glowWide = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final Paint glowMid = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final Paint edge = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final RectF box = new RectF();
-        private final float inset = 16 * dp, radius = 20 * dp;
+        private final float insetX = 8 * dp, insetY = 5 * dp, radius = 16 * dp;
         private boolean on;
 
         Row(Context c) {
@@ -437,23 +408,11 @@ final class PanelView extends ViewGroup {
             setFocusableInTouchMode(false);
             setWillNotDraw(false);
 
-            hair.setStyle(Paint.Style.STROKE);
-            hair.setStrokeWidth(1 * dp);
-            hair.setColor(0x24FFFFFF); // 未選択の、ごく薄い縁
-
-            glowWide.setStyle(Paint.Style.STROKE);
-            glowWide.setStrokeWidth(8 * dp);
-            glowWide.setColor(0x66FFFFFF);
-            glowWide.setMaskFilter(new BlurMaskFilter(10 * dp, BlurMaskFilter.Blur.NORMAL));
-
-            glowMid.setStyle(Paint.Style.STROKE);
-            glowMid.setStrokeWidth(3 * dp);
-            glowMid.setColor(0xB3FFFFFF);
-            glowMid.setMaskFilter(new BlurMaskFilter(5 * dp, BlurMaskFilter.Blur.NORMAL));
-
-            edge.setStyle(Paint.Style.STROKE);
-            edge.setStrokeWidth(1.8f * dp);
-            edge.setColor(0xFFFFFFFF);
+            // 選択行の柔らかな光(わずかなネオン)。発光は software でしか効かない
+            halo.setColor(0x59FFFFFF);
+            halo.setMaskFilter(new BlurMaskFilter(16 * dp, BlurMaskFilter.Blur.NORMAL));
+            // 選択行の明るい塗り(この上に濃い文字をのせる)
+            fill.setColor(0xFFF4F7FC);
         }
 
         void setOn(boolean b) {
@@ -464,16 +423,10 @@ final class PanelView extends ViewGroup {
         }
 
         @Override protected void onDraw(Canvas cv) {
-            box.set(inset, inset, getWidth() - inset, getHeight() - inset);
-            fill.setColor(on ? 0x80000000 : 0x59000000); // 黒の透過(選択時は少し濃く)
+            if (!on) return; // 非選択は文字だけ(箱・枠は出さない)
+            box.set(insetX, insetY, getWidth() - insetX, getHeight() - insetY);
+            cv.drawRoundRect(box, radius, radius, halo);
             cv.drawRoundRect(box, radius, radius, fill);
-            if (on) {
-                cv.drawRoundRect(box, radius, radius, glowWide);
-                cv.drawRoundRect(box, radius, radius, glowMid);
-                cv.drawRoundRect(box, radius, radius, edge);
-            } else {
-                cv.drawRoundRect(box, radius, radius, hair);
-            }
         }
     }
 }
