@@ -434,8 +434,8 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     @Override public void toggleAutoSplit() { Store.setAutoSplit(this, !Store.autoSplit(this)); updateNavSplit(); }
     @Override public void toggleAutoSwap() { Store.setAutoSwap(this, !Store.autoSwap(this)); }
     @Override public void cycleNavHold() { long v = Store.navHoldMs(this) / 1000 + 2; if (v > 12) v = 3; Store.setNavHoldMs(this, v * 1000); }
-    @Override public String splitYtText() { int y = Store.splitYt(this); return "YouTube " + y + "% : マップ " + (100 - y) + "%"; }
-    @Override public String navYtText() { int y = Store.navYt(this); return "YouTube " + y + "% : マップ " + (100 - y) + "%"; }
+    @Override public String splitYtText() { int y = Store.splitYt(this); return "YouTube " + y + "% ／ CarPlay " + (100 - y) + "%"; }
+    @Override public String navYtText() { int y = Store.navYt(this); return "YouTube " + y + "% ／ CarPlay " + (100 - y) + "%"; }
     @Override public boolean autoSplitOn() { return Store.autoSplit(this); }
     @Override public boolean autoSwapOn() { return Store.autoSwap(this); }
     @Override public String navHoldText() { return (Store.navHoldMs(this) / 1000) + " 秒"; }
@@ -626,12 +626,12 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     }
 
     @Override public String layoutText() {
-        if (Store.single(this)) return "1画面 " + active().name() + " だけ";
+        if (Store.single(this)) return active().name() + " のみ表示";
         return Store.swapped(this) ? "左 YouTube ／ 右 CarPlay" : "左 CarPlay ／ 右 YouTube";
     }
 
     @Override public String sideText() {
-        return "操作中: " + (Store.side(this) == SplitGeometry.SIDE_LEFT ? "左" : "右") + " " + active().name();
+        return (Store.side(this) == SplitGeometry.SIDE_LEFT ? "左" : "右") + "（" + active().name() + "）";
     }
 
     @Override public KeyMap keyMap() { return keyMap; }

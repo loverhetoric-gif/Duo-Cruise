@@ -3,6 +3,7 @@ package com.yuki.duocruise.main;
 import android.content.Context;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.KeyEvent;
@@ -15,11 +16,16 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 操作盤。2画面の上に重ねて出す。ダイヤルだけで全部操作できる。
- * ・幅 1480 では横長の格子、740 では2列の格子(PanelGrid が計算)。縦にはみ出す画面は作らない
- * ・回す(左右)で全部のボタンを横の順に一巡、倒す(上下)で縦の順に一巡、押す(決定)で実行、戻るで1つ前へ
- * ・ページは4つ: 主(よく使う操作)/ ボタンの割り当て / 記録 / 設定・ほかのアプリへ
- *   (Duo Cruise をホームアプリにしても、OTTO のホーム・Android の設定へ必ず逃げられる)
+ * 操作盤。2画面の上に重ねて出す。コマンダー(ダイヤル)だけで全部操作できる。
+ *
+ * 見た目: 縦に1列のリスト。暗い車内で読みやすいダークトーン、選んでいる行だけ白く浮かせる。
+ * 操作:
+ *  ・ダイヤルを回す / 上下 … 選ぶ行を上下に動かす
+ *  ・左右 … 値のある行(比率・オン/オフなど)を、その場で切り替える
+ *  ・押す … 決定(サブpage へ入る・実行・値を1つ送る)
+ *  ・戻る … 1つ前へ(主page では操作盤を閉じる)
+ *
+ * ページは5つ: 主(よく使う操作)/ ボタンの割り当て / 記録 / 設定・ほかのアプリへ / 左右の比率・ナビ連動。
  */
 final class PanelView extends ViewGroup {
 
@@ -58,19 +64,25 @@ final class PanelView extends ViewGroup {
     private interface Text { String get(); }
 
     private static final class Item {
-        final Text label, sub;
-        final Runnable run;
-        final int color;
-        Item(Text label, Text sub, int color, Runnable run) { this.label = label; this.sub = sub; this.color = color; this.run = run; }
+        final Text label, value;
+        final int accent;        // 左端の細い帯の色(その行の性格を示す)。0 なら帯なし
+        final Runnable run;      // 押したとき
+        final boolean adj;       // 左右でその場で変えられる値か
+        Item(Text label, Text value, int accent, Runnable run) { this(label, value, accent, run, false); }
+        Item(Text label, Text value, int accent, Runnable run, boolean adj) {
+            this.label = label; this.value = value; this.accent = accent; this.run = run; this.adj = adj;
+        }
     }
+
+    // 1行の高さの範囲(dp)と、行間・余白。
+    private static final float ROW_MIN = 34, ROW_MAX = 66, ROW_GAP = 8, PAD = 16, HEADER = 50;
 
     private final Host host;
     private final float dp;
     private final TextView title, chipLayout, chipSide, chipAccess, logText;
     private final List<Item> items = new ArrayList<>();
-    private final List<LinearLayout> tiles = new ArrayList<>();
+    private final List<LinearLayout> rows = new ArrayList<>();
     private int page = MAIN, focus = 0, logPage = 0, logLines = 8;
-    private PanelGrid grid;
 
     PanelView(Context c, Host host) {
         super(c);
@@ -122,88 +134,129 @@ final class PanelView extends ViewGroup {
         items.clear();
         focus = 0;
         if (p == MAIN) {
-            title.setText("Duo Cruise");
-            items.add(new Item(() -> "操作側を切り替え", host::sideText, Theme.ACCENT, host::switchSide));
-            items.add(new Item(() -> "左右を入れ替え", host::layoutText, Theme.MUTED, host::swap));
-            items.add(new Item(() -> "左右の比率・ナビ連動", host::splitYtText, Theme.MUTED, () -> show(SPLIT)));
-            items.add(new Item(() -> "2画面に戻る", () -> "操作盤を閉じる", Theme.MUTED, host::closePanel));
-            items.add(new Item(() -> "ボタンの割り当て", () -> "押す回数・長押し・ホーム", Theme.MUTED, () -> show(KEYS)));
-            items.add(new Item(() -> host.carOn() ? "CarPlay を止める" : "CarPlay を開始",
-                    () -> host.carOn() ? "チップ・Wi-Fi・Bluetooth を手放す" : "MultiPlay を使っていない時だけ",
-                    Theme.MUTED, host::toggleCar));
-            items.add(new Item(() -> "記録を見る", () -> "状態・エラー", Theme.MUTED, () -> show(LOG)));
-            items.add(new Item(() -> "OTTO のホームを開く", host::otherHomeName, Theme.MUTED, host::goHome));
-            items.add(new Item(() -> "設定・その他", () -> "Android の設定・ホームアプリ", Theme.MUTED, () -> show(SYS)));
+            title.setText("操作メニュー");
+            items.add(new Item(() -> "操作対象の画面", host::sideText, Theme.ACCENT, host::switchSide, true));
+            items.add(new Item(() -> "画面の配置", host::layoutText, Theme.ACCENT, host::swap, true));
+            items.add(new Item(() -> "画面分割とナビ連動", host::splitYtText, 0, () -> show(SPLIT)));
+            items.add(new Item(() -> host.carOn() ? "CarPlay を終了" : "CarPlay を開始",
+                    () -> host.carOn() ? "接続中" : "停止中",
+                    0, host::toggleCar, true));
+            items.add(new Item(() -> "コマンダーのボタン割り当て", () -> "操作ごとのボタンを設定", 0, () -> show(KEYS)));
+            items.add(new Item(() -> "動作記録", () -> "状態とエラーの履歴", 0, () -> show(LOG)));
+            items.add(new Item(() -> "ホーム画面を開く", host::otherHomeName, 0, host::goHome));
+            items.add(new Item(() -> "設定", () -> "システム設定とホームアプリ", 0, () -> show(SYS)));
+            items.add(new Item(() -> "メニューを閉じる", () -> "", 0, host::closePanel));
         } else if (p == KEYS) {
-            title.setText("ボタンの割り当て");
+            title.setText("コマンダーのボタン割り当て");
             for (KeyMap.Action a : KeyMap.Action.values()) {
                 items.add(new Item(() -> a.label,
-                        () -> host.learning() == a ? "▶ ボタンを押す(1〜4回 続けて、または長く)" : host.keyMap().describe(a),
-                        Theme.MUTED, () -> { host.startLearn(a); refresh(); }));
+                        () -> host.learning() == a ? "▶ ボタンを押してください（連続1〜4回、または長押し）" : host.keyMap().describe(a),
+                        0, () -> { host.startLearn(a); refresh(); }));
             }
-            items.add(new Item(() -> "ユーザー補助の設定", () -> host.accessOn() ? "オン(ホーム・タスクを受けられる)" : "オフ: ホーム・タスクは受けられません",
-                    host.accessOn() ? Theme.MUTED : Theme.AMBER, host::openAccessibility));
-            items.add(new Item(() -> "初期値に戻す", () -> "仮の割り当てに戻す", Theme.MUTED, () -> { host.resetKeys(); refresh(); }));
-            items.add(new Item(() -> "戻る", () -> "操作盤へ", Theme.MUTED, () -> { host.cancelLearn(); show(MAIN); }));
+            items.add(new Item(() -> "ユーザー補助", () -> host.accessOn() ? "オン" : "オフ（ホーム・タスク操作が行えません）",
+                    host.accessOn() ? 0 : Theme.AMBER, host::openAccessibility));
+            items.add(new Item(() -> "割り当てを初期状態に戻す", () -> "", 0, () -> { host.resetKeys(); refresh(); }));
+            items.add(new Item(() -> "戻る", () -> "", 0, () -> { host.cancelLearn(); show(MAIN); }));
         } else if (p == SYS) {
-            title.setText("設定・その他");
-            items.add(new Item(() -> "Android の設定を開く", () -> "", Theme.MUTED, host::openSettings));
-            items.add(new Item(() -> "ホームアプリを選ぶ", () -> host.isDefaultHome() ? "いまは Duo Cruise" : "いまは " + host.otherHomeName(), Theme.MUTED, host::chooseHome));
-            items.add(new Item(() -> "操作盤の場所", () -> host.panelHalf() ? "いまは 操作側の半分" : "いまは 画面全体", Theme.MUTED, host::togglePanelHalf));
-            items.add(new Item(() -> "ユーザー補助の設定", () -> host.accessOn() ? "オン" : "オフ: ホーム・タスクは受けられません",
-                    host.accessOn() ? Theme.MUTED : Theme.AMBER, host::openAccessibility));
-            items.add(new Item(() -> "OTTO のホームを開く", host::otherHomeName, Theme.MUTED, host::goHome));
-            items.add(new Item(() -> "戻る", () -> "操作盤へ", Theme.MUTED, () -> show(MAIN)));
+            title.setText("設定");
+            items.add(new Item(() -> "システム設定を開く", () -> "", 0, host::openSettings));
+            items.add(new Item(() -> "ホームアプリ", () -> host.isDefaultHome() ? "Duo Cruise" : host.otherHomeName(), 0, host::chooseHome));
+            items.add(new Item(() -> "メニューの表示範囲", () -> host.panelHalf() ? "操作中の画面のみ" : "画面全体", Theme.ACCENT, host::togglePanelHalf, true));
+            items.add(new Item(() -> "ユーザー補助", () -> host.accessOn() ? "オン" : "オフ（ホーム・タスク操作が行えません）",
+                    host.accessOn() ? 0 : Theme.AMBER, host::openAccessibility));
+            items.add(new Item(() -> "ホーム画面を開く", host::otherHomeName, 0, host::goHome));
+            items.add(new Item(() -> "戻る", () -> "", 0, () -> show(MAIN)));
         } else if (p == SPLIT) {
-            items.add(new Item(() -> "普段の比率", host::splitYtText, Theme.ACCENT, () -> { host.cycleSplitYt(); refresh(); }));
-            items.add(new Item(() -> "ナビ音声で自動変更", () -> host.autoSplitOn() ? "オン" : "オフ", Theme.MUTED, () -> { host.toggleAutoSplit(); refresh(); }));
-            items.add(new Item(() -> "ナビ中の比率", host::navYtText, Theme.MUTED, () -> { host.cycleNavYt(); refresh(); }));
-            items.add(new Item(() -> "ナビ中に左右入れ替え", () -> host.autoSwapOn() ? "オン(マップを右へ)" : "オフ", Theme.MUTED, () -> { host.toggleAutoSwap(); refresh(); }));
-            items.add(new Item(() -> "戻すまでの待ち", host::navHoldText, Theme.MUTED, () -> { host.cycleNavHold(); refresh(); }));
-            items.add(new Item(() -> "戻る", () -> "操作盤へ", Theme.MUTED, () -> show(MAIN)));
+            title.setText("画面分割とナビ連動");
+            items.add(new Item(() -> "通常の分割比", host::splitYtText, Theme.ACCENT, () -> { host.cycleSplitYt(); refresh(); }, true));
+            items.add(new Item(() -> "ナビ案内中に自動で調整", () -> host.autoSplitOn() ? "オン" : "オフ", Theme.ACCENT, () -> { host.toggleAutoSplit(); refresh(); }, true));
+            items.add(new Item(() -> "ナビ案内中の分割比", host::navYtText, Theme.ACCENT, () -> { host.cycleNavYt(); refresh(); }, true));
+            items.add(new Item(() -> "ナビ案内中は地図を右に配置", () -> host.autoSwapOn() ? "オン" : "オフ", Theme.ACCENT, () -> { host.toggleAutoSwap(); refresh(); }, true));
+            items.add(new Item(() -> "通常の配置に戻るまでの時間", host::navHoldText, Theme.ACCENT, () -> { host.cycleNavHold(); refresh(); }, true));
+            items.add(new Item(() -> "戻る", () -> "", 0, () -> show(MAIN)));
         } else {
-            title.setText("記録");
+            title.setText("動作記録");
             logPage = 0;
-            items.add(new Item(() -> "新しい方へ", () -> "", Theme.MUTED, () -> { logPage = Math.max(0, logPage - 1); refresh(); }));
-            items.add(new Item(() -> "古い方へ", () -> "", Theme.MUTED, () -> { logPage++; refresh(); }));
-            items.add(new Item(() -> "戻る", () -> "操作盤へ", Theme.MUTED, () -> show(MAIN)));
+            items.add(new Item(() -> "新しい記録へ", () -> "", 0, () -> { logPage = Math.max(0, logPage - 1); refresh(); }));
+            items.add(new Item(() -> "古い記録へ", () -> "", 0, () -> { logPage++; refresh(); }));
+            items.add(new Item(() -> "戻る", () -> "", 0, () -> show(MAIN)));
         }
-        rebuildTiles();
+        rebuildRows();
         logText.setVisibility(p == LOG ? VISIBLE : GONE);
         refresh();
         requestLayout();
-        post(() -> focusTile(0));
+        post(() -> focusRow(0));
     }
 
-    private void rebuildTiles() {
-        for (View t : tiles) removeView(t);
-        tiles.clear();
+    private void rebuildRows() {
+        for (View r : rows) removeView(r);
+        rows.clear();
         for (int i = 0; i < items.size(); i++) {
             final int idx = i;
             Item it = items.get(i);
-            LinearLayout t = new LinearLayout(getContext());
-            t.setOrientation(LinearLayout.VERTICAL);
-            t.setGravity(Gravity.CENTER);
-            t.setFocusable(true);
-            t.setFocusableInTouchMode(false);
-            t.setBackground(Theme.tile(it.color, dp));
-            t.setPadding(px(10), px(4), px(10), px(4));
-            TextView label = text(18, Color.WHITE, true);
-            label.setGravity(Gravity.CENTER);
-            label.setAutoSizeTextTypeUniformWithConfiguration(12, 18, 1, TypedValue.COMPLEX_UNIT_SP);
-            TextView sub = text(13, Theme.SUB, false);
-            sub.setGravity(Gravity.CENTER);
-            sub.setAutoSizeTextTypeUniformWithConfiguration(10, 13, 1, TypedValue.COMPLEX_UNIT_SP);
-            t.addView(label, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, px(24)));
-            t.addView(sub, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, px(18)));
-            t.setOnClickListener(v -> { focus = idx; it.run.run(); refresh(); });
-            t.setOnFocusChangeListener((v, has) -> {
-                v.animate().scaleX(has ? 1.04f : 1f).scaleY(has ? 1.04f : 1f).setDuration(120).start();
+            LinearLayout r = new LinearLayout(getContext());
+            r.setOrientation(LinearLayout.HORIZONTAL);
+            r.setGravity(Gravity.CENTER_VERTICAL);
+            r.setFocusable(true);
+            r.setFocusableInTouchMode(false);
+            r.setBackground(rowBg(false));
+            r.setPadding(px(16), px(6), px(16), px(6));
+
+            // 左端の細い帯(その行の性格)。色が無ければ透明で場所だけ空ける
+            View bar = new View(getContext());
+            bar.setBackground(Theme.round(it.accent == 0 ? Color.TRANSPARENT : it.accent, 2 * dp));
+            LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(px(3), px(20));
+            bp.rightMargin = px(12);
+            r.addView(bar, bp);
+
+            TextView label = text(17, Theme.TEXT, true);
+            label.setGravity(Gravity.CENTER_VERTICAL);
+            label.setAutoSizeTextTypeUniformWithConfiguration(12, 17, 1, TypedValue.COMPLEX_UNIT_SP);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f);
+            r.addView(label, lp);
+
+            TextView value = text(14, Theme.SUB, false);
+            value.setGravity(Gravity.CENTER_VERTICAL | Gravity.END);
+            value.setPadding(px(10), 0, 0, 0);
+            value.setAutoSizeTextTypeUniformWithConfiguration(10, 14, 1, TypedValue.COMPLEX_UNIT_SP);
+            LinearLayout.LayoutParams vp = new LinearLayout.LayoutParams(0, LayoutParams.WRAP_CONTENT, 1.1f);
+            r.addView(value, vp);
+
+            r.setOnClickListener(v -> { focus = idx; it.run.run(); refresh(); });
+            r.setOnFocusChangeListener((v, has) -> {
+                v.setBackground(rowBg(has));
+                v.animate().scaleX(has ? 1.02f : 1f).scaleY(has ? 1.02f : 1f).setDuration(120).start();
                 if (has) focus = idx;
+                paintRow(idx, has);
             });
-            tiles.add(t);
-            addView(t);
+            rows.add(r);
+            addView(r);
         }
+    }
+
+    /** 行の背景。選んでいる行は白っぽく浮かせ、白い縁を付ける。 */
+    private GradientDrawable rowBg(boolean on) {
+        GradientDrawable g = Theme.round(on ? 0x1FFFFFFF : 0x14172033, 14 * dp);
+        if (on) g.setStroke(Math.round(1.6f * dp), 0xCCFFFFFF);
+        return g;
+    }
+
+    /** 選んでいる行は文字を純白に、値のある行には左右で変えられる印(‹ ›)を添える。 */
+    private void paintRow(int i, boolean on) {
+        if (i < 0 || i >= rows.size() || i >= items.size()) return;
+        LinearLayout r = rows.get(i);
+        Item it = items.get(i);
+        ((TextView) r.getChildAt(1)).setTextColor(on ? Color.WHITE : Theme.TEXT);
+        TextView value = (TextView) r.getChildAt(2);
+        String s = it.value.get();
+        if (it.adj && on && !s.isEmpty()) {
+            value.setTextColor(Color.WHITE);
+            value.setText("‹ " + s + " ›");
+        } else {
+            value.setTextColor(it.adj ? Theme.ACCENT : Theme.SUB);
+            value.setText(s);
+        }
+        value.setVisibility(s.isEmpty() ? GONE : VISIBLE);
     }
 
     /** 文字を今の状態に合わせて書き直す。 */
@@ -213,16 +266,11 @@ final class PanelView extends ViewGroup {
         chipSide.setText(host.sideText());
         chipSide.setBackground(Theme.round(Theme.ACCENT, 14 * dp));
         boolean a = host.accessOn();
-        chipAccess.setText(a ? "ユーザー補助 ON" : "ユーザー補助 OFF");
+        chipAccess.setText(a ? "ユーザー補助 有効" : "ユーザー補助 無効");
         chipAccess.setBackground(Theme.round(a ? Theme.GREEN : Theme.AMBER, 14 * dp));
-        for (int i = 0; i < tiles.size() && i < items.size(); i++) {
-            LinearLayout t = tiles.get(i);
-            Item it = items.get(i);
-            ((TextView) t.getChildAt(0)).setText(it.label.get());
-            String s = it.sub.get();
-            TextView sub = (TextView) t.getChildAt(1);
-            sub.setText(s);
-            sub.setVisibility(s.isEmpty() ? GONE : VISIBLE);
+        for (int i = 0; i < rows.size() && i < items.size(); i++) {
+            ((TextView) rows.get(i).getChildAt(1)).setText(items.get(i).label.get());
+            paintRow(i, i == focus && rows.get(i).isFocused());
         }
         if (page == LOG) {
             List<String> all = DuoLog.snapshot();
@@ -235,51 +283,65 @@ final class PanelView extends ViewGroup {
                 sb.append(all.get(i));
             }
             logText.setText(sb.length() == 0 ? "記録はまだありません" : sb.toString());
-            title.setText("記録 " + (logPage + 1) + "/" + (maxPage + 1));
+            title.setText("動作記録 " + (logPage + 1) + "/" + (maxPage + 1));
         }
     }
 
-    private void focusTile(int i) {
-        if (tiles.isEmpty()) return;
-        focus = Math.max(0, Math.min(tiles.size() - 1, i));
-        tiles.get(focus).requestFocus();
+    private void focusRow(int i) {
+        if (rows.isEmpty()) return;
+        focus = Math.max(0, Math.min(rows.size() - 1, i));
+        rows.get(focus).requestFocus();
     }
 
-    // ───────── キー(ダイヤル) ─────────
+    // ───────── キー(コマンダー) ─────────
 
     /** 操作盤が出ている間のキー。扱ったら true。 */
     boolean onKey(KeyEvent e) {
         int code = e.getKeyCode();
         boolean down = e.getAction() == KeyEvent.ACTION_DOWN;
-        int dir = -1;
         switch (code) {
-            case KeyEvent.KEYCODE_DPAD_RIGHT: dir = PanelGrid.RIGHT; break;
-            case KeyEvent.KEYCODE_DPAD_LEFT: dir = PanelGrid.LEFT; break;
-            case KeyEvent.KEYCODE_DPAD_DOWN: dir = PanelGrid.DOWN; break;
-            case KeyEvent.KEYCODE_DPAD_UP: dir = PanelGrid.UP; break;
-            case KeyEvent.KEYCODE_TAB: dir = e.isShiftPressed() ? PanelGrid.PREV : PanelGrid.NEXT; break;
-            case KeyEvent.KEYCODE_NAVIGATE_NEXT: dir = PanelGrid.NEXT; break;
-            case KeyEvent.KEYCODE_NAVIGATE_PREVIOUS: dir = PanelGrid.PREV; break;
+            case KeyEvent.KEYCODE_DPAD_DOWN:
+            case KeyEvent.KEYCODE_TAB:
+            case KeyEvent.KEYCODE_NAVIGATE_NEXT:
+                if (down) move(1);
+                return true;
+            case KeyEvent.KEYCODE_DPAD_UP:
+            case KeyEvent.KEYCODE_NAVIGATE_PREVIOUS:
+                if (down) move(-1);
+                return true;
+            case KeyEvent.KEYCODE_DPAD_RIGHT:
+                if (down) adjust();
+                return true;
+            case KeyEvent.KEYCODE_DPAD_LEFT:
+                if (down) adjust();
+                return true;
             case KeyEvent.KEYCODE_DPAD_CENTER: case KeyEvent.KEYCODE_ENTER: case KeyEvent.KEYCODE_NUMPAD_ENTER:
-                if (!down && !tiles.isEmpty()) tiles.get(focus).performClick();
+                if (!down && !rows.isEmpty()) rows.get(focus).performClick();
                 return true;
             case KeyEvent.KEYCODE_BACK: case KeyEvent.KEYCODE_ESCAPE:
                 if (!down) back();
                 return true;
-            default: return false;
+            default:
+                return false;
         }
-        if (down) move(dir);
-        return true;
     }
 
-    /** ダイヤルを回した量(+1 / -1)で動く。 */
+    /** ダイヤルを回した量(+1 / -1)で、選ぶ行を上下に動かす。 */
     void rotate(int steps) {
-        for (int i = 0; i < Math.abs(steps); i++) move(steps > 0 ? PanelGrid.NEXT : PanelGrid.PREV);
+        for (int i = 0; i < Math.abs(steps); i++) move(steps > 0 ? 1 : -1);
     }
 
-    private void move(int dir) {
-        if (grid == null || tiles.isEmpty()) return;
-        focusTile(grid.move(focus, dir));
+    private void move(int delta) {
+        if (rows.isEmpty()) return;
+        int n = rows.size();
+        focusRow(((focus + delta) % n + n) % n);
+    }
+
+    /** 左右: 選んでいる行が値を持つなら、その場で1つ送る(押したときと同じ切り替え)。 */
+    private void adjust() {
+        if (focus < 0 || focus >= items.size()) return;
+        Item it = items.get(focus);
+        if (it.adj) { it.run.run(); refresh(); }
     }
 
     void back() {
@@ -287,14 +349,7 @@ final class PanelView extends ViewGroup {
         else host.closePanel();
     }
 
-    // ───────── 並べ方 ─────────
-
-    private int[] logBox(int w, int h) {
-        int pad = px(PanelGrid.PAD), head = px(PanelGrid.HEADER), gap = px(PanelGrid.GAP);
-        int tileH = px(56);
-        int top = pad + head;
-        return new int[]{pad, top, w - pad, h - pad - tileH - gap, tileH};
-    }
+    // ───────── 並べ方(縦1列) ─────────
 
     @Override protected void onMeasure(int wSpec, int hSpec) {
         int w = MeasureSpec.getSize(wSpec), h = MeasureSpec.getSize(hSpec);
@@ -318,9 +373,9 @@ final class PanelView extends ViewGroup {
     }
 
     private void layoutChildren(int w, int h, boolean measure) {
-        int pad = px(PanelGrid.PAD), head = px(PanelGrid.HEADER);
-        int chipH = px(28), cy = pad + (head - chipH) / 2 - px(6);
-        boolean wide = w / dp >= PanelGrid.WIDE_DP;
+        int pad = px(PAD), head = px(HEADER);
+        int chipH = px(28), cy = pad + (head - chipH) / 2 - px(4);
+        boolean wide = w / dp >= 1000;
         // 見出し: 左に題名、右に状態の札(狭いときは操作側とユーザー補助だけ)
         int x = w - pad;
         TextView[] chips = wide ? new TextView[]{chipAccess, chipSide, chipLayout} : new TextView[]{chipAccess, chipSide};
@@ -332,26 +387,46 @@ final class PanelView extends ViewGroup {
         }
         place(title, pad, cy, Math.max(pad, x - px(8)), cy + chipH, measure);
 
-        if (page == LOG) {
-            int[] box = logBox(w, h);
-            place(logText, box[0], box[1], box[2], box[3], measure);
+        int top = pad + head;
+        int bottom = h - pad;
+        int listW = Math.min(w - pad * 2, px(720)); // 広い画面では中央に寄せ、幅を抑える
+        int left = (w - listW) / 2;
+        int n = rows.size();
+        int gap = px(ROW_GAP);
+
+        if (page == LOG && n > 0) {
+            // 記録: 上に本文、下に3つの行
+            int rowH = clampRowH((bottom - top), Math.max(1, n));
+            int listH = n * rowH + (n - 1) * gap;
+            int logBottom = bottom - listH - gap;
+            place(logText, left, top, left + listW, Math.max(top, logBottom), measure);
             if (!measure && logText.getLineHeight() > 0) {
-                int fit = Math.max(1, (box[3] - box[1] - px(16)) / logText.getLineHeight());
+                int fit = Math.max(1, (logBottom - top - px(16)) / logText.getLineHeight());
                 if (fit != logLines) { logLines = fit; post(this::refresh); }
             }
-            int n = tiles.size(), gap = px(PanelGrid.GAP);
-            int tw = (box[2] - box[0] - gap * (n - 1)) / Math.max(1, n);
+            int y = bottom - listH;
             for (int i = 0; i < n; i++) {
-                int x0 = box[0] + i * (tw + gap);
-                place(tiles.get(i), x0, box[3] + gap, x0 + tw, box[3] + gap + box[4], measure);
+                place(rows.get(i), left, y, left + listW, y + rowH, measure);
+                y += rowH + gap;
             }
-            grid = PanelGrid.compute(Integer.MAX_VALUE / 4, h, n, dp, 0); // 1行の並び(移り方の計算だけに使う)
             return;
         }
-        grid = PanelGrid.compute(w, h, tiles.size(), dp, 0);
-        for (int i = 0; i < tiles.size(); i++) {
-            int[] r = grid.rect(i);
-            place(tiles.get(i), r[0], r[1], r[2], r[3], measure);
+
+        if (n == 0) return;
+        int avail = bottom - top;
+        int rowH = clampRowH(avail, n);
+        int listH = n * rowH + (n - 1) * gap;
+        int y = top + Math.max(0, (avail - listH) / 2); // 行数が少なければ中央に
+        for (int i = 0; i < n; i++) {
+            place(rows.get(i), left, y, left + listW, y + rowH, measure);
+            y += rowH + gap;
         }
+    }
+
+    /** 画面に収まる1行の高さ(px)。範囲 ROW_MIN〜ROW_MAX に収める。 */
+    private int clampRowH(int avail, int n) {
+        int gap = px(ROW_GAP);
+        int h = (avail - gap * (n - 1)) / Math.max(1, n);
+        return Math.max(px(ROW_MIN), Math.min(px(ROW_MAX), h));
     }
 }
