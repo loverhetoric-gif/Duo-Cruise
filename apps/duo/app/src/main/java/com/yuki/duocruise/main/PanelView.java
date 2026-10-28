@@ -201,7 +201,7 @@ final class PanelView extends ViewGroup {
     /** 発光する丸いネオン(オーブ)。色と強さを反映。NEON_EDIT のプレビューに使う。 */
     private void drawOrb(Canvas cv, int color, float level) {
         float k = Math.max(0.3f, level);                 // 0 でも消えないように下限
-        float breath = 0.9f + 0.1f * (float) Math.sin(phase * 6 * 2 * Math.PI); // 6 秒で一呼吸
+        float breath = 1f; // 呼吸はさせない(自分では動かない。Duo Pad と同じ)
         float r = 20 * dp;
         float cx = getWidth() - px(PAD) - r - 4 * dp, cy = px(PAD) + 13 * dp;
         int a0 = Math.round(210 * k * breath), a1 = Math.round(95 * k * breath);
@@ -481,6 +481,7 @@ final class PanelView extends ViewGroup {
 
     /** 調整中(または左右)で、スライダーの値を増減、オン/オフ等の値を切り替える。 */
     private void nudge(int dir) {
+        answer(focus, 1f);
         int i = editing >= 0 ? editing : focus;
         if (i < 0 || i >= items.size()) return;
         Item it = items.get(i);
@@ -697,13 +698,15 @@ final class PanelView extends ViewGroup {
             cv.drawRoundRect(new RectF(x0, cy - r, x1, cy + r), r, r, track);
             float kx = x0 + (x1 - x0) * frac;
             cv.drawRoundRect(new RectF(x0, cy - r, kx, cy + r), r, r, fill);
-            // 発光するつまみ(ネオンの位置＝値)。外側ほど薄い円を重ねて、ぼかし無しで光らせる
+            // 発光するつまみ(ネオンの位置＝値)。普段は控えめ、調整中は応答として強く灯る
             float kr = (editing ? 11 : 8) * dp;
-            int steps = 5;
-            for (int i = steps; i >= 1; i--) {
-                glowP.setColor(withA(tint, Math.round((on ? 46 : 30) * (i / (float) steps))));
-                cv.drawCircle(kx, cy, kr + i * 2.2f * dp, glowP);
-            }
+            float gr = kr * (editing ? 2.6f : 2.0f);
+            int a0 = editing ? 150 : on ? 90 : 55;
+            glowP.setShader(new android.graphics.RadialGradient(kx, cy, gr,
+                    new int[]{ withA(tint, a0), withA(tint, a0 * 2 / 5), withA(tint, 0) },
+                    new float[]{ 0f, 0.38f, 1f }, android.graphics.Shader.TileMode.CLAMP));
+            cv.drawCircle(kx, cy, gr, glowP);
+            glowP.setShader(null);
             knob.setColor(0xFFFFFFFF);
             cv.drawCircle(kx, cy, kr * 0.55f, knob);     // 白い芯
             if (editing) {

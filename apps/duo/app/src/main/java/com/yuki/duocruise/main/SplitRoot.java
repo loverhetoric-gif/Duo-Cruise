@@ -42,7 +42,7 @@ final class SplitRoot extends ViewGroup {
     /** 入れ替えの動き: 並べ直す前の左端。並べ直した後、ここから新しい場所へ動かす。 */
     private int swapFromCar = Integer.MIN_VALUE, swapFromTv = Integer.MIN_VALUE;
     private ValueAnimator swapAnim;
-    static final long SWAP_MS = 380, GLOW_MS = 700;
+    static final long SWAP_MS = 380, GLOW_MS = 2400; // 光は Duo Pad と同じ 2.4 秒
 
     SplitRoot(Context c, Listener l) {
         super(c);
@@ -101,6 +101,7 @@ final class SplitRoot extends ViewGroup {
         this.panelHalf = panelHalf;
         this.ytPct = ytPct;
         requestLayout();
+        frame.requestLayout();
         frame.invalidate();
     }
 
@@ -138,7 +139,7 @@ final class SplitRoot extends ViewGroup {
                 for (View v : new View[]{back, front}) { v.setTranslationX(0); v.setTranslationY(0); }
                 front.setLayerType(View.LAYER_TYPE_NONE, null);
                 frame.moving = false;
-                frame.invalidate();
+                frame.update();
             }
         });
         front.setLayerType(View.LAYER_TYPE_HARDWARE, null); // 動く間は描き直さず、絵として動かす
@@ -215,14 +216,22 @@ final class SplitRoot extends ViewGroup {
     }
 
     /**
-     * 操作中(ターゲット)の画面の縁を、白いネオンでほのかに常時光らせる。切り替えた直後だけ強く光る。
-     * アプリ全体で同じ発光(Theme.neonEdge)を使い、統一感を出す。余計な文字札などは出さない。
+     * メインビューの縁の光。イベント(ターゲット切替=白・接続完了=青・接続不良=赤)の瞬間だけ、
+     * 操作中の画面の縁を光らせて消す。常時は出さない(没入優先)。
+     *
+     * 作りは設定ビューと同じ三層(Duo Pad の band と同じ。NeonGlow の説明を参照):
+     *   広い裾(46dp を GPU で 48 ぼかし)・中のにじみ(10dp を 11 ぼかし)・外側の細い線(1.6dp)。
+     * 出方は Duo Pad の Envelope と同じ: 0.35 秒で灯り、1.3 秒まで保ち、2.4 秒でゆっくり消える。
+     * その間、明るさの起伏が縁に沿って流れる(Duo Pad の spin e×90°/秒 = 0.25 周/秒)。
+     * 四角(半径0)。ペインの端にぴたりと合わせる。
      */
-    private final class Frame extends View {
-        private final NeonGlow glow = new NeonGlow();
+    private final class Frame extends ViewGroup {
+        private final NeonGlow line = new NeonGlow();
+        private final GlowLayer wide, mid;
+        private final RectF box = new RectF();
         private ValueAnimator glowAnim;
-        private float pulse = 0;                    // イベントの瞬間だけ光る(1→0 へ減衰)。常時は出さない
-        private float phase = 0;                     // 発光の揺らぎ
+        private float edge = 0;                      // 出来事の光の強さ(0〜1)。Duo Pad の Envelope.edge
+        private float phase = 0;                     // 明るさの起伏の位置(0〜1 で縁を一周)
         private float strength = 0.55f;              // そのイベントの発光の強さ(設定で変わる)
         private int color = Theme.NEON_WHITE;        // 発光の色(イベント・設定で変わる)
         /** 入れ替えで動いている間は縁を描かない。 */
@@ -231,34 +240,58 @@ final class SplitRoot extends ViewGroup {
         Frame(Context c) {
             super(c);
             setWillNotDraw(false);
+            wide = new GlowLayer(c, 46, 48, 1, +1);
+            mid = new GlowLayer(c, 10, 11, 1, -1);
+            addView(wide);
+            addView(mid);
         }
 
-        /** イベントの瞬間だけ、操作中の画面の縁をその色・強さで柔らかく光らせて消す。 */
+        /** イベントの瞬間だけ、操作中の画面の縁をその色・強さで光らせて消す。 */
         void glow(int c, float s) {
             color = c;
             strength = Math.max(0f, Math.min(1f, s));
             if (glowAnim != null) glowAnim.cancel();
-            glowAnim = ValueAnimator.ofFloat(0f, 1f);
+            glowAnim = ValueAnimator.ofFloat(0f, GLOW_MS / 1000f);
             glowAnim.setDuration(GLOW_MS);
-            glowAnim.setInterpolator(new AccelerateDecelerateInterpolator());
+            glowAnim.setInterpolator(new android.view.animation.LinearInterpolator());
             glowAnim.addUpdateListener(a -> {
-                float f = (float) a.getAnimatedValue();
-                pulse = f < 0.25f ? f / 0.25f : 1 - (f - 0.25f) / 0.75f; // すっと出て、ゆっくり消える
-                phase = f;                                               // その間だけ少し揺らぐ
-                invalidate();
+                float e = (float) a.getAnimatedValue();   // 経過秒
+                float d = GLOW_MS / 1000f;
+                edge = e < 0.35f ? e / 0.35f : e < 1.3f ? 1f : Math.max(0f, 1 - (e - 1.3f) / (d - 1.3f));
+                phase = e * 0.25f;
+                update();
             });
             glowAnim.start();
         }
 
-        @Override protected void onDraw(Canvas cv) {
-            if (pulse <= 0 || moving || (panel != null && panel.getVisibility() == VISIBLE)) return;
-            int w = getWidth(), h = getHeight();
-            int[] r = activeRect(w, h);
-            // 切り替わったペインの端にぴたりと合わせる。ペインは角丸なしなので、四角(半径0)で描く。
-            // メインビューは没入優先なので控えめに(強さを抑える)
-            float s = 1.5f * dp;
-            RectF box = new RectF(r[0] + s, r[1] + s, r[2] - s, r[3] - s);
-            glow.draw(cv, box, dp, 0, pulse * strength, color, phase);
+        void update() {
+            boolean off = edge <= 0 || moving || (panel != null && panel.getVisibility() == VISIBLE);
+            float k = off ? 0 : edge * strength;
+            wide.set(0.38f * k, NeonGlow.mix(color, 0xFFFFFFFF, 0.30f), phase);
+            mid.set(0.60f * k, NeonGlow.mix(color, 0xFFFFFFFF, 0.15f), phase);
+            invalidate();
+        }
+
+        @Override protected void onMeasure(int wSpec, int hSpec) {
+            setMeasuredDimension(MeasureSpec.getSize(wSpec), MeasureSpec.getSize(hSpec));
+            int[] r = activeRect(getMeasuredWidth(), getMeasuredHeight());
+            for (View v : new View[]{wide, mid}) v.measure(MeasureSpec.makeMeasureSpec(r[2] - r[0], MeasureSpec.EXACTLY),
+                    MeasureSpec.makeMeasureSpec(r[3] - r[1], MeasureSpec.EXACTLY));
+        }
+
+        @Override protected void onLayout(boolean changed, int l, int t, int r, int b) {
+            int[] a = activeRect(r - l, b - t);
+            wide.layout(a[0], a[1], a[2], a[3]);
+            mid.layout(a[0], a[1], a[2], a[3]);
+        }
+
+        @Override protected void dispatchDraw(Canvas cv) {
+            super.dispatchDraw(cv);
+            if (edge <= 0 || moving || (panel != null && panel.getVisibility() == VISIBLE)) return;
+            int[] r = activeRect(getWidth(), getHeight());
+            box.set(r[0], r[1], r[2], r[3]);
+            line.alpha(Math.min(1f, 1.1f * edge * strength));
+            line.ribbon(cv, box, NeonGlow.LINE_DP * dp, NeonGlow.mix(color, 0xFFFFFFFF, 0.45f), 1, phase, null, null);
         }
     }
 }
