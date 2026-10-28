@@ -961,7 +961,9 @@ class CarPlayController(
                 )
             }
             val hostAddressText = hostAddressText(hostAddress)
-            val deviceIdentifier = hotspotInfo.bssid ?: airPlayConfig.deviceId
+            // Duo Cruise: OTTO のホットスポットは、入れるたびに BSSID が変わる(2026-10-28 実機)。
+            // BSSID を機器 ID にすると iPhone から見て毎回別の車になるので、変わらない値にする
+            val deviceIdentifier = airPlayConfig.deviceId
             debugLog(
                 "wireless hotspot backend=${hotspotInfo.backend.label} " +
                     "iface=${hotspotInfo.interfaceName ?: "unknown"} " +

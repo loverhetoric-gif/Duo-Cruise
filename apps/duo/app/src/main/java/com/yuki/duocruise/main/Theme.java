@@ -1,6 +1,9 @@
 package com.yuki.duocruise.main;
 
+import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.StateListDrawable;
@@ -8,6 +11,58 @@ import android.graphics.drawable.StateListDrawable;
 /** 色と形。暗い車内で読みやすく、選んでいるものがひと目で分かること。 */
 final class Theme {
     private Theme() {}
+
+    // ── 発光する縁(このアプリの統一した見た目)。基本は白、状態で色が変わる ──────
+    /** 既定(白)。状態に応じて下の色に変わる。 */
+    static final int NEON_WHITE = 0xFFFFFFFF;
+    /** CarPlay が iPhone とつながっている(良好)。 */
+    static final int NEON_LINK = 0xFF59E3B0;   // ティール
+    /** ナビ案内中。 */
+    static final int NEON_NAV = 0xFF4F8CFF;    // 青
+    /** 注意・切断など。 */
+    static final int NEON_ALERT = 0xFFFF6B6B;  // コーラル
+
+    /** 設定で選べるネオンの色と、その名前。 */
+    static final int[] NEON_PALETTE = { NEON_WHITE, NEON_NAV, NEON_LINK, 0xFF7CE36A, 0xFFFFC24F, NEON_ALERT, 0xFFB07BFF, 0xFFFF7BC2 };
+    static final String[] NEON_NAMES = { "白", "青", "ティール", "緑", "アンバー", "赤", "紫", "ピンク" };
+
+    static int neonIndex(int color) {
+        for (int i = 0; i < NEON_PALETTE.length; i++) if (NEON_PALETTE[i] == color) return i;
+        return 0;
+    }
+    /** 次の色へ(パレットを一巡)。 */
+    static int neonNext(int color) { return NEON_PALETTE[(neonIndex(color) + 1) % NEON_PALETTE.length]; }
+    static String neonName(int color) { return NEON_NAMES[neonIndex(color)]; }
+
+    private static final Paint NEON = new Paint(Paint.ANTI_ALIAS_FLAG);
+    static { NEON.setStyle(Paint.Style.STROKE); NEON.setStrokeJoin(Paint.Join.ROUND); }
+
+    // 外側ほど太く薄い線を重ねて、ぼかしを使わずに発光に見せる(幅dp, 不透明度)。
+    private static final float[] NEON_W = {11, 7, 4, 2, 1};
+    private static final int[]   NEON_A = {22, 40, 70, 150, 255};
+
+    private static int withAlpha(int color, int a) { return (Math.min(255, Math.max(0, a)) << 24) | (color & 0xFFFFFF); }
+
+    /** 白く発光する縁(既定の色)。 */
+    static void neonEdge(Canvas cv, RectF box, float dp, float radius, float intensity) {
+        neonEdge(cv, box, dp, radius, intensity, NEON_WHITE);
+    }
+
+    /**
+     * 発光する縁を描く。選択行・メニュー枠・操作中の画面など、強調したい輪郭はすべてこれで統一する。
+     * 基本は白(NEON_WHITE)。状態に応じて color を変える。intensity は 0〜1。
+     * ぼかし(BlurMaskFilter)や software レイヤーは使わない — CarPlay の映像(SurfaceView)を塞がないため。
+     * 代わりに、外側ほど太く薄い線を重ねて発光に見せる。
+     */
+    static void neonEdge(Canvas cv, RectF box, float dp, float radius, float intensity, int color) {
+        if (intensity <= 0) return;
+        float k = Math.min(1f, intensity);
+        for (int i = 0; i < NEON_W.length; i++) {
+            NEON.setStrokeWidth(NEON_W[i] * dp);
+            NEON.setColor(withAlpha(color, Math.round(NEON_A[i] * k)));
+            cv.drawRoundRect(box, radius, radius, NEON);
+        }
+    }
 
     static final int BG = Color.parseColor("#0E1420");
     static final int SCRIM = Color.parseColor("#F00E1420");

@@ -19,7 +19,7 @@
         android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher"
-        android:theme="@android:style/Theme.DeviceDefault.NoActionBar"
+        android:theme="@style/Duo"
         android:hardwareAccelerated="true"
         android:supportsRtl="false">
         <!-- 本体: 1つの画面の中に左右2つの枠(CarPlay / TV 版 YouTube)と操作盤 -->

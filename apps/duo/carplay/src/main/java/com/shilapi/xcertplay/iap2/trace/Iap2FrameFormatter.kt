@@ -26,6 +26,11 @@ object Iap2FrameFormatter {
     private const val MAX_STRING_CHARS = 240
     private const val MAX_HEX_BYTES = 24
     private const val HEX_DIGITS = "0123456789abcdef"
+    /** 値を記録に出さない項目(Wi-Fi のパスワード)。 */
+    private val SECRET_FIELDS = setOf("passphrase")
+
+    private fun holdsSecret(spec: Iap2FieldSpec): Boolean =
+        spec.name in SECRET_FIELDS || spec.children.any(::holdsSecret)
 
     fun format(
         direction: Iap2TraceDirection,
@@ -50,7 +55,12 @@ object Iap2FrameFormatter {
                 lines = lines,
             )
         }
-        lines += "  raw-body=${hexPreview(frame.payload)}"
+        // Duo Cruise: Wi-Fi のパスワードを含む電文は、生の中身も記録に出さない
+        lines += if (endpoint?.fields.orEmpty().any(::holdsSecret)) {
+            "  raw-body=<hidden>"
+        } else {
+            "  raw-body=${hexPreview(frame.payload)}"
+        }
 
         val endpointText = endpoint?.let { " ${it.name}" }.orEmpty()
         return buildString {
@@ -131,7 +141,11 @@ object Iap2FrameFormatter {
             Iap2WireType.U16_LIST -> Iap2WireCodec.readU16List(payload)
                 .joinToString(prefix = "[", postfix = "]") { "0x${it.toString(16).padStart(4, '0')}" }
             Iap2WireType.BYTES -> bytes(payload)
-            Iap2WireType.STRING -> quote(truncate(Iap2WireCodec.readString(payload)))
+            Iap2WireType.STRING -> if (spec.name in SECRET_FIELDS) {
+                "<hidden>"
+            } else {
+                quote(truncate(Iap2WireCodec.readString(payload)))
+            }
             Iap2WireType.STRING_LIST -> Iap2WireCodec.readStrings(payload)
                 .joinToString(prefix = "[", postfix = "]") { quote(truncate(it)) }
             Iap2WireType.GROUP -> {

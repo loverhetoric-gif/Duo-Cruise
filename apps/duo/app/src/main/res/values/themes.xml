@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 起動の瞬間の背景。昼は白、夜は黒(values-night)。起動演出の地の色とそろえ、切り替わりで色が跳ねないようにする -->
+    <style name="Duo" parent="@android:style/Theme.DeviceDefault.NoActionBar">
+        <item name="android:windowBackground">@android:color/white</item>
+    </style>
+</resources>

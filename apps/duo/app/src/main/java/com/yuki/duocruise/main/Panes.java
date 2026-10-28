@@ -68,7 +68,14 @@ final class Panes {
         @Override public boolean onKey(KeyEvent e) { return p.onKey(e); }
         @Override public boolean onGenericMotion(MotionEvent e) { return p.onGenericMotion(e); }
         @Override public String status() { return p.status(); }
-        @Override public String command(String cmd) { return null; }
+        @Override public String command(String cmd) {
+            return "car-wifi-reset".equals(cmd) ? p.resetWifiPass() : null;
+        }
+        @Override public void scroll(float dx, float dy) { p.scroll(dx, dy); }
+        @Override public void scrollEnd() { p.scrollEnd(); }
+        /** OTTO の Wi-Fi のパスワードを入力中のときだけ使う。 */
+        @Override public void typeText(String text) { p.typeText(text); }
+        @Override public void typeKey(int keyCode) { p.typeKey(keyCode); }
         @Override public String name() { return "CarPlay"; }
         @Override public boolean real() { return true; }
     }
@@ -87,8 +94,11 @@ final class Panes {
         @Override public String status() { return p.status(); }
         @Override public String command(String cmd) { return p.command(cmd); }
         @Override public void duck(float level) { p.setDuck(level); }
+        @Override public void hold(boolean on) { p.setHold(on); }
         @Override public void typeText(String text) { p.typeText(text); }
         @Override public void typeKey(int keyCode) { p.typeKey(keyCode); }
+        @Override public void scroll(float dx, float dy) { p.scroll(dx, dy); }
+        @Override public void scrollEnd() { p.scrollEnd(); }
         @Override public String name() { return "YouTube"; }
         @Override public boolean real() { return true; }
     }
@@ -102,7 +112,7 @@ final class Panes {
             this.name = name;
             this.why = why;
             v = new TextView(c);
-            v.setText(name + " を開けませんでした\n" + why);
+            v.setText(Tx.s(R.string.pane_failed, name, why));
             v.setTextColor(Theme.SUB);
             v.setTextSize(15);
             v.setGravity(Gravity.CENTER);

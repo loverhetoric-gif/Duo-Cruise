@@ -14,9 +14,8 @@ prev_tag = sys.argv[4] if len(sys.argv) > 4 else ""
 LABELS = {
     "duo-updater.apk": "Duo Cruise Market",
     "duo-main.apk": "Duo Cruise",
-    "duo-airplay.apk": "Duo Cruise AirPlay",
 }
-REQUIRED = {"duo-updater.apk", "duo-airplay.apk"}
+REQUIRED = {"duo-updater.apk"}
 
 
 def entry(name, label):

@@ -98,7 +98,7 @@ public final class TvPane {
         root = new FrameLayout(activity);
         root.setBackgroundColor(Color.BLACK);
         buildWebView();
-        web.loadUrl(TV_URL);
+        web.loadUrl(startUrl());
         TvLog.state(app, "TV 枠を作成: 名乗り=" + UA_NAMES[uaIndex] + " WebView=" + webViewVersion());
         main.postDelayed(cookieFlusher, COOKIE_FLUSH_MS);
         main.postDelayed(poller, POLL_MS);
@@ -113,6 +113,20 @@ public final class TvPane {
     /** コマンダーのキーを YouTube へ。届けたら true。戻る=Esc、決定=Enter、上下左右=矢印。 */
     public boolean onKey(KeyEvent e) {
         if (web == null || destroyed) return false;
+        // 再生・一時停止のキー(ステアリング等)は、TV 版がキーとして受けないので、動画を直接操作する
+        switch (e.getKeyCode()) {
+            case KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE: case KeyEvent.KEYCODE_HEADSETHOOK:
+                if (e.getAction() == KeyEvent.ACTION_UP) web.evaluateJavascript(
+                        "(function(){var v=document.querySelector('video');if(!v)return;if(v.paused)v.play();else v.pause();})()", null);
+                return true;
+            case KeyEvent.KEYCODE_MEDIA_PLAY:
+                if (e.getAction() == KeyEvent.ACTION_UP) playVideo();
+                return true;
+            case KeyEvent.KEYCODE_MEDIA_PAUSE:
+                if (e.getAction() == KeyEvent.ACTION_UP) pauseVideo();
+                return true;
+            default: break;
+        }
         KeyEvent k = translate(e);
         if (k == null) return false;
         if (!web.hasFocus()) web.requestFocus();
@@ -141,6 +155,25 @@ public final class TvPane {
         web.dispatchKeyEvent(new KeyEvent(t, t, KeyEvent.ACTION_DOWN, code, 0));
         web.dispatchKeyEvent(new KeyEvent(t, SystemClock.uptimeMillis(), KeyEvent.ACTION_UP, code, 0));
     }
+
+    // 2本指スクロール: TV 版は矢印キーで項目を移動する(指でのスクロールは効かない)
+    private float scrollAccX, scrollAccY;
+    private static final float SCROLL_NOTCH = 36f;
+
+    public void scroll(float dx, float dy) {
+        scrollAccX += dx; scrollAccY += dy;
+        // 大きく動いている向きだけを矢印にする(斜めで両方出ないように)
+        if (Math.abs(scrollAccY) >= Math.abs(scrollAccX)) {
+            while (scrollAccY >= SCROLL_NOTCH) { typeKey(KeyEvent.KEYCODE_DPAD_DOWN); scrollAccY -= SCROLL_NOTCH; }
+            while (scrollAccY <= -SCROLL_NOTCH) { typeKey(KeyEvent.KEYCODE_DPAD_UP); scrollAccY += SCROLL_NOTCH; }
+        } else {
+            // 左右は、指を動かした向きに選択が動くよう入れ替え(2026-10-28 実機で左右が逆だった)
+            while (scrollAccX >= SCROLL_NOTCH) { typeKey(KeyEvent.KEYCODE_DPAD_LEFT); scrollAccX -= SCROLL_NOTCH; }
+            while (scrollAccX <= -SCROLL_NOTCH) { typeKey(KeyEvent.KEYCODE_DPAD_RIGHT); scrollAccX += SCROLL_NOTCH; }
+        }
+    }
+
+    public void scrollEnd() { scrollAccX = 0; scrollAccY = 0; }
 
     public void onResume() {
         if (web == null) return;
@@ -453,10 +486,12 @@ public final class TvPane {
     };
 
     private static final String POLL_JS =
-            "(function(){var v=document.querySelector('video');if(!v)return '';"
+            "(function(){var v=document.querySelector('video');"
+            + "var m=(location.hash||'').match(/[?&]v=([\\w-]{11})/),id=m?m[1]:'';"
+            + "if(!v)return JSON.stringify({nv:1,id:id});"
             + "var q=v.getVideoPlaybackQuality?v.getVideoPlaybackQuality():null;"
             + "return JSON.stringify({p:!v.paused&&!v.ended,w:v.videoWidth,h:v.videoHeight,"
-            + "d:q?q.droppedVideoFrames:-1,f:q?q.totalVideoFrames:-1,m:v.muted});})()";
+            + "d:q?q.droppedVideoFrames:-1,f:q?q.totalVideoFrames:-1,m:v.muted,id:id,t:v.currentTime});})()";
 
     private final Runnable poller = new Runnable() {
         @Override public void run() {
@@ -474,6 +509,8 @@ public final class TvPane {
             Object v = new JSONTokener(raw).nextValue();
             if (!(v instanceof String) || ((String) v).isEmpty()) return;
             JSONObject o = new JSONObject((String) v);
+            remember(o);
+            if (o.optInt("nv") == 1) return;
             boolean p = o.optBoolean("p");
             String res = o.optInt("w") + "x" + o.optInt("h");
             int dropped = o.optInt("d", -1), total = o.optInt("f", -1);
@@ -488,7 +525,9 @@ public final class TvPane {
             }
             if (p != playing) {
                 playing = p;
-                if (p) requestFocus(); else if (!pausedForFocus) abandonFocus();
+                // 音の主導権(オーディオフォーカス)は WebView(Chromium)自身が管理する。
+                // ここで Duo が取りに行くと、WebView の再生から主導権を奪ってしまい、
+                // 「再生して1〜2秒で止まる」を起こしていた(2026-10-28 DevTools で確定)。だから何もしない。
             }
         } catch (Exception ignored) {
             // ページ切り替え中など
@@ -554,6 +593,62 @@ public final class TvPane {
                 + "clearInterval(window.__duoFade);var s=v.volume,n=0;"
                 + "window.__duoFade=setInterval(function(){n++;v.volume=s+(t-s)*Math.min(1,n/10);"
                 + "if(n>=10){clearInterval(window.__duoFade);window.__duoFade=0;}},30);})(" + level + ")", null);
+    }
+
+    // ---------------- 電話・Siri の間の一時停止 ----------------
+
+    private boolean held, heldWasPlaying;
+
+    /** 電話・Siri が始まったら止め、終わったら、止める前に再生していたときだけ再開する。 */
+    public void setHold(boolean on) {
+        if (on == held) return;
+        held = on;
+        if (on) {
+            heldWasPlaying = playing;
+            if (playing) { pauseVideo(); TvLog.state(app, "電話・Siri のため一時停止"); }
+        } else if (heldWasPlaying) {
+            heldWasPlaying = false;
+            playVideo();
+            TvLog.state(app, "電話・Siri が終わったので再開");
+        }
+    }
+
+    // ---------------- 前回の続き(エンジンをかけたら、見ていた動画のその位置から) ----------------
+
+    /** 前回見ていた動画を覚えておく長さ。これより前のものは続きにしない。 */
+    private static final long RESUME_WITHIN_MS = 12 * 60 * 60 * 1000L;
+    private String seekVid;
+    private double seekT;
+
+    /** 再生の様子を覚える(見ている動画・位置・再生中か)。 */
+    private void remember(JSONObject o) {
+        String id = o.optString("id", "");
+        if (o.optInt("nv") == 1) {
+            if (id.isEmpty()) prefs.edit().putBoolean("lastPlaying", false).apply(); // 動画を離れた
+            return;
+        }
+        if (id.isEmpty()) return;
+        if (seekVid != null && seekVid.equals(id) && seekT > 1) { // 続きの位置へ一度だけ送る
+            double t = seekT;
+            seekVid = null; seekT = 0;
+            web.evaluateJavascript("(function(){var v=document.querySelector('video');if(v)v.currentTime=" + t + ";})()", null);
+            TvLog.state(app, "前回の続きから再生: " + Math.round(t) + " 秒");
+            return;
+        }
+        prefs.edit().putString("lastVid", id).putFloat("lastT", (float) o.optDouble("t", 0))
+                .putBoolean("lastPlaying", o.optBoolean("p") || held).putLong("lastAt", System.currentTimeMillis()).apply();
+    }
+
+    /** 開くページ。前回、動画を再生したまま終わっていれば、その動画を開く(位置は再生が始まってから送る)。 */
+    private String startUrl() {
+        String vid = prefs.getString("lastVid", null);
+        boolean was = prefs.getBoolean("lastPlaying", false);
+        long at = prefs.getLong("lastAt", 0);
+        if (vid == null || !was || System.currentTimeMillis() - at > RESUME_WITHIN_MS) return TV_URL;
+        seekVid = vid;
+        seekT = prefs.getFloat("lastT", 0);
+        TvLog.state(app, "前回の続きを開きます");
+        return TV_URL + "#/watch?v=" + vid;
     }
 
     private void pauseVideo() {

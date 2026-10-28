@@ -16,6 +16,7 @@ import android.view.SurfaceView
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.TextView
+import com.shilapi.xcertplay.shared.R
 import com.shilapi.xcertplay.AirPlayPersistence
 import com.shilapi.xcertplay.airplay.AirPlayConfig
 import com.shilapi.xcertplay.airplay.AirPlayDisplayConfig
@@ -29,6 +30,8 @@ import com.shilapi.xcertplay.orchestration.CarPlayController
 import com.shilapi.xcertplay.orchestration.CarPlayRuntimeConfig
 import com.shilapi.xcertplay.orchestration.CarPlayStatus
 import com.shilapi.xcertplay.orchestration.CarPlayTransport
+import com.shilapi.xcertplay.orchestration.ManualHotspotBand
+import com.shilapi.xcertplay.orchestration.ManualHotspotSecurity
 import com.shilapi.xcertplay.orchestration.MfiTarget
 import com.shilapi.xcertplay.orchestration.WirelessHotspotMode
 import com.shilapi.xcertplay.transport.Iap2IdentificationConfig
@@ -69,6 +72,22 @@ class CarPlayPane(context: Context, private val listener: Listener?) {
         const val HEIGHT = 416
         private const val SCREEN_TYPE_MAIN = 110
         private const val FPS = 60
+        /**
+         * CarPlay の映像の口。iPhone へは iAP2 と Bonjour で番号を伝えるので、何番でもよい。
+         * 既定の 7000 は AirPlay 受信アプリ(com.yuki.duocruise.airplay、YouTube を iPhone から受ける)も使うため、
+         * 両方が動いていると CarPlay が「bind failed: EADDRINUSE」で止まっていた(2026-10-28 実機)。ずらして両立させる。
+         */
+        private const val AIRPLAY_PORT = 7200
+
+        /**
+         * CarPlay に使う Wi-Fi = OTTO 本体のホットスポット(名前と機器番号が変わらない、WPA2)。
+         * アプリ専用のアクセスポイント(LocalOnlyHotspot)は起動のたびに名前が変わり、iPhone は最初に入った名前で
+         * 車を覚えるため、ペアリング直後の1回しかつながらなかった(2026-10-27・28 実機)。
+         * パスワードは Duo Slate のキーボードで一度だけ入れてもらい、この端末の中にだけ保存する(記録には出さない)。
+         */
+        private const val OTTO_AP_SSID = "OttoAibox-P3 Pro-99F0"
+        private const val WIFI_PREFS = "carplay_wifi"
+        private const val KEY_PASS = "pass"
 
         private val running = AtomicInteger(0)
 
@@ -110,6 +129,8 @@ class CarPlayPane(context: Context, private val listener: Listener?) {
     private var lastStatus: CarPlayStatus? = null
     private var generation = 0
     private var isRunning = false
+    /** パスワードを入力中(未保存)。null なら入力中ではない。 */
+    private var typing: StringBuilder? = null
 
     init {
         root.setBackgroundColor(Color.BLACK)
@@ -117,10 +138,11 @@ class CarPlayPane(context: Context, private val listener: Listener?) {
             FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT,
         ))
         label.setTextColor(Color.WHITE)
-        label.textSize = 16f
+        label.textSize = 18f
+        label.setLineSpacing(0f, 1.5f)
         label.gravity = Gravity.CENTER
         label.setPadding(24, 24, 24, 24)
-        label.text = statusText
+        label.text = forPeople(statusText)
         root.addView(label, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT,
         ))
@@ -162,12 +184,27 @@ class CarPlayPane(context: Context, private val listener: Listener?) {
             record(DuoRecord.KIND_ERROR, "CarPlay を始められません。権限なし: ${missing.joinToString()}")
             return
         }
+        val wifiPass = savedWifiPass()
+        if (wifiPass == null) {
+            askWifiPass()
+            return
+        }
         isRunning = true
         running.incrementAndGet()
         val myGeneration = ++generation
         // 回線(SIM・テザリング・Wi-Fi)と無線 CarPlay がぶつかりそうかを先に記録する
         record(DuoRecord.KIND_STATE, "CarPlay 開始前の回線: " + network.describe())
         network.conflictBeforeStart()?.let { record(DuoRecord.KIND_ERROR, "取り合いの可能性(Wi-Fi): $it") }
+        if (network.portInUse(AIRPLAY_PORT)) {
+            record(DuoRecord.KIND_ERROR, "取り合い: CarPlay の映像の口 $AIRPLAY_PORT 番を、ほかのアプリが使っています")
+        }
+        if (network.ottoTetheringOn() == false) {
+            record(
+                DuoRecord.KIND_ERROR,
+                "OTTO 本体の Wi-Fi(ホットスポット $OTTO_AP_SSID)が切れています。CarPlay はこの Wi-Fi を使います。" +
+                    "OTTO の設定でホットスポットをオンにし、「自動的にオフ」をオフにしてください",
+            )
+        }
         record(DuoRecord.KIND_LOG, "キー対応表: " + CarPlayKeyMap.describe())
 
         try {
@@ -199,7 +236,7 @@ class CarPlayPane(context: Context, private val listener: Listener?) {
             }
             val next = CarPlayController(
                 context = app,
-                config = createRuntimeConfig(),
+                config = createRuntimeConfig(wifiPass),
                 airPlayConfig = airPlayConfig,
                 identity = AirPlayPersistence.loadIdentity(app),
                 pairings = pairings,
@@ -230,6 +267,71 @@ class CarPlayPane(context: Context, private val listener: Listener?) {
         setStatus("停止中")
         record(DuoRecord.KIND_STATE, "CarPlay 停止(Wi-Fi・Bluetooth・チップを手放した)")
     }
+
+    /**
+     * Duo Slate のキーボードの文字。OTTO の Wi-Fi のパスワードを入力中のときだけ受ける。
+     * 文字は画面に出さず、数だけ「●」で見せる。
+     */
+    fun typeText(text: String) {
+        val buf = typing ?: return
+        buf.append(text)
+        showTyping()
+    }
+
+    /** Duo Slate のキー。入力中のとき、削除で1文字消し、決定で保存してつなぎに行く。 */
+    fun typeKey(keyCode: Int) {
+        val buf = typing ?: return
+        when (keyCode) {
+            KeyEvent.KEYCODE_DEL -> if (buf.isNotEmpty()) buf.setLength(buf.length - 1)
+            KeyEvent.KEYCODE_ENTER -> {
+                if (buf.length !in 8..63) {
+                    typingText = app.getString(R.string.cp_wifi_len, dots(buf.length))
+                    setStatus("パスワードは 8〜63 文字です。もう一度入れてください")
+                    return
+                }
+                app.getSharedPreferences(WIFI_PREFS, Context.MODE_PRIVATE).edit()
+                    .putString(KEY_PASS, buf.toString()).apply()
+                buf.setLength(0)
+                typing = null
+                record(DuoRecord.KIND_STATE, "OTTO の Wi-Fi のパスワードを保存しました(値は記録しません)")
+                start()
+                return
+            }
+            else -> return
+        }
+        showTyping()
+    }
+
+    /** 指示 car-wifi-reset: 保存したパスワードを消し、入力を待つ(パスワードを変えたとき)。 */
+    fun resetWifiPass(): String {
+        stop()
+        app.getSharedPreferences(WIFI_PREFS, Context.MODE_PRIVATE).edit().remove(KEY_PASS).apply()
+        askWifiPass()
+        return "OTTO の Wi-Fi のパスワードを消しました。Duo Slate のキーボードで入れ直してください"
+    }
+
+    private fun savedWifiPass(): String? =
+        app.getSharedPreferences(WIFI_PREFS, Context.MODE_PRIVATE).getString(KEY_PASS, null)
+            ?.takeIf { it.length in 8..63 }
+
+    private fun askWifiPass() {
+        if (typing == null) {
+            typing = StringBuilder()
+            record(DuoRecord.KIND_STATE, "OTTO の Wi-Fi のパスワード待ち(Duo Slate のキーボードで入力)")
+        }
+        showTyping()
+    }
+
+    private fun showTyping() {
+        val n = typing?.length ?: 0
+        typingText = app.getString(R.string.cp_wifi_ask, OTTO_AP_SSID, dots(n))
+        setStatus("OTTO の Wi-Fi「$OTTO_AP_SSID」のパスワード待ち($n 文字)")
+    }
+
+    private fun dots(n: Int) = if (n == 0) app.getString(R.string.cp_empty) else "●".repeat(n) + app.getString(R.string.cp_count, n)
+
+    /** パスワード入力中に枠へ出す文(端末の言語)。 */
+    private var typingText: String? = null
 
     /**
      * コマンダーのキーを CarPlay へ渡す。渡した(このキーを使った)時は true。
@@ -280,6 +382,19 @@ class CarPlayPane(context: Context, private val listener: Listener?) {
         return true
     }
 
+    // 2本指スクロール: CarPlay はダイヤル送り(1目盛りずつ確実に)。指でのなぞりより判定がやさしい
+    private var scrollAccY = 0f
+    private val scrollNotch = 36f
+
+    fun scroll(dx: Float, dy: Float) {
+        val s = session ?: return
+        scrollAccY += dy
+        while (scrollAccY >= scrollNotch) { hid { s.sendKnob(AirPlayKnobState(wheel = CarPlayKeyMap.ROTATE_STEP)) }; scrollAccY -= scrollNotch }
+        while (scrollAccY <= -scrollNotch) { hid { s.sendKnob(AirPlayKnobState(wheel = -CarPlayKeyMap.ROTATE_STEP)) }; scrollAccY += scrollNotch }
+    }
+
+    fun scrollEnd() { scrollAccY = 0f }
+
     private fun onTouch(v: View, event: MotionEvent): Boolean {
         val c = controller ?: return false
         if (session == null) return false
@@ -302,7 +417,7 @@ class CarPlayPane(context: Context, private val listener: Listener?) {
         }
     }
 
-    private fun createRuntimeConfig() = CarPlayRuntimeConfig(
+    private fun createRuntimeConfig(wifiPass: String) = CarPlayRuntimeConfig(
         mfiTarget = MfiTarget.I2C,
         linuxI2cPath = MfiProbe.DEVICE_PATH,
         identification = Iap2IdentificationConfig(
@@ -318,8 +433,12 @@ class CarPlayPane(context: Context, private val listener: Listener?) {
         hostName = "DuoCruise",
         transport = CarPlayTransport.WIRELESS,
         // OTTO では Wi-Fi Direct のグループが作れない(実機：家の Wi-Fi あり・なし とも createGroup が generic error)。
-        // アプリ専用のアクセスポイント(LocalOnlyHotspot)で iPhone を受ける
-        wirelessHotspotMode = WirelessHotspotMode.LOCAL_ONLY_HOTSPOT,
+        // OTTO 本体のホットスポット(名前が変わらない)で iPhone を受ける
+        wirelessHotspotMode = WirelessHotspotMode.MANUAL,
+        manualHotspotSsid = OTTO_AP_SSID,
+        manualHotspotPassphrase = wifiPass,
+        manualHotspotBand = ManualHotspotBand.AUTO,
+        manualHotspotSecurity = ManualHotspotSecurity.WPA2,
         wifiHighPerformanceEnabled = true,
     )
 
@@ -341,6 +460,7 @@ class CarPlayPane(context: Context, private val listener: Listener?) {
             ),
             // 日本の右ハンドル車(MX-30)
             rightHandDrive = true,
+            port = AIRPLAY_PORT,
             hevc = false,
             microphone = microphone,
             manufacturer = "Duo Cruise",
@@ -428,8 +548,24 @@ class CarPlayPane(context: Context, private val listener: Listener?) {
 
     private fun setStatus(text: String) {
         statusText = text
-        label.text = text
+        label.text = forPeople(text)
         listener?.onStatus(text)
+    }
+
+    /**
+     * 枠に出す文。記録と判定には [statusText](技術的な文)をそのまま使い、画面には利用者向けの言葉だけを出す。
+     * 失敗・切断は Duo Cruise が自動でつなぎ直すので、そのことを伝える(英語の内部メッセージは出さない)。
+     */
+    private fun forPeople(s: String): String = when {
+        s.startsWith("権限が足りません") -> app.getString(R.string.cp_perm)
+        s.startsWith("パスワード") || s.startsWith("OTTO の Wi-Fi") -> typingText ?: s
+        s.startsWith("失敗") || s.startsWith("始められません") -> app.getString(R.string.cp_failed)
+        s.startsWith("CarPlay が切れました") || s.startsWith("iPhone との接続が終わりました") -> app.getString(R.string.cp_ended)
+        s.startsWith("ペアリング済みの iPhone") -> app.getString(R.string.cp_waiting)
+        s.startsWith("Bluetooth で iPhone") -> app.getString(R.string.cp_connecting)
+        s.startsWith("iPhone と準備中") || s.startsWith("無線 CarPlay") || s.startsWith("CarPlay 表示中") -> app.getString(R.string.cp_starting)
+        s == "停止中" -> app.getString(R.string.cp_stopped)
+        else -> app.getString(R.string.cp_preparing)
     }
 
     private fun record(kind: String, text: String) {

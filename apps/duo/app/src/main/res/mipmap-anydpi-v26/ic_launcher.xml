@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- アプリアイコン: 白地に色付きのシンボル(アイコンのアーティファクトの「アプリアイコン 白地」と同じ組み合わせ) -->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <background android:drawable="@color/ic_bg"/>
-    <foreground android:drawable="@drawable/ic_fg"/>
+    <background android:drawable="@android:color/white"/>
+    <foreground android:drawable="@drawable/ic_fg_symbol"/>
 </adaptive-icon>

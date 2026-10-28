@@ -31,7 +31,6 @@ final class Diag {
     static final String PERM = "com.yuki.duocruise.permission.LOG";
     static final String ACTION_COMMAND = "com.yuki.duocruise.COMMAND";
     static final String MAIN = "com.yuki.duocruise.main";
-    static final String AIRPLAY = "com.yuki.duocruise.airplay";
     /** 自作アプリへ渡す指示の中身として許す文字(英数字と - _ . = : 空白、80文字まで)。 */
     private static final Pattern SAFE = Pattern.compile("[A-Za-z0-9 _.=:-]{1,80}");
     private static final ExecutorService EXEC = Executors.newSingleThreadExecutor();
@@ -85,8 +84,11 @@ final class Diag {
                 case "screenshot":
                     ConfirmClickService.screenshot(c, row, cmd);
                     return;
+                case "confirm":
+                    ConfirmClickService.confirmNow(c, row, cmd);
+                    return;
                 default:
-                    Remote.result(cmd + " → 受け付けない指示です(updater:state / packages / check / test-channel on|off / screenshot)", row);
+                    Remote.result(cmd + " → 受け付けない指示です(updater:state / packages / check / test-channel on|off / screenshot / confirm)", row);
                     return;
             }
         }
@@ -144,8 +146,7 @@ final class Diag {
         sb.append("端末: ").append(Remote.device()).append(" / Android ").append(Build.VERSION.RELEASE)
                 .append(" (SDK ").append(Build.VERSION.SDK_INT).append(")\n");
         sb.append("版: 更新 ").append(v(c, BuildConfig.APPLICATION_ID))
-                .append(" / 本体 ").append(v(c, MAIN))
-                .append(" / AirPlay ").append(v(c, AIRPLAY)).append('\n');
+                .append(" / 本体 ").append(v(c, MAIN)).append('\n');
         sb.append("画面: ").append(screen(c)).append('\n');
         sb.append("ネット: ").append(netType(c)).append('\n');
         boolean can = Build.VERSION.SDK_INT < 26 || c.getPackageManager().canRequestPackageInstalls();

@@ -39,7 +39,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     private boolean carOn;
     /** 次につなぎ直すまでの待ち時間(ms)。失敗が続くほど延ばし、つながったら戻す。 */
     private long carRetryMs = CAR_RETRY_MIN_MS;
-    private static final long CAR_RETRY_MIN_MS = 10_000, CAR_RETRY_MAX_MS = 120_000, CAR_WATCH_MS = 5_000;
+    private static final long CAR_RETRY_MIN_MS = 10_000, CAR_RETRY_MAX_MS = 300_000, CAR_WATCH_MS = 5_000;
     /** CarPlay の見張り。失敗・切断で止まっていたら、待ってから作り直してつなぎ直す。 */
     private final Runnable carWatch = new Runnable() {
         private long stoppedSince;
@@ -63,11 +63,12 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     private KeyRouter router;
     private KeyMap keyMap;
     private KeyMap.Action learnAction;
-    /** iPhone のタッチパッド(Duo Pad)。 */
+    /** iPhone のタッチパッド(Duo Slate)。 */
     private PadInput pad;
     private PadServer padServer;
     private PaneService service;
     private String sizes = "-", insets = "-";
+    private GuideView guide;
     private final Runnable learnTimeout = () -> {
         if (learnAction != null) { DuoLog.log("割り当ての登録: 時間切れで取りやめ"); cancelLearn(); }
     };
@@ -78,6 +79,8 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
         DuoLog.init(this);
+        Tx.init(this);
+        Crash.install(this);
         // 二重に開かれたら、前の画面を閉じる(CarPlay の Wi-Fi・Bluetooth とタッチパッドの口を取り合わないように)
         DuoActivity old = live;
         if (old != null && old != this && !old.isFinishing()) {
@@ -101,7 +104,23 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         pad = new PadInput(this, this);
         root.cursor = pad.cursorView();
         root.setPanes(car.view(), tv.view(), panel);
-        setContentView(root);
+        guide = new GuideView(this);
+        guide.setVisibility(View.GONE);
+        android.widget.FrameLayout stage = new android.widget.FrameLayout(this);
+        stage.setBackgroundColor(android.graphics.Color.BLACK); // 起動の地(白/黒)は演出の後ろに隠し、2 画面の地は黒
+        stage.addView(root);
+        stage.addView(guide);
+        boolean first = !Store.guided(this);
+        if (b == null) {          // エンジンをかけて開いたとき(作り直しでは出さない)
+            SplashView splash = new SplashView(this);
+            if (first) guide.prepare();   // 案内の地(演出と同じ色)を先に敷き、演出が消えたら案内が浮かぶ
+            stage.addView(splash);
+            splash.play(Store.bootSound(this), () -> {
+                stage.removeView(splash);
+                if (first) guide.reveal(this::guideDone);
+            });
+        } else if (first) main.post(this::showGuide);
+        setContentView(stage);
         setupInsets();
         applyLayout();
 
@@ -109,9 +128,11 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         // CarPlay は開いたら自動で始め、失敗・切断したら見張りがつなぎ直す
         startCar("開いたので自動で");
         main.postDelayed(carWatch, CAR_WATCH_MS);
-        padServer = PadServer.shared(this, pad);
+        // タッチパッドは、アプリごとにモードを切り替えるルーターに通す
+        // (Duo Cruise 前面＝この窓を操作、それ以外＝ユーザー補助で全体を操作)
+        PadRouter.get(this).setDuoSink(pad);
+        padServer = PadRouter.get(this).server();
         padServer.setState(Store.single(this) ? "s F" : Store.side(this) == SplitGeometry.SIDE_LEFT ? "s L" : "s R");
-        padServer.start();
         try { tv.start(); } catch (Throwable t) { DuoLog.error("YouTube を始められません: " + DuoLog.why(t)); }
         boolean asHome = getIntent() != null && getIntent().hasCategory(Intent.CATEGORY_HOME);
         DuoLog.log("Duo Cruise を開きました(版 " + DuoLog.version() + (asHome ? "、ホームとして" : "") + ")");
@@ -182,6 +203,10 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     @Override protected void onResume() {
         super.onResume();
         front = this;
+        if (getIntent() != null && getIntent().getBooleanExtra("openMenu", false)) {
+            getIntent().removeExtra("openMenu");
+            main.post(() -> openMenu());
+        }
         DuoLog.listener = () -> { if (panel.getVisibility() == View.VISIBLE) panel.refresh(); };
         car.resume();
         tv.resume();
@@ -205,6 +230,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
 
         try { car.destroy(); } catch (Throwable t) { DuoLog.error("CarPlay の終了で失敗: " + DuoLog.why(t)); }
         try { tv.destroy(); } catch (Throwable t) { DuoLog.error("YouTube の終了で失敗: " + DuoLog.why(t)); }
+        PadRouter.get(this).setDuoSink(null);
         super.onDestroy();
     }
 
@@ -241,6 +267,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
             float v = e.getAxisValue(MotionEvent.AXIS_SCROLL);
             if (v == 0) v = -e.getAxisValue(MotionEvent.AXIS_VSCROLL);
             DuoLog.keys("回転 " + v);
+            if (guiding()) { guide.rotate(v > 0 ? 1 : v < 0 ? -1 : 0); return true; }
             if (panel.getVisibility() == View.VISIBLE) {
                 panel.rotate(v > 0 ? 1 : v < 0 ? -1 : 0);
                 return true;
@@ -263,13 +290,33 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     @Override public void deliver(int code, int action, long downTime, Object raw) {
         KeyEvent ev = raw instanceof KeyEvent ? (KeyEvent) raw
                 : new KeyEvent(downTime, SystemClock.uptimeMillis(), action, code, 0);
+        if (guiding()) { guide.onKey(ev); return; }
         if (panel.getVisibility() == View.VISIBLE) { panel.onKey(ev); return; }
+        if (isMediaKey(code)) { mediaTarget().onKey(ev); return; }
         try { active().onKey(ev); }
         catch (Throwable t) { DuoLog.error(active().name() + " へキーを渡せません: " + DuoLog.why(t)); }
     }
 
+    /** ステアリングの曲送り・曲戻し・再生/一時停止。 */
+    private static boolean isMediaKey(int code) {
+        switch (code) {
+            case KeyEvent.KEYCODE_MEDIA_NEXT: case KeyEvent.KEYCODE_MEDIA_PREVIOUS:
+            case KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE: case KeyEvent.KEYCODE_MEDIA_PLAY: case KeyEvent.KEYCODE_MEDIA_PAUSE:
+            case KeyEvent.KEYCODE_MEDIA_FAST_FORWARD: case KeyEvent.KEYCODE_MEDIA_REWIND: case KeyEvent.KEYCODE_HEADSETHOOK:
+                return true;
+            default: return false;
+        }
+    }
+
+    /**
+     * 曲送り等を渡す側。CarPlay で音楽が鳴っていれば CarPlay、そうでなければ YouTube。
+     * (操作中の画面とは別に決める。地図を見ながら YouTube を送れるように)
+     */
+    private Pane mediaTarget() { return carSounds.contains("media") ? car : tv; }
+
     @Override public void action(KeyMap.Action a) {
-        DuoLog.log("ボタン操作: " + a.label);
+        if (guiding()) return; // 案内の間は、裏の画面を動かさない
+        DuoLog.log("ボタン操作: " + a.label());
         switch (a) {
             case SWITCH_SIDE: switchSide(); break;
             case SWAP: swap(); break;
@@ -296,7 +343,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         keyMap.set(a, code, gesture, true);
         Store.setKeyMap(this, keyMap);
         router.setMap(keyMap);
-        DuoLog.log("割り当て: " + a.label + " = " + keyMap.describe(a) + "(" + keyMap.serialize() + ")");
+        DuoLog.log("割り当て: " + a.label() + " = " + keyMap.describe(a) + "(" + keyMap.serialize() + ")");
         if (panel.getVisibility() == View.VISIBLE) panel.refresh();
     }
 
@@ -333,6 +380,19 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         stateChanged();
     }
 
+    @Override public void showGuide() {
+        if (panel.getVisibility() == View.VISIBLE) { panel.setVisibility(View.GONE); applyLayout(); }
+        guide.bringToFront();
+        guide.open(this::guideDone);
+    }
+
+    private void guideDone() { Store.setGuided(this, true); focusActive(); }
+
+    @Override public boolean bootSound() { return Store.bootSound(this); }
+    @Override public void toggleBootSound() { Store.setBootSound(this, !Store.bootSound(this)); }
+
+    private boolean guiding() { return guide != null && guide.getVisibility() == View.VISIBLE; }
+
     @Override public void switchSide() {
         int now = Store.side(this) == SplitGeometry.SIDE_LEFT ? SplitGeometry.SIDE_RIGHT : SplitGeometry.SIDE_LEFT;
         setSide(now);
@@ -342,24 +402,133 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         Store.setSide(this, side);
         relayout();
         focusActive();
-        root.showLabel("操作: " + active().name());
-        root.glow();
+        root.glow(Store.neonTarget(this), Store.neonLevel(this, 0) / 100f); // ターゲット切替: 設定の色・強さで一瞬
         DuoLog.log("操作する側: " + sideText());
     }
 
     /** 並べ方(入れ替え・操作側・1画面・操作盤の場所)を土台に伝えて並べ直す。 */
+    /** いまの(アニメ中の)YouTube 幅の割合。普段は splitYt、ナビ中は navYt に向けて動く。 */
+    private int curYt = -1;
+    private android.animation.ValueAnimator ytAnim;
+
     private void applyLayout() {
+        if (curYt < 0) curYt = Store.splitYt(this);
         root.setSingle(Store.single(this));
-        root.apply(Store.swapped(this), Store.side(this), Store.panelHalf(this));
+        root.apply(Store.swapped(this), Store.side(this), Store.panelHalf(this), curYt);
     }
+
+    /** CarPlay の接続状態(前回値)。変化した瞬間だけ、メインビューを色で知らせる。 */
+    private boolean lastConn;
+
+    /** 接続状態が変わったら、メインビューの縁を一瞬だけ光らせる(完了=青／不良=赤)。 */
+    private void onConnChanged() {
+        boolean conn = carOn() && carBluetooth(safeStatus(car));
+        if (conn == lastConn) return;
+        lastConn = conn;
+        int which = conn ? 1 : 2;
+        root.glow(Store.neon(this, which), Store.neonLevel(this, which) / 100f); // 完了 / 不良(切断)。色・強さは設定可
+    }
+
+    // ネオンの色・強さ(設定から RGB・強さを個別に変更)。which: 0=ターゲット切替 / 1=接続完了 / 2=接続不良。
+    @Override public int neonColor(int which) { return Store.neon(this, which); }
+    @Override public void setNeonColor(int which, int color) { Store.setNeon(this, which, color); }
+    @Override public int neonLevel(int which) { return Store.neonLevel(this, which); }
+    @Override public void setNeonLevel(int which, int lv) { Store.setNeonLevel(this, which, lv); }
+    @Override public String neonColorText(int which) { int c = Store.neon(this, which); return String.format("#%06X", c & 0xFFFFFF); }
+
+    /** 比率をなめらかに変える。 */
+    private void animateYt(int target) {
+        target = SplitGeometry.clampYt(target);
+        if (curYt < 0) curYt = Store.splitYt(this);
+        if (ytAnim != null) ytAnim.cancel();
+        if (curYt == target) { applyLayout(); return; }
+        ytAnim = android.animation.ValueAnimator.ofInt(curYt, target);
+        ytAnim.setDuration(300);
+        ytAnim.addUpdateListener(a -> { curYt = (int) a.getAnimatedValue(); applyLayout(); });
+        ytAnim.start();
+    }
+
+    // ───────── ナビ音声での自動変更(比率・左右入れ替え) ─────────
+    private boolean navEngaged, navDidSwap;
+    private final Runnable navRevert = this::navRevert;
+
+    /** CarPlay の音の有無が変わったら呼ぶ。設定がオンのときだけ、比率(と左右)を自動で変える。 */
+    private void updateNavSplit() {
+        boolean voice = false;
+        for (String t : carSounds) if (!t.equals("media")) { voice = true; break; } // ナビ・通知・電話・Siri
+        if (!Store.autoSplit(this) || Store.single(this)) {
+            // 自動オフ: ナビ中に変えていたら元へ
+            if (navEngaged) navRevert();
+            return;
+        }
+        if (voice) {
+            main.removeCallbacks(navRevert);
+            if (!navEngaged) {
+                navEngaged = true;
+                if (Store.autoSwap(this) && !Store.swapped(this)) {
+                    navDidSwap = true;
+                    curYt = Store.navYt(this);
+                    swap();                 // マップを右へ(くるっと)。比率も navYt で並べ直る
+                } else {
+                    navDidSwap = false;
+                    animateYt(Store.navYt(this));
+                }
+            }
+        } else if (navEngaged) {
+            main.removeCallbacks(navRevert);
+            main.postDelayed(navRevert, Store.navHoldMs(this)); // 少し待ってから戻す(短い案内で往復しない)
+        }
+    }
+
+    private void navRevert() {
+        main.removeCallbacks(navRevert);
+        if (!navEngaged) return;
+        navEngaged = false;
+        if (navDidSwap) {
+            navDidSwap = false;
+            curYt = Store.splitYt(this);
+            if (Store.swapped(this)) swap();   // 元(マップ左・YouTube 右)へ戻す
+            else applyLayout();
+        } else {
+            animateYt(Store.splitYt(this));
+        }
+    }
+
+    // ───────── 設定(メニューから) ─────────
+    /** 普段の比率を1段変える(50→60→…→100→30→…)。すぐ反映。 */
+    @Override public void cycleSplitYt() {
+        int v = Store.splitYt(this) + 10; if (v > 100) v = 30;
+        Store.setSplitYt(this, v);
+        if (!navEngaged) animateYt(v);
+    }
+    @Override public void cycleNavYt() { int v = Store.navYt(this) + 10; if (v > 100) v = 30; Store.setNavYt(this, v); if (navEngaged) animateYt(v); }
+    // スライダーでの増減(左右で 5% ずつ)。
+    @Override public int splitYtPct() { return Store.splitYt(this); }
+    @Override public int navYtPct() { return Store.navYt(this); }
+    @Override public void adjustSplitYt(int dir) {
+        int v = SplitGeometry.clampYt(Store.splitYt(this) + dir * 5);
+        Store.setSplitYt(this, v);
+        if (!navEngaged) animateYt(v);
+    }
+    @Override public void adjustNavYt(int dir) {
+        int v = SplitGeometry.clampYt(Store.navYt(this) + dir * 5);
+        Store.setNavYt(this, v);
+        if (navEngaged) animateYt(v);
+    }
+    @Override public void toggleAutoSplit() { Store.setAutoSplit(this, !Store.autoSplit(this)); updateNavSplit(); }
+    @Override public void toggleAutoSwap() { Store.setAutoSwap(this, !Store.autoSwap(this)); }
+    @Override public void cycleNavHold() { long v = Store.navHoldMs(this) / 1000 + 2; if (v > 12) v = 3; Store.setNavHoldMs(this, v * 1000); }
+    @Override public String splitYtText() { int y = Store.splitYt(this); return "YouTube " + y + "% ／ CarPlay " + (100 - y) + "%"; }
+    @Override public String navYtText() { int y = Store.navYt(this); return "YouTube " + y + "% ／ CarPlay " + (100 - y) + "%"; }
+    @Override public boolean autoSplitOn() { return Store.autoSplit(this); }
+    @Override public boolean autoSwapOn() { return Store.autoSwap(this); }
+    @Override public String navHoldText() { return Tx.s(R.string.seconds, Store.navHoldMs(this) / 1000); }
 
     /** 1画面と2画面の切り替え。1画面では操作中の側だけを出し、押し込み2回で YouTube だけ⇔マップだけになる。 */
     void toggleSingle() {
         Store.setSingle(this, !Store.single(this));
         relayout();
         focusActive();
-        root.showLabel(Store.single(this) ? active().name() + " だけ" : "2画面");
-        root.glow();
         DuoLog.log("表示: " + (Store.single(this) ? "1画面 " + active().name() : "2画面"));
     }
 
@@ -370,7 +539,6 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         Store.setSide(this, Store.side(this) == SplitGeometry.SIDE_LEFT ? SplitGeometry.SIDE_RIGHT : SplitGeometry.SIDE_LEFT);
         relayout();
         focusActive();
-        root.showLabel(layoutText());
         DuoLog.log("入れ替え: " + layoutText());
     }
 
@@ -382,14 +550,18 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     void openPanel() {
         panel.show(PanelView.MAIN);
         panel.setVisibility(View.VISIBLE);
+        panel.enter();
         applyLayout();
     }
 
     @Override public void closePanel() {
         cancelLearn();
-        panel.setVisibility(View.GONE);
-        applyLayout();
-        focusActive();
+        if (panel.getVisibility() != View.VISIBLE) return;
+        panel.leave(() -> {
+            panel.setVisibility(View.GONE);
+            applyLayout();
+            focusActive();
+        });
     }
 
     /** 操作盤の「CarPlay を開始/止める」。止めたら、次に開くか「開始」を押すまでつなぎ直さない。 */
@@ -398,7 +570,23 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         else startCar("操作盤から");
     }
 
+    /** iPhone の Bluetooth の一覧で分かりやすいよう、OTTO の Bluetooth の名前を「Duo Cruise」にする。 */
+    static final String BT_NAME = "Duo Cruise";
+
+    @android.annotation.SuppressLint("MissingPermission")
+    private void nameBluetooth() {
+        try {
+            android.bluetooth.BluetoothManager bm = (android.bluetooth.BluetoothManager) getSystemService(BLUETOOTH_SERVICE);
+            android.bluetooth.BluetoothAdapter ad = bm == null ? null : bm.getAdapter();
+            if (ad == null || BT_NAME.equals(ad.getName())) return;
+            DuoLog.log("Bluetooth の名前を「" + BT_NAME + "」にします(前: " + ad.getName() + ") " + (ad.setName(BT_NAME) ? "OK" : "できません"));
+        } catch (Throwable t) {
+            DuoLog.error("Bluetooth の名前を変えられません: " + DuoLog.why(t));
+        }
+    }
+
     private void startCar(String why) {
+        nameBluetooth();
         DuoLog.log("CarPlay を開始します(" + why + ")");
         carOn = true;
         carRetryMs = CAR_RETRY_MIN_MS;
@@ -461,7 +649,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
 
     @Override public String otherHomeName() {
         ComponentName c = otherHome();
-        if (c == null) return "見つかりません";
+        if (c == null) return Tx.s(R.string.not_found);
         try { return String.valueOf(getPackageManager().getActivityInfo(c, 0).loadLabel(getPackageManager())); }
         catch (Exception e) { return c.getPackageName(); }
     }
@@ -523,12 +711,12 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     }
 
     @Override public String layoutText() {
-        if (Store.single(this)) return "1画面 " + active().name() + " だけ";
-        return Store.swapped(this) ? "左 YouTube ／ 右 CarPlay" : "左 CarPlay ／ 右 YouTube";
+        if (Store.single(this)) return Tx.s(R.string.layout_single, active().name());
+        return Tx.s(Store.swapped(this) ? R.string.layout_rl : R.string.layout_lr);
     }
 
     @Override public String sideText() {
-        return "操作中: " + (Store.side(this) == SplitGeometry.SIDE_LEFT ? "左" : "右") + " " + active().name();
+        return Tx.s(Store.side(this) == SplitGeometry.SIDE_LEFT ? R.string.side_left : R.string.side_right, active().name());
     }
 
     @Override public KeyMap keyMap() { return keyMap; }
@@ -538,7 +726,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         router.setLearning(true);
         main.removeCallbacks(learnTimeout);
         main.postDelayed(learnTimeout, 10_000);
-        DuoLog.log("割り当ての登録: 「" + a.label + "」にするボタンを押してください(短く/長く)");
+        DuoLog.log("割り当ての登録: 「" + a.label() + "」にするボタンを押してください(短く/長く)");
     }
 
     @Override public void cancelLearn() {
@@ -581,9 +769,47 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         if (!PaneService.global(action)) DuoLog.log("タッチパッド: ホーム・タスクはユーザー補助がオフのため使えません");
     }
 
-    @Override public void typeText(String text) { tv.typeText(text); }
+    /** 文字は操作中の側へ(CarPlay 側は、OTTO の Wi-Fi のパスワードを入力中のときだけ受ける)。 */
+    @Override public void typeText(String text) { active().typeText(text); }
 
-    @Override public void typeKey(int keyCode) { tv.typeKey(keyCode); }
+    @Override public void typeKey(int keyCode) { active().typeKey(keyCode); }
+
+    /** スクロール中は、操作する側を切り替えない(2本指スクロールで意図せず切り替わらないように)。 */
+    @Override public void scrollActive(boolean on) { root.padScrolling = on; }
+
+    /** タスクボタン長押し: 設定メニューを開く。 */
+    @Override public void openMenu() { if (panel.getVisibility() != View.VISIBLE) openPanel(); }
+
+    /** MAZDA コマンダー: 回す。メニュー表示中は項目移動、それ以外は操作中の画面のスクロールに回す。 */
+    @Override public void commanderRotate(int steps) {
+        if (guiding()) guide.rotate(steps);
+        else if (panel.getVisibility() == View.VISIBLE) panel.rotate(steps);
+        else { try { active().scroll(0, steps * 40f); active().scrollEnd(); } catch (Throwable ignored) {} }
+    }
+
+    /** MAZDA コマンダー: 倒す・押し込み。キーとして土台へ(メニュー表示中は操作盤、それ以外は操作中の画面)。 */
+    @Override public void commanderKey(int keyCode) {
+        long t = SystemClock.uptimeMillis();
+        deliver(keyCode, KeyEvent.ACTION_DOWN, t, null);
+        deliver(keyCode, KeyEvent.ACTION_UP, t, null);
+    }
+
+    /** 2本指スクロールは、操作中の画面本来の送り方(YouTube=矢印、CarPlay=ダイヤル)に渡す。メニュー表示中は裏へ渡さない。 */
+    @Override public void scroll(float dx, float dy) {
+        if (panel.getVisibility() == View.VISIBLE) { menuScroll(dx, dy); return; }
+        active().scroll(dx, dy);
+    }
+    @Override public void scrollEnd() { if (panel.getVisibility() == View.VISIBLE) { menuAcc = 0; return; } active().scrollEnd(); }
+
+    /** メニュー表示中の2本指スクロール(Duo Slate)。縦になぞった量を、ダイヤルの1目盛りずつに直す。調整中は値が動く。 */
+    private float menuAcc;
+    private void menuScroll(float dx, float dy) {
+        float v = Math.abs(dy) >= Math.abs(dx) ? dy : dx; // 横になぞっても回せる(スライダーで自然)
+        menuAcc += v;
+        float step = 28f;
+        while (menuAcc >= step) { menuAcc -= step; panel.rotate(1); }
+        while (menuAcc <= -step) { menuAcc += step; panel.rotate(-1); }
+    }
 
     @Override public void touched(int side) {
         if (side != Store.side(this)) setSide(side);
@@ -623,22 +849,25 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         a.main.removeCallbacks(a.applyDuck);
         // 下げるのはすぐ、戻すのは1秒待ってから(ナビの言葉の切れ目で上がったり下がったりしないように)
         if (active) a.applyDuck(); else a.main.postDelayed(a.applyDuck, 1000);
+        a.updateNavSplit();
     }
 
     /**
      * Apple の機器と同じ考え方: 基本は YouTube。CarPlay の
      * ・ナビの声・通知音(default/alert/compatibility) → YouTube を 20% に下げて重ねる
-     * ・電話・Siri(telephony/speechrecognition) → YouTube を消す(再生は止めない)
+     * ・電話・Siri(telephony/speechrecognition) → YouTube を一時停止し、終わったら再開
      * ・音楽(media) → 何もしない
      * 鳴り終わったら元の音量に戻す。
      */
     private void applyDuck() {
         float level = 1f;
+        boolean call = false;
         for (String t : carSounds) {
-            if (t.equals("telephony") || t.equals("speechrecognition")) level = 0f;
+            if (t.equals("telephony") || t.equals("speechrecognition")) { level = 0f; call = true; }
             else if (!t.equals("media")) level = Math.min(level, DUCK_NAV);
         }
         tv.duck(level);
+        tv.hold(call); // 電話・Siri の間は一時停止。終わったら、止める前に再生していれば再開
     }
 
     /** 状態が変わったら、少し待ってまとめて1回送る。 */
@@ -646,6 +875,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         DuoActivity a = live;
         if (a == null) return;
         if (a.padServer != null) a.padServer.setBluetooth(carBluetooth(safeStatus(a.car)));
+        a.onConnChanged();
         a.main.removeCallbacks(a.sendState);
         a.main.postDelayed(a.sendState, 800);
     }
@@ -660,10 +890,12 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
             case "state": return stateText();
             case "swap": swap(); return "入れ替えました: " + layoutText();
             case "side": switchSide(); return sideText();
+            case "guide-reset": Store.setGuided(this, false); return "次に開いたとき、はじめての案内を出します";
             case "panel": togglePanel(); return "操作盤 " + (panel.getVisibility() == View.VISIBLE ? "表示" : "非表示");
             case "keys-reset": resetKeys(); return "割り当てを初期値に戻しました: " + keyMap.serialize();
             // 遠くからは「止める」だけ。始めるのは OTTO の画面の操作盤からだけ
             case "car-stop": if (carOn) stopCar(); return "CarPlay は止まっています";
+            case "car-wifi-reset": { String r = car.command(cmd); return r == null ? "CarPlay の部品がありません" : r; }
             default: return null;
         }
     }

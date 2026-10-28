@@ -35,6 +35,7 @@ public final class PanesLogicTest {
         keymap();
         router();
         taps();
+        playout();
         System.out.println(fails == 0 ? "すべて合格(" + checks + " 件)" : fails + " 件 不合格 / " + checks);
         if (fails != 0) System.exit(1);
     }
@@ -48,11 +49,43 @@ public final class PanesLogicTest {
         ok(c7[0] >= 0 && c7[2] <= 741, "奇数幅でもはみ出さない");
     }
 
+    /** 揺れ吸収: 8ms ごとに送った動きが、0〜150ms ばらばらに届いても、ほぼ 8ms 間隔で再生される。 */
+    static void playout() {
+        PadPlayout po = new PadPlayout();
+        java.util.Random rnd = new java.util.Random(1);
+        long clockGap = 5_000_000; // 送る側と OTTO の時計は別物
+        java.util.List<long[]> arrivals = new java.util.ArrayList<>();
+        for (int i = 0; i < 300; i++) {
+            long sent = 1000 + i * 8L;
+            long jitter = rnd.nextInt(10) == 0 ? 60 + rnd.nextInt(90) : rnd.nextInt(20);
+            arrivals.add(new long[]{sent + clockGap + 7 + jitter, sent, i});
+        }
+        arrivals.sort((x, y) -> Long.compare(x[0], y[0]));
+        java.util.List<Long> played = new java.util.ArrayList<>();
+        java.util.List<Integer> order = new java.util.ArrayList<>();
+        int k = 0;
+        for (long now = arrivals.get(0)[0]; now < arrivals.get(arrivals.size() - 1)[0] + 300; now += 1) {
+            while (k < arrivals.size() && arrivals.get(k)[0] <= now) {
+                po.offer("@" + arrivals.get(k)[1] + " m " + arrivals.get(k)[2] + " 0", now); k++;
+            }
+            String[] d = po.due(now);
+            if (d != null) for (String l : d) { played.add(now); order.add(Integer.parseInt(l.split(" ")[1])); }
+        }
+        ok(played.size() == 300, "揺れ吸収: 全部再生 " + played.size());
+        int smooth = 0;
+        for (int i = 150; i < played.size(); i++) { long g = played.get(i) - played.get(i - 1); if (g >= 0 && g <= 16) smooth++; }
+        ok(smooth >= 140, "揺れ吸収: 後半の間隔がほぼ一定 " + smooth + "/150 delay=" + po.delay());
+        PadPlayout plain = new PadPlayout();
+        plain.offer("c", 100);
+        String[] d = plain.due(100);
+        ok(d != null && d.length == 1 && d[0].equals("c"), "時刻なしの行はすぐ再生");
+    }
+
     static void geometry() {
-        int[] c = SplitGeometry.car(1480, 416, false), t = SplitGeometry.tv(1480, 416, false);
+        int[] c = SplitGeometry.car(1480, 416, false, 50), t = SplitGeometry.tv(1480, 416, false, 50);
         ok(c[0] == 0 && c[2] == 740 && c[3] == 416, "CarPlay 左 740×416");
         ok(t[0] == 740 && t[2] == 1480 && t[3] == 416, "YouTube 右 740×416");
-        int[] cs = SplitGeometry.car(1480, 416, true), ts = SplitGeometry.tv(1480, 416, true);
+        int[] cs = SplitGeometry.car(1480, 416, true, 50), ts = SplitGeometry.tv(1480, 416, true, 50);
         ok(cs[0] == 740 && ts[0] == 0, "入れ替えで左右が逆");
         int[] o1 = SplitGeometry.half(1481, 416, 0), o2 = SplitGeometry.half(1481, 416, 1);
         ok(o1[2] == o2[0] && o2[2] == 1481, "奇数幅でも隙間・重なりなし");

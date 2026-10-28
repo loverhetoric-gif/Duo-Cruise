@@ -13,7 +13,7 @@ import android.view.MotionEvent;
 import android.view.View;
 
 /**
- * タッチパッド(iPhone の Duo Pad)の指示を、Duo Cruise の画面への操作に変える。メインスレッドだけで使う。
+ * タッチパッド(iPhone の Duo Slate)の指示を、Duo Cruise の画面への操作に変える。メインスレッドだけで使う。
  *
  * 指示(1行1つ。数は OTTO の画面の px):
  *   m dx dy          … カーソルを動かす(加速は iPhone 側で済ませてある。小数のまま足すので細かい動きも失わない)
@@ -41,21 +41,31 @@ final class PadInput implements PadServer.Sink {
         void globalAction(int action);
         void typeText(String text);
         void typeKey(int keyCode);
+        /** スクロール中(本当のなぞり)。この間は「操作する側」を切り替えない。 */
+        void scrollActive(boolean on);
+        /** メニュー(設定)を開く。タスクボタン長押しから。 */
+        void openMenu();
+        /** 2本指スクロール(操作中の画面へ)。 */
+        void scroll(float dx, float dy);
+        void scrollEnd();
+        /** MAZDA コマンダー: ダイヤルを回す(メニューの項目移動)。steps は +で次、-で前。 */
+        void commanderRotate(int steps);
+        /** MAZDA コマンダー: 倒す・押し込む(キーとして渡す。DPAD 上下左右・決定・戻る)。 */
+        void commanderKey(int keyCode);
     }
 
     private final Host host;
-    private final Cursor cursor;
+    private final PadCursor cursor;
     private final Handler main = new Handler(Looper.getMainLooper());
     private float x = -1, y = -1;
     private long downTime;
-    private boolean dragging, two;
-    private float bx, by; // 2本目の指の場所
+    private boolean dragging;
     private final Runnable hide = this::hideCursor;
     static final long HIDE_MS = 6000;
 
     PadInput(Context c, Host host) {
         this.host = host;
-        cursor = new Cursor(c);
+        cursor = new PadCursor(c);
         cursor.setVisibility(View.INVISIBLE);
     }
 
@@ -72,7 +82,7 @@ final class PadInput implements PadServer.Sink {
         DuoLog.log("タッチパッド: " + (on ? "つながりました(" + who + ")" : "切れました"));
         if (!on) {
             if (dragging) { send(MotionEvent.ACTION_UP); dragging = false; }
-            if (two) endTwo();
+            if (scrolling) endWheel();
             cursor.setVisibility(View.INVISIBLE);
         }
         DuoActivity.stateChanged();
@@ -94,13 +104,29 @@ final class PadInput implements PadServer.Sink {
             case "c": show(); send(MotionEvent.ACTION_DOWN); send(MotionEvent.ACTION_UP); break;
             case "d": show(); if (!dragging) { dragging = true; send(MotionEvent.ACTION_DOWN); } break;
             case "u": if (dragging) { dragging = false; send(MotionEvent.ACTION_UP); } break;
-            case "p": two(a); break;
-            case "w": wheel(a); break;
+            case "p": // iPhone の2本指 → スクロール(1本指のなぞり)にする
+                if (a.length > 1) switch (a[1]) {
+                    case "m": if (a.length > 5) scrollStep((f(a[2]) + f(a[4])) / 2f, (f(a[3]) + f(a[5])) / 2f); break;
+                    case "u": endWheel(); break;
+                    default: break; // "d"(指を2本置いただけ)は、動いてから始める
+                }
+                break;
+            case "w": // Mac の2本指スクロール
+                if (a[1].equals("end")) endWheel(); else scrollStep(f(a[1]), f(a[2]));
+                break;
             case "k":
                 switch (a[1]) {
                     case "b": host.back(); break;
                     case "h": host.globalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_HOME); break;
                     case "r": host.globalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_RECENTS); break;
+                    case "m": host.openMenu(); break; // 設定メニューを開く
+                    // ── MAZDA コマンダー ──
+                    case "rot": if (a.length > 2) host.commanderRotate((int) f(a[2])); break; // 回す
+                    case "c": host.commanderKey(android.view.KeyEvent.KEYCODE_DPAD_CENTER); break; // 押し込み=決定
+                    case "up": host.commanderKey(android.view.KeyEvent.KEYCODE_DPAD_UP); break;   // 倒す(上)
+                    case "dn": host.commanderKey(android.view.KeyEvent.KEYCODE_DPAD_DOWN); break;  // 倒す(下)
+                    case "lf": host.commanderKey(android.view.KeyEvent.KEYCODE_DPAD_LEFT); break;  // 倒す(左)
+                    case "rt": host.commanderKey(android.view.KeyEvent.KEYCODE_DPAD_RIGHT); break; // 倒す(右)
                 }
                 break;
             case "t": if (s.length() > 2) host.typeText(s.substring(2)); break;
@@ -113,6 +139,8 @@ final class PadInput implements PadServer.Sink {
     }
 
     private void move(float dx, float dy) {
+        // 2本指スクロール中は、カーソルを動かさない(スクロールにカーソルが追従しないように)
+        if (scrolling) return;
         show();
         int[] wh = screen();
         x = clamp(x + dx, 0, wh[0] - 1);
@@ -122,53 +150,17 @@ final class PadInput implements PadServer.Sink {
         if (dragging) send(MotionEvent.ACTION_MOVE);
     }
 
-    private void two(String[] a) {
-        show();
-        switch (a[1]) {
-            case "d":
-                if (dragging) { dragging = false; send(MotionEvent.ACTION_UP); }
-                int[] wh = screen();
-                bx = clamp(x + f(a[2]), 0, wh[0] - 1);
-                by = clamp(y + f(a[3]), 0, wh[1] - 1);
-                two = true;
-                downTime = SystemClock.uptimeMillis();
-                sendTwo(MotionEvent.ACTION_DOWN, 1);
-                sendTwo(MotionEvent.ACTION_POINTER_DOWN | (1 << MotionEvent.ACTION_POINTER_INDEX_SHIFT), 2);
-                break;
-            case "m":
-                if (!two) return;
-                int[] s = screen();
-                x = clamp(x + f(a[2]), 0, s[0] - 1); y = clamp(y + f(a[3]), 0, s[1] - 1);
-                bx = clamp(bx + f(a[4]), 0, s[0] - 1); by = clamp(by + f(a[5]), 0, s[1] - 1);
-                cursor.setTranslationX(x); cursor.setTranslationY(y);
-                sendTwo(MotionEvent.ACTION_MOVE, 2);
-                break;
-            case "u":
-                if (two) endTwo();
-                break;
-        }
-    }
-
     // ── スクロール: 指を置いて(カーソルの場所)、動かした分だけずらし、止まったら離す ──
     private boolean scrolling;
     private float wx, wy;
     private long wheelDown;
     private final Runnable wheelEnd = this::endWheel;
 
-    private void wheel(String[] a) {
-        if (a[1].equals("end")) { endWheel(); return; }
-        if (dragging || two) return;
-        int[] wh = screen();
-        if (!scrolling) {
-            show();
-            scrolling = true;
-            wx = x; wy = y;
-            wheelDown = SystemClock.uptimeMillis();
-            touchAt(MotionEvent.ACTION_DOWN, wheelDown, wx, wy);
-        }
-        wx = clamp(wx + f(a[1]), 0, wh[0] - 1);
-        wy = clamp(wy + f(a[2]), 0, wh[1] - 1);
-        touchAt(MotionEvent.ACTION_MOVE, wheelDown, wx, wy);
+    /** スクロール1歩。操作中の画面へ、その画面本来の送り方(矢印・ダイヤル)で渡す。カーソルは動かさない。 */
+    private void scrollStep(float dx, float dy) {
+        if (dragging) return;
+        if (!scrolling) { scrolling = true; host.scrollActive(true); }
+        host.scroll(dx, dy);
         main.removeCallbacks(wheelEnd);
         main.postDelayed(wheelEnd, 150);
     }
@@ -177,7 +169,8 @@ final class PadInput implements PadServer.Sink {
         main.removeCallbacks(wheelEnd);
         if (!scrolling) return;
         scrolling = false;
-        touchAt(MotionEvent.ACTION_UP, wheelDown, wx, wy);
+        host.scrollActive(false);
+        host.scrollEnd();
     }
 
     private void touchAt(int action, long down, float px, float py) {
@@ -185,12 +178,6 @@ final class PadInput implements PadServer.Sink {
         e.setSource(InputDevice.SOURCE_TOUCHSCREEN);
         host.touch(e);
         e.recycle();
-    }
-
-    private void endTwo() {
-        sendTwo(MotionEvent.ACTION_POINTER_UP | (1 << MotionEvent.ACTION_POINTER_INDEX_SHIFT), 2);
-        sendTwo(MotionEvent.ACTION_UP, 1);
-        two = false;
     }
 
     private void show() {
@@ -210,65 +197,10 @@ final class PadInput implements PadServer.Sink {
         e.recycle();
     }
 
-    private void sendTwo(int action, int count) {
-        MotionEvent.PointerProperties[] pp = new MotionEvent.PointerProperties[count];
-        MotionEvent.PointerCoords[] pc = new MotionEvent.PointerCoords[count];
-        for (int i = 0; i < count; i++) {
-            pp[i] = new MotionEvent.PointerProperties();
-            pp[i].id = i;
-            pp[i].toolType = MotionEvent.TOOL_TYPE_FINGER;
-            pc[i] = new MotionEvent.PointerCoords();
-            pc[i].x = i == 0 ? x : bx;
-            pc[i].y = i == 0 ? y : by;
-            pc[i].pressure = 1;
-            pc[i].size = 1;
-        }
-        MotionEvent e = MotionEvent.obtain(downTime, SystemClock.uptimeMillis(), action, count, pp, pc,
-                0, 0, 1, 1, 0, 0, InputDevice.SOURCE_TOUCHSCREEN, 0);
-        host.touch(e);
-        e.recycle();
-    }
 
     static float clamp(float v, float lo, float hi) { return v < lo ? lo : v > hi ? hi : v; }
 
     private static float f(String s) { return Float.parseFloat(s); }
 
-    /** カーソル(白い矢印に黒い縁)。左上の角が指している場所。 */
-    private static final class Cursor extends View {
-        private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG), edge = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final Path arrow = new Path();
-        private final float dp;
 
-        Cursor(Context c) {
-            super(c);
-            dp = c.getResources().getDisplayMetrics().density;
-            fill.setColor(Color.WHITE);
-            edge.setColor(Color.BLACK);
-            edge.setStyle(Paint.Style.STROKE);
-            edge.setStrokeWidth(1.5f * dp);
-            edge.setStrokeJoin(Paint.Join.ROUND);
-            float u = dp;
-            arrow.moveTo(0, 0);
-            arrow.lineTo(0, 17 * u);
-            arrow.lineTo(4.5f * u, 13 * u);
-            arrow.lineTo(7.5f * u, 20 * u);
-            arrow.lineTo(10 * u, 19 * u);
-            arrow.lineTo(7 * u, 12 * u);
-            arrow.lineTo(12.5f * u, 12 * u);
-            arrow.close();
-            setWillNotDraw(false);
-        }
-
-        int size() { return Math.round(24 * dp); }
-
-        @Override protected void onMeasure(int w, int h) { setMeasuredDimension(size(), size()); }
-
-        @Override protected void onDraw(Canvas cv) {
-            cv.save();
-            cv.translate(1.5f * dp, 1.5f * dp);
-            cv.drawPath(arrow, fill);
-            cv.drawPath(arrow, edge);
-            cv.restore();
-        }
-    }
 }

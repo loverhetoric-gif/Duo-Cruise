@@ -26,12 +26,14 @@ final class KeyMap {
 
     /** 割り当てられる動作。 */
     enum Action {
-        SWITCH_SIDE("操作側の切り替え"),
-        SWAP("左右の入れ替え"),
-        PANEL("操作盤を出す・閉じる"),
-        SINGLE("1画面と2画面の切り替え");
-        final String label;
-        Action(String l) { label = l; }
+        SWITCH_SIDE(R.string.act_switch),
+        SWAP(R.string.act_swap),
+        PANEL(R.string.act_panel),
+        SINGLE(R.string.act_single);
+        private final int labelId;
+        Action(int id) { labelId = id; }
+        /** 画面に出す名前(端末の言語)。 */
+        String label() { return Tx.s(labelId); }
     }
 
     /** 1つの割り当て。 */
@@ -143,35 +145,35 @@ final class KeyMap {
             if (sb.length() > 0) sb.append(" / ");
             sb.append(keyName(b.code)).append(gestureName(b.gesture));
         }
-        return sb.length() == 0 ? "未割り当て" : sb.toString();
+        return sb.length() == 0 ? Tx.s(R.string.k_unassigned) : sb.toString();
     }
 
     static String gestureName(int g) {
-        return g == LONG ? "(長)" : g == SHORT ? "(短)" : "(" + g + "回)";
+        return g == LONG ? Tx.s(R.string.g_long) : g == SHORT ? Tx.s(R.string.g_short) : Tx.s(R.string.g_n, g);
     }
 
-    /** よく使うキーの日本語名。知らないキーは番号。 */
+    /** よく使うキーの名前(端末の言語)。知らないキーは番号。 */
     static String keyName(int code) {
         switch (code) {
-            case HOME: return "ホーム";
-            case BACK: return "戻る";
-            case DPAD_UP: return "上";
-            case DPAD_DOWN: return "下";
-            case DPAD_LEFT: return "左";
-            case DPAD_RIGHT: return "右";
-            case DPAD_CENTER: return "決定";
+            case HOME: return Tx.s(R.string.key_home);
+            case BACK: return Tx.s(R.string.key_back);
+            case DPAD_UP: return Tx.s(R.string.key_up);
+            case DPAD_DOWN: return Tx.s(R.string.key_down);
+            case DPAD_LEFT: return Tx.s(R.string.key_left);
+            case DPAD_RIGHT: return Tx.s(R.string.key_right);
+            case DPAD_CENTER: return Tx.s(R.string.key_center);
             case ENTER: return "Enter";
             case TAB: return "Tab";
-            case MENU: return "メニュー";
-            case SEARCH: return "検索";
-            case APP_SWITCH: return "タスク";
-            case ASSIST: case VOICE_ASSIST: return "音声";
-            case NAVIGATE_NEXT: return "次へ";
-            case NAVIGATE_PREVIOUS: return "前へ";
-            case 85: return "再生/停止";
-            case 87: return "次の曲";
-            case 88: return "前の曲";
-            default: return "キー" + code;
+            case MENU: return Tx.s(R.string.key_menu);
+            case SEARCH: return Tx.s(R.string.key_search);
+            case APP_SWITCH: return Tx.s(R.string.key_tasks);
+            case ASSIST: case VOICE_ASSIST: return Tx.s(R.string.key_voice);
+            case NAVIGATE_NEXT: return Tx.s(R.string.key_next);
+            case NAVIGATE_PREVIOUS: return Tx.s(R.string.key_prev);
+            case 85: return Tx.s(R.string.key_playpause);
+            case 87: return Tx.s(R.string.key_nexttrack);
+            case 88: return Tx.s(R.string.key_prevtrack);
+            default: return Tx.s(R.string.key_code, code);
         }
     }
 

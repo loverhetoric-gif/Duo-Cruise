@@ -183,7 +183,7 @@ object AirPlayInfoPlist {
             "originYPixels" to 0,
             "viewAreaTransitionControl" to 0,
             "viewAreaStatusBarEdge" to 0,
-            "viewAreaSupportsFocusTransfer" to false,
+            "viewAreaSupportsFocusTransfer" to true,
             "safeArea" to linkedMapOf(
                 "widthPixels" to (area.widthPixels - safe.left - safe.right),
                 "heightPixels" to (area.heightPixels - safe.top - safe.bottom),
@@ -208,7 +208,7 @@ object AirPlayInfoPlist {
             "originYPixels" to view.top,
             "viewAreaTransitionControl" to 0,
             "viewAreaStatusBarEdge" to 0,
-            "viewAreaSupportsFocusTransfer" to false,
+            "viewAreaSupportsFocusTransfer" to true,
         )
         val safe = display.safeArea ?: AirPlayInsets()
         val safeArea = linkedMapOf<String, Any?>(
@@ -257,6 +257,8 @@ internal object AirPlayDisplayControlFactory {
         @Synchronized fun negotiate(value: Any?, eventPortAvailable: Boolean): List<String> {
             val requested = strings(value)
             val supported = linkedSetOf("viewAreas")
+            // ナビ開始でマップを前面に出す(フォーカス移動)。これが無いと音声とバーだけで、地図が全面に出なかった(2026-10-28 実機)
+            supported += "focusTransfer"
             if (config.hevc) supported += "hevc"
             if (eventPortAvailable) {
                 supported += "iAPChannel"

@@ -15,10 +15,10 @@ import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 
 /**
- * iPhone のタッチパッドアプリ(Duo Pad)の受け口。
+ * iPhone のタッチパッドアプリ(Duo Slate)の受け口。
  *
  * ・車の中の Wi-Fi(CarPlay と同じ)で、iPhone から直接つながる。外のサーバーは通らない
- * ・Bonjour(_duopad._tcp)で名乗るので、iPhone は住所を入れなくても見つけられる
+ * ・Bonjour(_duopad._tcp。iPhone 側と揃える通信上の名前なので旧名のまま)で名乗るので、iPhone は住所を入れなくても見つけられる
  * ・1行1つの短い文字の指示。遅れを出さないため Nagle を切る(TCP_NODELAY)
  * ・何台つながってもよい(どれからでも操作できる)。前は「新しい方だけ」にしていたが、
  *   2台が互いを切り合って、0.5 秒ごとにつなぎ直しを繰り返した(2026-10-27)
@@ -54,8 +54,14 @@ final class PadServer {
     private NsdManager nsd;
     private NsdManager.RegistrationListener reg;
     private volatile int linesTotal;
+    /** つながっている iPhone・Mac ごとの揺れ吸収(時計が別々なので分ける)。 */
+    private final java.util.Set<PadPlayout> playouts = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private boolean frameScheduled; // メインスレッドだけで触る
+    private final android.view.Choreographer.FrameCallback frame = t -> playFrame();
     private volatile String state = "s L";
     private volatile String bt = "b 0";
+    /** 今どちらのモードか(Duo Cruise の中＝duo／ホーム等＝generic)。Pad の見た目の切り替えに使う。 */
+    private volatile String modeMsg = "g duo";
     private final java.util.concurrent.ExecutorService writer = java.util.concurrent.Executors.newSingleThreadExecutor();
 
     private static PadServer shared;
@@ -78,7 +84,7 @@ final class PadServer {
     void start() {
         if (running) return;
         running = true;
-        Thread t = new Thread(this::acceptLoop, "DuoPad-accept");
+        Thread t = new Thread(this::acceptLoop, "DuoSlate-accept");
         t.setDaemon(true);
         t.start();
         advertise();
@@ -128,7 +134,7 @@ final class PadServer {
                 DuoLog.log("タッチパッド: 待ち受け開始 口=" + PORT);
                 while (running) {
                     Socket c = s.accept();
-                    Thread t = new Thread(() -> serve(c), "DuoPad-client");
+                    Thread t = new Thread(() -> serve(c), "DuoSlate-client");
                     t.setDaemon(true);
                     t.start();
                 }
@@ -153,13 +159,22 @@ final class PadServer {
             send(out, "i " + wh[0] + " " + wh[1]);
             send(out, state);
             send(out, bt);
+            send(out, modeMsg);
             BufferedReader in = new BufferedReader(new InputStreamReader(c.getInputStream(), StandardCharsets.UTF_8));
-            String line;
-            while ((line = in.readLine()) != null) {
-                linesTotal++;
-                if (line.startsWith("q ")) { send(out, "a " + line.substring(2)); continue; } // 往復の時間を測る返事はすぐ返す
-                final String l = line;
-                main.post(() -> sink.line(l));
+            PadPlayout po = new PadPlayout();
+            playouts.add(po);
+            try {
+                String line;
+                while ((line = in.readLine()) != null) {
+                    linesTotal++;
+                    if (line.startsWith("q ")) { send(out, "a " + line.substring(2)); continue; } // 往復の時間を測る返事はすぐ返す
+                    po.offer(line, android.os.SystemClock.uptimeMillis());
+                    main.post(this::scheduleFrame);
+                }
+            } finally {
+                playouts.remove(po);
+                String[] rest = po.due(Long.MAX_VALUE); // 切れたら残りをすぐ再生(押したまま残らないように)
+                if (rest != null) main.post(() -> { for (String l : rest) sink.line(l); });
             }
         } catch (Exception e) {
             if (running) DuoLog.log("タッチパッド: 切れました(" + who + " " + DuoLog.why(e) + ")");
@@ -171,6 +186,25 @@ final class PadServer {
                 main.post(() -> sink.connected(!none, who));
             }
         }
+    }
+
+    /** 画面の書き換え1コマごとに、届いた指示を送った間隔どおりに再生する(メインスレッド)。 */
+    private void scheduleFrame() {
+        if (frameScheduled) return;
+        frameScheduled = true;
+        android.view.Choreographer.getInstance().postFrameCallback(frame);
+    }
+
+    private void playFrame() {
+        frameScheduled = false;
+        long now = android.os.SystemClock.uptimeMillis();
+        boolean more = false;
+        for (PadPlayout po : playouts) {
+            String[] lines = po.due(now);
+            if (lines != null) for (String l : lines) sink.line(l);
+            more |= po.pending();
+        }
+        if (more) scheduleFrame();
     }
 
     /** 操作している側が変わった(メインスレッドから)。iPhone の縁の光と左右の印に使う。 */
@@ -188,6 +222,14 @@ final class PadServer {
         broadcast(s);
     }
 
+    /** モードが変わった(メインスレッドから)。Pad の背景を切り替える合図。 */
+    void setMode(String mode) {
+        String s = "g " + mode;
+        if (s.equals(modeMsg)) return;
+        modeMsg = s;
+        broadcast(s);
+    }
+
     private void broadcast(String s) {
         for (OutputStream o : clients.values()) writer.execute(() -> { try { send(o, s); } catch (Exception ignored) {} });
     }
@@ -199,7 +241,7 @@ final class PadServer {
                 int mode = android.os.Build.VERSION.SDK_INT >= 29
                         ? android.net.wifi.WifiManager.WIFI_MODE_FULL_LOW_LATENCY
                         : android.net.wifi.WifiManager.WIFI_MODE_FULL_HIGH_PERF;
-                wifiLock = wm.createWifiLock(mode, "DuoPad");
+                wifiLock = wm.createWifiLock(mode, "DuoSlate");
                 wifiLock.setReferenceCounted(false);
             }
             if (on) wifiLock.acquire(); else wifiLock.release();

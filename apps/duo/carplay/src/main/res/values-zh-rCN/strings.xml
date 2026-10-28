@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- apps/duo/i18n/gen.py が strings.py から書き出す。直接は直さない -->
+<resources>
+    <string name="cp_perm">使用 CarPlay 所需的权限不足\n请在“菜单 › 系统 › 打开 Android 设置”中允许</string>
+    <string name="cp_failed">无法连接 iPhone\n正在自动重新连接</string>
+    <string name="cp_ended">CarPlay 已断开\n正在自动重新连接</string>
+    <string name="cp_waiting">正在等待 iPhone\n请打开 iPhone 的蓝牙和无线局域网</string>
+    <string name="cp_connecting">正在连接 iPhone</string>
+    <string name="cp_starting">正在启动 CarPlay</string>
+    <string name="cp_stopped">CarPlay 已停止</string>
+    <string name="cp_preparing">正在准备 CarPlay</string>
+    <string name="cp_wifi_ask">请用 Duo Slate 的键盘输入 OTTO 无线网络“%1$s”的密码，\n然后按 Return\n%2$s</string>
+    <string name="cp_wifi_len">密码须为 8–63 个字符，请重新输入\n%s</string>
+    <string name="cp_empty">（尚未输入）</string>
+    <string name="cp_count">（%d 个字符）</string>
+</resources>

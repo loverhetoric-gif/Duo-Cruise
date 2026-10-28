@@ -47,20 +47,48 @@ public class ConfirmClickService extends AccessibilityService {
     @Override public void onAccessibilityEvent(AccessibilityEvent e) {
         if (System.currentTimeMillis() > UpdateEngine.autoConfirmUntil) return;
         if (System.currentTimeMillis() - lastClick < 1500) return;
-        AccessibilityNodeInfo root = getRootInActiveWindow();
-        if (root == null) return;
-        for (String t : OK) {
-            List<AccessibilityNodeInfo> nodes = root.findAccessibilityNodeInfosByText(t);
-            for (AccessibilityNodeInfo n : nodes) {
-                if (n.isClickable() && n.isEnabled() && n.getClassName() != null && n.getClassName().toString().contains("Button")) {
-                    UpdLog.init(this);
-                    UpdLog.add("確認画面の「" + t + "」を自動で押しました");
-                    lastClick = System.currentTimeMillis();
-                    n.performAction(AccessibilityNodeInfo.ACTION_CLICK);
-                    return;
+        pressConfirm();
+    }
+
+    /**
+     * インストール確認の肯定ボタンを探して押す。押したら true。
+     * 「操作中の窓」だけを見ると、Duo Cruise(ホーム)が前にいるとき後ろの確認画面を見つけられなかったため、
+     * 窓をすべて見て、インストーラーの窓の中から探す(2026-10-27)。
+     */
+    private boolean pressConfirm() {
+        java.util.List<AccessibilityNodeInfo> roots = new java.util.ArrayList<>();
+        try {
+            for (AccessibilityWindowInfo w : getWindows()) {
+                AccessibilityNodeInfo r = w.getRoot();
+                if (r != null && r.getPackageName() != null && r.getPackageName().toString().contains("packageinstaller")) roots.add(r);
+            }
+        } catch (Throwable ignored) {}
+        AccessibilityNodeInfo active = getRootInActiveWindow();
+        if (active != null) roots.add(active);
+        for (AccessibilityNodeInfo root : roots) {
+            for (String t : OK) {
+                for (AccessibilityNodeInfo n : root.findAccessibilityNodeInfosByText(t)) {
+                    if (n.isClickable() && n.isEnabled() && n.getClassName() != null && n.getClassName().toString().contains("Button")) {
+                        UpdLog.init(this);
+                        UpdLog.add("確認画面の「" + t + "」を自動で押しました");
+                        lastClick = System.currentTimeMillis();
+                        n.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+                        return true;
+                    }
                 }
             }
         }
+        return false;
+    }
+
+    /** 指示「updater:confirm」: 今出ているインストール確認を押す(そのあと3分間は自動で押す)。 */
+    static void confirmNow(Context c, int row, String cmd) {
+        ConfirmClickService s = instance;
+        if (s == null) { Remote.result(cmd + " → 押せません(「Duo Cruise Market」のユーザー補助がオフです)", row); return; }
+        UpdateEngine.autoConfirmUntil = System.currentTimeMillis() + 3 * 60 * 1000;
+        s.lastClick = 0;
+        new android.os.Handler(android.os.Looper.getMainLooper()).post(() ->
+                Remote.result(cmd + (s.pressConfirm() ? " → 確認画面を押しました" : " → 確認画面が見つかりません(3分間は出たら押します)"), row));
     }
 
     @Override public void onInterrupt() {}

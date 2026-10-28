@@ -1,0 +1,48 @@
+<!doctype html><meta charset="utf-8"><title>Duo Cruise 起動音 ブルーム</title>
+<body>
+<script>
+// Duo Cruise の起動音「ブルーム」の作り方。OfflineAudioContext で鳴らし、WAV に書き出す。
+// renderBloom(0) が昼(D の maj9)、renderBloom(-5) が夜(四度下の A の maj9、低く柔らかく)。
+// 書き出した WAV は音量をそろえて apps/duo/app/src/main/res/raw/boot_bloom_day.wav / boot_bloom_night.wav に置く。
+// 残響のノイズは種を固定した乱数で作るので、何度書き出しても同じ音になる。
+function hz(m){return 440*Math.pow(2,(m-69)/12);}
+function verb(c,sec){
+  var n=Math.floor(c.sampleRate*sec),b=c.createBuffer(2,n,c.sampleRate);
+  var seed=12345;function rnd(){seed=(seed*1103515245+12345)&0x7fffffff;return seed/0x7fffffff;}
+  for(var ch=0;ch<2;ch++){var d=b.getChannelData(ch);for(var i=0;i<n;i++)d[i]=(rnd()*2-1)*Math.pow(1-i/n,2.6);}
+  var v=c.createConvolver();v.buffer=b;return v;
+}
+function bus(c,wet){var out=c.createGain(),dry=c.createGain(),r=verb(c,2.6),wg=c.createGain();
+  out.gain.value=0.9;dry.gain.value=1-wet;wg.gain.value=wet;
+  out.connect(dry);dry.connect(c.destination);out.connect(r);r.connect(wg);wg.connect(c.destination);return out;}
+function tone(c,dst,t,midi,dur,peak,type,att,det){
+  var o=c.createOscillator(),g=c.createGain(),f=c.createBiquadFilter();
+  o.type=type||'sine';o.frequency.value=hz(midi);if(det)o.detune.value=det;
+  f.type='lowpass';f.frequency.setValueAtTime(5200,t);f.frequency.exponentialRampToValueAtTime(900,t+dur);
+  g.gain.setValueAtTime(0.0001,t);g.gain.exponentialRampToValueAtTime(peak,t+(att||0.02));g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  o.connect(f);f.connect(g);g.connect(dst);o.start(t);o.stop(t+dur+0.05);
+}
+function bloom(c,t0,k){var o=bus(c,0.45),root=62+k;
+  [0,7,11,14,16].forEach(function(iv,i){tone(c,o,t0+0.5+i*0.06,root+iv,2.9,0.05,'triangle',1.2,(i%2?6:-6));});
+  tone(c,o,t0+0.5,root-12,2.9,0.06,'sine',1.3);}
+function wav(buf){
+  var ch=buf.numberOfChannels,n=buf.length,sr=buf.sampleRate,peak=0,i,c;
+  for(c=0;c<ch;c++){var d=buf.getChannelData(c);for(i=0;i<n;i++)peak=Math.max(peak,Math.abs(d[i]));}
+  var bytes=44+n*ch*2,ab=new ArrayBuffer(bytes),v=new DataView(ab),p=0;
+  function s(str){for(var j=0;j<str.length;j++)v.setUint8(p++,str.charCodeAt(j));}
+  s('RIFF');v.setUint32(p,bytes-8,true);p+=4;s('WAVE');s('fmt ');v.setUint32(p,16,true);p+=4;v.setUint16(p,1,true);p+=2;
+  v.setUint16(p,ch,true);p+=2;v.setUint32(p,sr,true);p+=4;v.setUint32(p,sr*ch*2,true);p+=4;v.setUint16(p,ch*2,true);p+=2;v.setUint16(p,16,true);p+=2;
+  s('data');v.setUint32(p,n*ch*2,true);p+=4;
+  var data=[];for(c=0;c<ch;c++)data.push(buf.getChannelData(c));
+  for(i=0;i<n;i++)for(c=0;c<ch;c++){var x=Math.max(-1,Math.min(1,data[c][i]));v.setInt16(p,x<0?x*0x8000:x*0x7fff,true);p+=2;}
+  var u=new Uint8Array(ab),bin='';for(i=0;i<u.length;i+=0x8000)bin+=String.fromCharCode.apply(null,u.subarray(i,i+0x8000));
+  return {b64:btoa(bin),peak:peak};
+}
+window.renderBloom=async function(k){
+  var c=new OfflineAudioContext(2,Math.ceil(48000*4.6),48000);
+  bloom(c,0,k);
+  var buf=await c.startRendering();
+  return wav(buf);
+};
+document.body.textContent='ready';
+</script>
