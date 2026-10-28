@@ -10,7 +10,9 @@ final class SplitGeometry {
     static final int SIDE_LEFT = 0, SIDE_RIGHT = 1;
 
     /** YouTube の幅の割合(%)の下限・上限。 */
-    static int clampYt(int pct) { return pct < 20 ? 20 : pct > 100 ? 100 : pct; }
+    // 通常の分割比は、CarPlay を完全には消さない(必ず 15% 以上残す)。
+    // YouTube を全画面にしたいときは「1画面」モードを使う。
+    static int clampYt(int pct) { return pct < 20 ? 20 : pct > 85 ? 85 : pct; }
 
     /** 画面上の左半分(side=0)か右半分(side=1)。50:50。操作盤などで使う。 */
     static int[] half(int w, int h, int side) {

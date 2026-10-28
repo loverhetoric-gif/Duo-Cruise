@@ -253,9 +253,10 @@ final class SplitRoot extends ViewGroup {
             if (pulse <= 0 || moving || (panel != null && panel.getVisibility() == VISIBLE)) return;
             int w = getWidth(), h = getHeight();
             int[] r = activeRect(w, h);
-            float s = 6 * dp;
+            // 切り替わったペインの端にぴたりと合わせる。ペインは角丸なしなので、四角(半径0)で描く
+            float s = 1.5f * dp;
             RectF box = new RectF(r[0] + s, r[1] + s, r[2] - s, r[3] - s);
-            glow.draw(cv, box, dp, 14 * dp, pulse, color, phase);
+            glow.draw(cv, box, dp, 0, pulse, color, phase);
         }
     }
 }
