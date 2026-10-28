@@ -116,7 +116,7 @@ final class PanelView extends ViewGroup {
         setClickable(true);             // 下の2画面へタッチを通さない
         setWillNotDraw(false);
         title = text(26, Color.WHITE, true);
-        title.setShadowLayer(14 * dp, 0, 0, 0x8CFFFFFF);
+        title.setShadowLayer(9 * dp, 0, 0, 0x66FFFFFF);
         logText = text(14, Theme.TEXT, false);
         logText.setTypeface(Typeface.MONOSPACE);
         logText.setPadding(px(14), px(10), px(14), px(10));
@@ -156,19 +156,14 @@ final class PanelView extends ViewGroup {
 
     /**
      * 後ろから当たる光。
-     * 奥に大きな白い光があって、ゆっくり漂いながら呼吸する。選択している行の裏にも光が回り込み、
-     * 文字が「光の前に置かれている」ように見える。縁の光と同じ phase で動くので、全体が一つの光になる。
+     * 選択している行の裏に、薄い光がそっと回り込む。文字が「光の前に置かれている」ように見える。
+     * 霧のように画面を覆う光は出さない。縁の光と同じ phase で動くので、全体が一つの光になる。
      */
     private void drawBacklight(Canvas cv, float burst) {
         int w = getWidth(), h = getHeight();
         double t = 2 * Math.PI * phase;
         float breath = 0.80f + 0.20f * (float) Math.sin(t * 2);
         float k = Math.min(1.4f, burst);
-        // 奥の光: 画面の左寄りを、ゆっくり漂う
-        float bx = w * 0.26f + 90 * dp * (float) Math.sin(t * 2 + 0.4) + 40 * dp * (float) Math.sin(t * 5);
-        float by = h * 0.48f + 60 * dp * (float) Math.sin(t * 3 + 1.9);
-        float br = h * 1.05f * (0.92f + 0.08f * (float) Math.sin(t * 4 + 0.7));
-        radial(cv, bx, by, br, 1.35f, 1f, Math.round(255 * Math.min(1f, 0.13f * breath * k)));
         // 選択行の裏の光: 行の左側(文字のある所)を横長に照らす
         if (focus >= 0 && focus < list.getChildCount() && list.getVisibility() == VISIBLE) {
             View r = list.getChildAt(focus);
@@ -176,7 +171,7 @@ final class PanelView extends ViewGroup {
                 float cy = list.getTop() + r.getTop() + r.getHeight() * 0.5f;
                 float cx = list.getLeft() + r.getPaddingLeft() + 110 * dp + 30 * dp * (float) Math.sin(t * 3);
                 float rr = r.getHeight() * 1.6f;
-                radial(cv, cx, cy, rr, 2.6f, 1f, Math.round(255 * Math.min(1f, 0.20f * breath * k)));
+                radial(cv, cx, cy, rr * 0.8f, 2.4f, 0.8f, Math.round(255 * Math.min(1f, 0.11f * breath * k)));
             }
         }
     }
@@ -378,10 +373,10 @@ final class PanelView extends ViewGroup {
         label.setTextSize(TypedValue.COMPLEX_UNIT_SP, on ? 30 : 19);  // 選択で拡大
         label.setTypeface(on ? MEDIUM : REGULAR);
         // 後ろから光が当たっているように、文字の縁を柔らかく滲ませる(選択行は強く)
-        label.setShadowLayer(on ? 18 * dp : 8 * dp, 0, 0, on ? 0xB3FFFFFF : 0x4DFFFFFF);
+        label.setShadowLayer(on ? 11 * dp : 5 * dp, 0, 0, on ? 0x8CFFFFFF : 0x33FFFFFF);
         TextView value = (TextView) r.getChildAt(1);
         value.setTextSize(TypedValue.COMPLEX_UNIT_SP, on ? 17 : 14);
-        value.setShadowLayer(on ? 10 * dp : 5 * dp, 0, 0, on ? 0x80FFFFFF : 0x33FFFFFF);
+        value.setShadowLayer(on ? 7 * dp : 4 * dp, 0, 0, on ? 0x66FFFFFF : 0x26FFFFFF);
         SliderBar bar = (SliderBar) r.getChildAt(2);
         if (it.slider != null) {
             value.setVisibility(GONE);
