@@ -1,70 +1,59 @@
 package com.yuki.duocruise.main;
 
 import android.graphics.Canvas;
-import android.graphics.Matrix;
+import android.graphics.LinearGradient;
 import android.graphics.Paint;
 import android.graphics.RectF;
-import android.graphics.SweepGradient;
+import android.graphics.Shader;
 
 /**
- * 柔らかく滲んで“生きて揺らぐ”発光する縁。アプリ全体で使い、一体感を出す。
+ * 間接照明の発光。境界に光源を置き、そこから内側へ滑らかに減衰する光を落とす(LED の間接照明のように)。
  *
- * 肝: ぼかし(BlurMaskFilter)や software レイヤー、オフスクリーン画像は使わない。
- * この端末では「オフスクリーンにぼかしを焼いて合成」が描画されなかったため、
- * ハードウェア描画のまま「細→太の同心ストロークを多数、滑らかな濃淡で重ねて」本物のブルームにする。
- * CarPlay の映像(SurfaceView)も壊さない。
- *
- * 明るい弧が縁を巡る動きは、SweepGradient(角度グラデ)を phase で回して出す。
+ * ・硬い輪郭線は出さない。各辺に「縁で明るく→内へ向かって透明」の線形グラデを敷くだけ。
+ *   これで“帯”や“線”に見えず、ふわっと滲む本物の間接光になる。
+ * ・角は四角(角丸にしない)。ぼかしも software レイヤーも使わないので、どの端末でも確実に出て、CarPlay も壊さない。
+ * ・状態は「強弱(intensity)」と「色(color)」で表す。phase でゆっくり明滅させる。
  */
 final class NeonGlow {
-    private static final int LAYERS = 16;      // 重ねる本数(多いほど滑らか)
-
     private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final Matrix sweepM = new Matrix();
 
-    NeonGlow() {
-        p.setStyle(Paint.Style.STROKE);
-        p.setStrokeJoin(Paint.Join.ROUND);
-    }
+    NeonGlow() {}
 
     private static int withAlpha(int color, int a) { return (Math.max(0, Math.min(255, a)) << 24) | (color & 0xFFFFFF); }
 
-    /** 既定(白)で描く。 */
+    /** 既定(白)で描く。radius は使わない(間接照明は角丸にしない)。 */
     void draw(Canvas dst, RectF box, float dp, float radius, float intensity, float phase) {
         draw(dst, box, dp, radius, intensity, Theme.NEON_WHITE, phase);
     }
 
     /**
-     * box に沿って柔らかく発光する縁を描く。intensity は 0〜1、phase は 0〜1(揺らぎ・光の巡り)。
-     * 細い芯は明るく、外へ向かって太く淡く — の重ねで、硬い線を出さずに滲ませる。
+     * box の各辺に沿って発光させる。Duo Pad と同じ二層構造:
+     *   ・リム … 縁のすぐ内側だけ明るい、細い光(実測ピーク≈144)
+     *   ・裾  … そこから内側へ、広く・ゆるやかに減衰する微光(実測 51→20 を約140px かけて)
+     * これで“線”や“帯”に見えず、本物の間接照明になる。intensity 0〜1、phase 0〜1(明滅)。
      */
     void draw(Canvas dst, RectF box, float dp, float radius, float intensity, int color, float phase) {
         if (intensity <= 0 || box.width() < 2 || box.height() < 2) return;
         float k = Math.min(1f, intensity);
-        float shimmer = 0.82f + 0.18f * (float) Math.sin(phase * 2 * Math.PI);  // ゆっくり明滅
-        float cx = box.centerX(), cy = box.centerY();
+        float breath = 0.86f + 0.14f * (float) Math.sin(phase * 2 * Math.PI);
+        float shortSide = Math.min(box.width(), box.height());
+        edges(dst, box, Math.min(52 * dp, shortSide * 0.5f), color, Math.round(40 * k * breath));  // 広い裾
+        edges(dst, box, Math.min(3.5f * dp, shortSide * 0.3f), color, Math.round(140 * k * breath)); // 細いリム
+    }
 
-        // 明るい弧が縁を巡る(角度グラデを phase で回す)
-        int[] cols = {
-                withAlpha(color, 255), withAlpha(color, 85), withAlpha(color, 190),
-                withAlpha(color, 85), withAlpha(color, 255)
-        };
-        SweepGradient sg = new SweepGradient(cx, cy, cols, null);
-        sweepM.setRotate(phase * 360f, cx, cy);
-        sg.setLocalMatrix(sweepM);
-        p.setShader(sg);
-
-        float maxW = 20 * dp;        // いちばん外側(いちばん太く淡い)の幅
-        float coreW = 1.4f * dp;     // いちばん内側(芯)の幅
-        for (int i = 0; i < LAYERS; i++) {
-            float t = i / (float) (LAYERS - 1);          // 0=外(太・淡) … 1=内(細・明)
-            float w = maxW * (1 - t) + coreW;
-            // 芯に近いほど明るい。外側は広く薄い裾を引く(ガウスの裾のように)
-            float a = (0.05f + 0.95f * t * t) * k * shimmer;
-            p.setStrokeWidth(w);
-            p.setAlpha(Math.round(255 * Math.min(1f, a) * 0.6f));
-            dst.drawRoundRect(box, radius, radius, p);
-        }
+    /** 各辺に「縁で c0A → 内側へ透明」の線形グラデを depth ぶん敷く。 */
+    private void edges(Canvas dst, RectF box, float depth, int color, int c0A) {
+        if (depth < 1 || c0A <= 0) return;
+        int c0 = withAlpha(color, c0A), c1 = withAlpha(color, 0);
+        float l = box.left, t = box.top, r = box.right, b = box.bottom;
+        p.setShader(new LinearGradient(0, t, 0, t + depth, c0, c1, Shader.TileMode.CLAMP));
+        dst.drawRect(l, t, r, t + depth, p);
+        p.setShader(new LinearGradient(0, b, 0, b - depth, c0, c1, Shader.TileMode.CLAMP));
+        dst.drawRect(l, b - depth, r, b, p);
+        p.setShader(new LinearGradient(l, 0, l + depth, 0, c0, c1, Shader.TileMode.CLAMP));
+        dst.drawRect(l, t, l + depth, b, p);
+        p.setShader(new LinearGradient(r, 0, r - depth, 0, c0, c1, Shader.TileMode.CLAMP));
+        dst.drawRect(r - depth, t, r, b, p);
         p.setShader(null);
     }
 }

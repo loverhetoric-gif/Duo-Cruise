@@ -563,10 +563,10 @@ final class PanelView extends ViewGroup {
 
         @Override protected void onDraw(Canvas cv) {
             if (!on) return; // 非選択は文字だけ(箱も枠も出さない)
-            box.set(insetX, insetY, getWidth() - insetX, getHeight() - insetY);
-            cv.drawRoundRect(box, radius, radius, fill);
-            // 選択行も、メニュー枠と同じ“巡る”白いネオンで縁取る(売りの見た目・一体感)
-            glow.draw(cv, box, dp, radius, 0.95f, Theme.NEON_WHITE, PanelView.this.phase);
+            box.set(0, 0, getWidth(), getHeight());
+            cv.drawRect(box, fill);  // 下地は四角(角丸にしない)
+            // 選択行も、メニュー枠と同じ間接照明で縁取る(一体感)
+            glow.draw(cv, box, dp, 0, 0.95f, Theme.NEON_WHITE, PanelView.this.phase);
         }
     }
 
