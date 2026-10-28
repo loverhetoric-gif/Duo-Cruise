@@ -38,6 +38,12 @@ final class PanelView extends ViewGroup {
         boolean accessOn();
         boolean panelHalf();
         void togglePanelHalf();
+        // 左右の比率・ナビ連動
+        void cycleSplitYt(); String splitYtText();
+        void cycleNavYt(); String navYtText();
+        void toggleAutoSplit(); boolean autoSplitOn();
+        void toggleAutoSwap(); boolean autoSwapOn();
+        void cycleNavHold(); String navHoldText();
         String layoutText();
         String sideText();
         KeyMap keyMap();
@@ -47,7 +53,7 @@ final class PanelView extends ViewGroup {
         void resetKeys();
     }
 
-    static final int MAIN = 0, KEYS = 1, LOG = 2, SYS = 3;
+    static final int MAIN = 0, KEYS = 1, LOG = 2, SYS = 3, SPLIT = 4;
 
     private interface Text { String get(); }
 
@@ -119,6 +125,7 @@ final class PanelView extends ViewGroup {
             title.setText("Duo Cruise");
             items.add(new Item(() -> "操作側を切り替え", host::sideText, Theme.ACCENT, host::switchSide));
             items.add(new Item(() -> "左右を入れ替え", host::layoutText, Theme.MUTED, host::swap));
+            items.add(new Item(() -> "左右の比率・ナビ連動", host::splitYtText, Theme.MUTED, () -> show(SPLIT)));
             items.add(new Item(() -> "2画面に戻る", () -> "操作盤を閉じる", Theme.MUTED, host::closePanel));
             items.add(new Item(() -> "ボタンの割り当て", () -> "押す回数・長押し・ホーム", Theme.MUTED, () -> show(KEYS)));
             items.add(new Item(() -> host.carOn() ? "CarPlay を止める" : "CarPlay を開始",
@@ -146,6 +153,13 @@ final class PanelView extends ViewGroup {
             items.add(new Item(() -> "ユーザー補助の設定", () -> host.accessOn() ? "オン" : "オフ: ホーム・タスクは受けられません",
                     host.accessOn() ? Theme.MUTED : Theme.AMBER, host::openAccessibility));
             items.add(new Item(() -> "OTTO のホームを開く", host::otherHomeName, Theme.MUTED, host::goHome));
+            items.add(new Item(() -> "戻る", () -> "操作盤へ", Theme.MUTED, () -> show(MAIN)));
+        } else if (p == SPLIT) {
+            items.add(new Item(() -> "普段の比率", host::splitYtText, Theme.ACCENT, () -> { host.cycleSplitYt(); refresh(); }));
+            items.add(new Item(() -> "ナビ音声で自動変更", () -> host.autoSplitOn() ? "オン" : "オフ", Theme.MUTED, () -> { host.toggleAutoSplit(); refresh(); }));
+            items.add(new Item(() -> "ナビ中の比率", host::navYtText, Theme.MUTED, () -> { host.cycleNavYt(); refresh(); }));
+            items.add(new Item(() -> "ナビ中に左右入れ替え", () -> host.autoSwapOn() ? "オン(マップを右へ)" : "オフ", Theme.MUTED, () -> { host.toggleAutoSwap(); refresh(); }));
+            items.add(new Item(() -> "戻すまでの待ち", host::navHoldText, Theme.MUTED, () -> { host.cycleNavHold(); refresh(); }));
             items.add(new Item(() -> "戻る", () -> "操作盤へ", Theme.MUTED, () -> show(MAIN)));
         } else {
             title.setText("記録");

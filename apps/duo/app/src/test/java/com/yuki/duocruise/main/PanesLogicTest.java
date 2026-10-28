@@ -82,10 +82,10 @@ public final class PanesLogicTest {
     }
 
     static void geometry() {
-        int[] c = SplitGeometry.car(1480, 416, false), t = SplitGeometry.tv(1480, 416, false);
+        int[] c = SplitGeometry.car(1480, 416, false, 50), t = SplitGeometry.tv(1480, 416, false, 50);
         ok(c[0] == 0 && c[2] == 740 && c[3] == 416, "CarPlay 左 740×416");
         ok(t[0] == 740 && t[2] == 1480 && t[3] == 416, "YouTube 右 740×416");
-        int[] cs = SplitGeometry.car(1480, 416, true), ts = SplitGeometry.tv(1480, 416, true);
+        int[] cs = SplitGeometry.car(1480, 416, true, 50), ts = SplitGeometry.tv(1480, 416, true, 50);
         ok(cs[0] == 740 && ts[0] == 0, "入れ替えで左右が逆");
         int[] o1 = SplitGeometry.half(1481, 416, 0), o2 = SplitGeometry.half(1481, 416, 1);
         ok(o1[2] == o2[0] && o2[2] == 1481, "奇数幅でも隙間・重なりなし");

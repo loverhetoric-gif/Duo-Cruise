@@ -36,6 +36,8 @@ final class SplitRoot extends ViewGroup {
     PanelView panel;
     boolean swapped, panelHalf, single;
     int side;
+    /** YouTube の幅の割合(%)。50＝半々。 */
+    int ytPct = 50;
     private String lastSizes = "";
     /** 入れ替えの動き: 並べ直す前の左端。並べ直した後、ここから新しい場所へ動かす。 */
     private int swapFromCar = Integer.MIN_VALUE, swapFromTv = Integer.MIN_VALUE;
@@ -70,21 +72,26 @@ final class SplitRoot extends ViewGroup {
     private boolean tvShown() { return SplitGeometry.tvOn(side, swapped); }
 
     private int[] carRect(int w, int h) {
-        if (!single) return SplitGeometry.car(w, h, swapped);
-        return tvShown() ? SplitGeometry.offscreen(w, h) : SplitGeometry.single(w, h, false);
+        if (single) return tvShown() ? SplitGeometry.offscreen(w, h) : SplitGeometry.single(w, h, false);
+        // YouTube が全画面に近いとき、CarPlay は幅0になり映像面が壊れるので、画面の外へ置く
+        if (ytPct >= 98) return SplitGeometry.offscreen(w, h);
+        return SplitGeometry.car(w, h, swapped, ytPct);
     }
 
     private int[] tvRect(int w, int h) {
-        if (!single) return SplitGeometry.tv(w, h, swapped);
-        return tvShown() ? SplitGeometry.single(w, h, true) : SplitGeometry.offscreen(w, h);
+        if (single) return tvShown() ? SplitGeometry.single(w, h, true) : SplitGeometry.offscreen(w, h);
+        if (ytPct >= 98) return SplitGeometry.single(w, h, true);
+        return SplitGeometry.tv(w, h, swapped, ytPct);
     }
 
     /** 操作している枠(線と光を描く場所)。 */
     int[] activeRect(int w, int h) {
-        return single ? SplitGeometry.single(w, h, tvShown()) : SplitGeometry.half(w, h, side);
+        if (single) return SplitGeometry.single(w, h, tvShown());
+        if (ytPct >= 98) return SplitGeometry.single(w, h, tvShown());
+        return SplitGeometry.activeHalf(w, h, side, swapped, ytPct);
     }
 
-    void apply(boolean swapped, int side, boolean panelHalf) {
+    void apply(boolean swapped, int side, boolean panelHalf, int ytPct) {
         if (swapped != this.swapped && car != null && tv != null && car.getWidth() > 0) {
             swapFromCar = car.getLeft();
             swapFromTv = tv.getLeft();
@@ -92,6 +99,7 @@ final class SplitRoot extends ViewGroup {
         this.swapped = swapped;
         this.side = side;
         this.panelHalf = panelHalf;
+        this.ytPct = ytPct;
         requestLayout();
         frame.invalidate();
     }

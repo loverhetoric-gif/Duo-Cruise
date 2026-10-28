@@ -351,10 +351,90 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     }
 
     /** 並べ方(入れ替え・操作側・1画面・操作盤の場所)を土台に伝えて並べ直す。 */
+    /** いまの(アニメ中の)YouTube 幅の割合。普段は splitYt、ナビ中は navYt に向けて動く。 */
+    private int curYt = -1;
+    private android.animation.ValueAnimator ytAnim;
+
     private void applyLayout() {
+        if (curYt < 0) curYt = Store.splitYt(this);
         root.setSingle(Store.single(this));
-        root.apply(Store.swapped(this), Store.side(this), Store.panelHalf(this));
+        root.apply(Store.swapped(this), Store.side(this), Store.panelHalf(this), curYt);
     }
+
+    /** 比率をなめらかに変える。 */
+    private void animateYt(int target) {
+        target = SplitGeometry.clampYt(target);
+        if (curYt < 0) curYt = Store.splitYt(this);
+        if (ytAnim != null) ytAnim.cancel();
+        if (curYt == target) { applyLayout(); return; }
+        ytAnim = android.animation.ValueAnimator.ofInt(curYt, target);
+        ytAnim.setDuration(300);
+        ytAnim.addUpdateListener(a -> { curYt = (int) a.getAnimatedValue(); applyLayout(); });
+        ytAnim.start();
+    }
+
+    // ───────── ナビ音声での自動変更(比率・左右入れ替え) ─────────
+    private boolean navEngaged, navDidSwap;
+    private final Runnable navRevert = this::navRevert;
+
+    /** CarPlay の音の有無が変わったら呼ぶ。設定がオンのときだけ、比率(と左右)を自動で変える。 */
+    private void updateNavSplit() {
+        boolean voice = false;
+        for (String t : carSounds) if (!t.equals("media")) { voice = true; break; } // ナビ・通知・電話・Siri
+        if (!Store.autoSplit(this) || Store.single(this)) {
+            // 自動オフ: ナビ中に変えていたら元へ
+            if (navEngaged) navRevert();
+            return;
+        }
+        if (voice) {
+            main.removeCallbacks(navRevert);
+            if (!navEngaged) {
+                navEngaged = true;
+                if (Store.autoSwap(this) && !Store.swapped(this)) {
+                    navDidSwap = true;
+                    curYt = Store.navYt(this);
+                    swap();                 // マップを右へ(くるっと)。比率も navYt で並べ直る
+                } else {
+                    navDidSwap = false;
+                    animateYt(Store.navYt(this));
+                }
+            }
+        } else if (navEngaged) {
+            main.removeCallbacks(navRevert);
+            main.postDelayed(navRevert, Store.navHoldMs(this)); // 少し待ってから戻す(短い案内で往復しない)
+        }
+    }
+
+    private void navRevert() {
+        main.removeCallbacks(navRevert);
+        if (!navEngaged) return;
+        navEngaged = false;
+        if (navDidSwap) {
+            navDidSwap = false;
+            curYt = Store.splitYt(this);
+            if (Store.swapped(this)) swap();   // 元(マップ左・YouTube 右)へ戻す
+            else applyLayout();
+        } else {
+            animateYt(Store.splitYt(this));
+        }
+    }
+
+    // ───────── 設定(メニューから) ─────────
+    /** 普段の比率を1段変える(50→60→…→100→30→…)。すぐ反映。 */
+    @Override public void cycleSplitYt() {
+        int v = Store.splitYt(this) + 10; if (v > 100) v = 30;
+        Store.setSplitYt(this, v);
+        if (!navEngaged) animateYt(v);
+    }
+    @Override public void cycleNavYt() { int v = Store.navYt(this) + 10; if (v > 100) v = 30; Store.setNavYt(this, v); if (navEngaged) animateYt(v); }
+    @Override public void toggleAutoSplit() { Store.setAutoSplit(this, !Store.autoSplit(this)); updateNavSplit(); }
+    @Override public void toggleAutoSwap() { Store.setAutoSwap(this, !Store.autoSwap(this)); }
+    @Override public void cycleNavHold() { long v = Store.navHoldMs(this) / 1000 + 2; if (v > 12) v = 3; Store.setNavHoldMs(this, v * 1000); }
+    @Override public String splitYtText() { int y = Store.splitYt(this); return "YouTube " + y + "% : マップ " + (100 - y) + "%"; }
+    @Override public String navYtText() { int y = Store.navYt(this); return "YouTube " + y + "% : マップ " + (100 - y) + "%"; }
+    @Override public boolean autoSplitOn() { return Store.autoSplit(this); }
+    @Override public boolean autoSwapOn() { return Store.autoSwap(this); }
+    @Override public String navHoldText() { return (Store.navHoldMs(this) / 1000) + " 秒"; }
 
     /** 1画面と2画面の切り替え。1画面では操作中の側だけを出し、押し込み2回で YouTube だけ⇔マップだけになる。 */
     void toggleSingle() {
@@ -650,6 +730,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         a.main.removeCallbacks(a.applyDuck);
         // 下げるのはすぐ、戻すのは1秒待ってから(ナビの言葉の切れ目で上がったり下がったりしないように)
         if (active) a.applyDuck(); else a.main.postDelayed(a.applyDuck, 1000);
+        a.updateNavSplit();
     }
 
     /**

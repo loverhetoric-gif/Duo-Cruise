@@ -9,17 +9,37 @@ final class SplitGeometry {
 
     static final int SIDE_LEFT = 0, SIDE_RIGHT = 1;
 
-    /** 画面上の左半分(side=0)か右半分(side=1)。幅が奇数でも隙間・重なりを作らない。 */
+    /** YouTube の幅の割合(%)の下限・上限。 */
+    static int clampYt(int pct) { return pct < 20 ? 20 : pct > 100 ? 100 : pct; }
+
+    /** 画面上の左半分(side=0)か右半分(side=1)。50:50。操作盤などで使う。 */
     static int[] half(int w, int h, int side) {
         int mid = w / 2;
         return side == SIDE_LEFT ? new int[]{0, 0, mid, h} : new int[]{mid, 0, w, h};
     }
 
-    /** CarPlay の枠。入れ替え中は右。 */
-    static int[] car(int w, int h, boolean swapped) { return half(w, h, swapped ? SIDE_RIGHT : SIDE_LEFT); }
+    /** 左右の境目の x。ytPct は YouTube の幅の割合。入れ替え中は YouTube が左。 */
+    private static int boundary(int w, boolean swapped, int ytPct) {
+        int yt = Math.round(w * clampYt(ytPct) / 100f);
+        return swapped ? yt : w - yt; // 入れ替え中: YouTube 左(幅 yt)。通常: YouTube 右(幅 yt)
+    }
+
+    /** CarPlay の枠。入れ替え中は右。ytPct は YouTube の幅の割合。 */
+    static int[] car(int w, int h, boolean swapped, int ytPct) {
+        int b = boundary(w, swapped, ytPct);
+        return swapped ? new int[]{b, 0, w, h} : new int[]{0, 0, b, h};
+    }
 
     /** YouTube の枠。入れ替え中は左。 */
-    static int[] tv(int w, int h, boolean swapped) { return half(w, h, swapped ? SIDE_LEFT : SIDE_RIGHT); }
+    static int[] tv(int w, int h, boolean swapped, int ytPct) {
+        int b = boundary(w, swapped, ytPct);
+        return swapped ? new int[]{0, 0, b, h} : new int[]{b, 0, w, h};
+    }
+
+    /** 操作している枠(線・光を描く場所)。比率対応。 */
+    static int[] activeHalf(int w, int h, int side, boolean swapped, int ytPct) {
+        return tvOn(side, swapped) ? tv(w, h, swapped, ytPct) : car(w, h, swapped, ytPct);
+    }
 
     /** 画面上のその側にあるのは YouTube か。 */
     static boolean tvOn(int side, boolean swapped) { return swapped ? side == SIDE_LEFT : side == SIDE_RIGHT; }
