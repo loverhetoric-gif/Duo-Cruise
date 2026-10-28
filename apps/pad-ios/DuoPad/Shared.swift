@@ -289,6 +289,7 @@ struct Lights: View {
                             // 面全体が一瞬染まる
                             Rectangle()
                                 .fill(AngularGradient(colors: cols + [cols[0]], center: .center, angle: .degrees(e * 60)))
+                                .drawingGroup()
                                 .opacity(0.22 * env.wash * dim)
                                 .blur(radius: 30)
                             // 縁で流れる(切り替えのときは、操作している側を強く)
@@ -320,11 +321,23 @@ struct Lights: View {
         let soft = AngularGradient(colors: (colors + [colors[0]]).map { $0.opacity(0.85) }, center: .center, angle: .degrees(spin))
         // 夜は光を「足す」(screen)。昼の白い地では足しても見えないので、色を「重ねる」(multiply)で見せ、少し強める
         let k = c.dark ? 1.0 : 2.0
+        // GPU で描くと、太いにじみだけが画面の縁で 2 割ほど弱く出る(CPU で描いていた頃は縁で明るく補われていた)。
+        // 1.35 倍で元の見た目に合わせる(時間を止めた同じ瞬間の画面を、直す前と画素で比べて決めた値)
+        let wide = 0.38 * 1.35
         return ZStack {
-            shape.stroke(soft, lineWidth: 46).blur(radius: 28).opacity(min(1, 0.38 * strength * k)).blendMode(c.dark ? .screen : .multiply)
-            shape.stroke(g, lineWidth: 10).blur(radius: 7).opacity(min(1, 0.6 * strength * k))
-            shape.stroke(g, lineWidth: 1.6).opacity(min(1, 1.1 * strength * k))
+            shape.stroke(soft, lineWidth: 46).gpu().blur(radius: 28).opacity(min(1, wide * strength * k)).blendMode(c.dark ? .screen : .multiply)
+            shape.stroke(g, lineWidth: 10).gpu().blur(radius: 7).opacity(min(1, 0.6 * strength * k))
+            shape.stroke(g, lineWidth: 1.6).gpu().opacity(min(1, 1.1 * strength * k))
         }
+    }
+}
+
+extension View {
+    /// 回る色(AngularGradient)を GPU で描かせる。
+    /// そのままだと iOS は 1 コマごとに CPU で画面全体を塗り直し、アプリ全体が 1 秒 12 コマ程度に落ちる(実機で計測)。
+    /// 縁からはみ出す光(太い線の外側)が切れないよう、少し広い板に描く。
+    func gpu(margin: CGFloat = 40) -> some View {
+        padding(margin).drawingGroup().padding(-margin)
     }
 }
 
