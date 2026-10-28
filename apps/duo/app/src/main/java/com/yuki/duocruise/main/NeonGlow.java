@@ -94,7 +94,7 @@ final class NeonGlow {
             RadialGradient c = blob(0xFFFFFFFF);
             c.setLocalMatrix(m);
             add.setShader(c);
-            add.setAlpha(Math.round(255 * Math.min(1f, 0.55f * BRIGHT[i] * flicker * breath * k)));
+            add.setAlpha(Math.round(255 * Math.min(1f, 0.34f * BRIGHT[i] * flicker * breath * k)));
             dst.drawRect(box, add);
         }
         add.setShader(null);
