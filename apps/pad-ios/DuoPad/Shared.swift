@@ -10,13 +10,15 @@ import UIKit
 /// 夜: ほぼ黒の面。光は白。眩しくならないよう全体に控えめ。
 struct Palette {
     let surface, edge, key, icon, glow: Color
+    /// 暗い地か(光は暗い地でだけにじませる)。
+    var dark = false
     static let day = Palette(surface: Color(white: 0.95), edge: Color(white: 0.82), key: Color(white: 0.905),
                              icon: Color(white: 0.30), glow: Color(white: 0.42))
     static let night = Palette(surface: Color(white: 0.055), edge: Color(white: 0.15), key: Color(white: 0.09),
-                               icon: Color(white: 0.52), glow: .white)
+                               icon: Color(white: 0.52), glow: .white, dark: true)
     /// 汎用モード(ホーム等)の背景。Duo Cruise の中とひと目で見分けられるグレー。
     static let grey = Palette(surface: Color(white: 0.28), edge: Color(white: 0.42), key: Color(white: 0.34),
-                              icon: Color(white: 0.85), glow: .white)
+                              icon: Color(white: 0.85), glow: .white, dark: true)
 }
 
 /// 画面(窓)の角の丸み(pt)。iPhone は公開の方法では読めないため、画面の幅から近い値を選ぶ。Mac の窓は小さめ。
@@ -31,15 +33,21 @@ enum Screen {
     }
 }
 
+/// 下のボタン。枠も地も持たず、アイコンだけが淡く光る(縁の光と同じ「光で見せる」作り)。
+/// ・普段: アイコンは光の色で、周りにうっすら光がにじむ(夜)。昼は濃いめの灰で読みやすく
+/// ・押した瞬間: 光が強まり、少し沈む。離すとゆっくり戻る
 struct KeyStyle: ButtonStyle {
     let c: Palette
+
     func makeBody(configuration: Configuration) -> some View {
-        let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
+        let down = configuration.isPressed
+        let night = c.dark
         configuration.label
-            .foregroundStyle(c.icon.opacity(configuration.isPressed ? 1 : 0.75))
-            .background(shape.fill(c.key.opacity(configuration.isPressed ? 1 : 0)))
-            .overlay(shape.stroke(c.edge, lineWidth: 1))
-            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+            .foregroundStyle(night ? Color.white.opacity(down ? 1 : 0.86) : c.icon.opacity(down ? 1 : 0.9))
+            .shadow(color: (night ? Color.white : c.glow).opacity(night ? (down ? 0.85 : 0.45) : (down ? 0.35 : 0)),
+                    radius: down ? 12 : 6)
+            .scaleEffect(down ? 0.9 : 1)
+            .animation(down ? .easeOut(duration: 0.08) : .easeOut(duration: 0.35), value: down)
     }
 }
 

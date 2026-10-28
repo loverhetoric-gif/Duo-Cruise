@@ -129,7 +129,7 @@ struct PadScreen: View {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
             action()
         } label: {
-            Image(systemName: icon).font(.system(size: 19, weight: .regular))
+            Image(systemName: icon).font(.system(size: 22, weight: .light))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .contentShape(Rectangle())
         }

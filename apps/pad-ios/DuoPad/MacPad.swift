@@ -109,7 +109,7 @@ struct MacPadScreen: View {
 
     private func key(_ icon: String, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: icon).font(.system(size: 17, weight: .regular))
+            Image(systemName: icon).font(.system(size: 20, weight: .light))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .contentShape(Rectangle())
         }
