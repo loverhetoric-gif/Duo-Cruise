@@ -378,6 +378,19 @@ class CarPlayPane(context: Context, private val listener: Listener?) {
         return true
     }
 
+    // 2本指スクロール: CarPlay はダイヤル送り(1目盛りずつ確実に)。指でのなぞりより判定がやさしい
+    private var scrollAccY = 0f
+    private val scrollNotch = 36f
+
+    fun scroll(dx: Float, dy: Float) {
+        val s = session ?: return
+        scrollAccY += dy
+        while (scrollAccY >= scrollNotch) { hid { s.sendKnob(AirPlayKnobState(wheel = CarPlayKeyMap.ROTATE_STEP)) }; scrollAccY -= scrollNotch }
+        while (scrollAccY <= -scrollNotch) { hid { s.sendKnob(AirPlayKnobState(wheel = -CarPlayKeyMap.ROTATE_STEP)) }; scrollAccY += scrollNotch }
+    }
+
+    fun scrollEnd() { scrollAccY = 0f }
+
     private fun onTouch(v: View, event: MotionEvent): Boolean {
         val c = controller ?: return false
         if (session == null) return false

@@ -71,6 +71,8 @@ final class Panes {
         @Override public String command(String cmd) {
             return "car-wifi-reset".equals(cmd) ? p.resetWifiPass() : null;
         }
+        @Override public void scroll(float dx, float dy) { p.scroll(dx, dy); }
+        @Override public void scrollEnd() { p.scrollEnd(); }
         /** OTTO の Wi-Fi のパスワードを入力中のときだけ使う。 */
         @Override public void typeText(String text) { p.typeText(text); }
         @Override public void typeKey(int keyCode) { p.typeKey(keyCode); }
@@ -94,6 +96,8 @@ final class Panes {
         @Override public void duck(float level) { p.setDuck(level); }
         @Override public void typeText(String text) { p.typeText(text); }
         @Override public void typeKey(int keyCode) { p.typeKey(keyCode); }
+        @Override public void scroll(float dx, float dy) { p.scroll(dx, dy); }
+        @Override public void scrollEnd() { p.scrollEnd(); }
         @Override public String name() { return "YouTube"; }
         @Override public boolean real() { return true; }
     }

@@ -43,6 +43,9 @@ final class PadInput implements PadServer.Sink {
         void typeKey(int keyCode);
         /** スクロール中(本当のなぞり)。この間は「操作する側」を切り替えない。 */
         void scrollActive(boolean on);
+        /** 2本指スクロール(操作中の画面へ)。 */
+        void scroll(float dx, float dy);
+        void scrollEnd();
     }
 
     private final Host host;
@@ -139,21 +142,11 @@ final class PadInput implements PadServer.Sink {
     private long wheelDown;
     private final Runnable wheelEnd = this::endWheel;
 
-    /** スクロール1歩。指を置いた所(カーソル)から、動いた分だけなぞる。カーソルは動かさない。 */
+    /** スクロール1歩。操作中の画面へ、その画面本来の送り方(矢印・ダイヤル)で渡す。カーソルは動かさない。 */
     private void scrollStep(float dx, float dy) {
         if (dragging) return;
-        int[] wh = screen();
-        if (!scrolling) {
-            scrolling = true;
-            wx = x < 0 ? wh[0] / 2f : x;
-            wy = y < 0 ? wh[1] / 2f : y;
-            wheelDown = SystemClock.uptimeMillis();
-            host.scrollActive(true);          // この間は操作する側を切り替えない
-            touchAt(MotionEvent.ACTION_DOWN, wheelDown, wx, wy);
-        }
-        wx = clamp(wx + dx, 0, wh[0] - 1);
-        wy = clamp(wy + dy, 0, wh[1] - 1);
-        touchAt(MotionEvent.ACTION_MOVE, wheelDown, wx, wy);
+        if (!scrolling) { scrolling = true; host.scrollActive(true); }
+        host.scroll(dx, dy);
         main.removeCallbacks(wheelEnd);
         main.postDelayed(wheelEnd, 150);
     }
@@ -162,8 +155,8 @@ final class PadInput implements PadServer.Sink {
         main.removeCallbacks(wheelEnd);
         if (!scrolling) return;
         scrolling = false;
-        touchAt(MotionEvent.ACTION_UP, wheelDown, wx, wy);
         host.scrollActive(false);
+        host.scrollEnd();
     }
 
     private void touchAt(int action, long down, float px, float py) {

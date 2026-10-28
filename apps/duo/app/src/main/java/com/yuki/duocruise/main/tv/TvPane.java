@@ -142,6 +142,24 @@ public final class TvPane {
         web.dispatchKeyEvent(new KeyEvent(t, SystemClock.uptimeMillis(), KeyEvent.ACTION_UP, code, 0));
     }
 
+    // 2本指スクロール: TV 版は矢印キーで項目を移動する(指でのスクロールは効かない)
+    private float scrollAccX, scrollAccY;
+    private static final float SCROLL_NOTCH = 36f;
+
+    public void scroll(float dx, float dy) {
+        scrollAccX += dx; scrollAccY += dy;
+        // 大きく動いている向きだけを矢印にする(斜めで両方出ないように)
+        if (Math.abs(scrollAccY) >= Math.abs(scrollAccX)) {
+            while (scrollAccY >= SCROLL_NOTCH) { typeKey(KeyEvent.KEYCODE_DPAD_DOWN); scrollAccY -= SCROLL_NOTCH; }
+            while (scrollAccY <= -SCROLL_NOTCH) { typeKey(KeyEvent.KEYCODE_DPAD_UP); scrollAccY += SCROLL_NOTCH; }
+        } else {
+            while (scrollAccX >= SCROLL_NOTCH) { typeKey(KeyEvent.KEYCODE_DPAD_RIGHT); scrollAccX -= SCROLL_NOTCH; }
+            while (scrollAccX <= -SCROLL_NOTCH) { typeKey(KeyEvent.KEYCODE_DPAD_LEFT); scrollAccX += SCROLL_NOTCH; }
+        }
+    }
+
+    public void scrollEnd() { scrollAccX = 0; scrollAccY = 0; }
+
     public void onResume() {
         if (web == null) return;
         web.onResume();
