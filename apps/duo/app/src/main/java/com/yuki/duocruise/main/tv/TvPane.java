@@ -506,7 +506,9 @@ public final class TvPane {
             }
             if (p != playing) {
                 playing = p;
-                if (p) requestFocus(); else if (!pausedForFocus) abandonFocus();
+                // 音の主導権(オーディオフォーカス)は WebView(Chromium)自身が管理する。
+                // ここで Duo が取りに行くと、WebView の再生から主導権を奪ってしまい、
+                // 「再生して1〜2秒で止まる」を起こしていた(2026-10-28 DevTools で確定)。だから何もしない。
             }
         } catch (Exception ignored) {
             // ページ切り替え中など
