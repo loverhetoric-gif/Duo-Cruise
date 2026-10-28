@@ -142,7 +142,7 @@ final class PanelView extends ViewGroup {
         // Duo Pad と同じく、柔らかい光が縁をゆっくり巡る。
         float m = px(PAD) * 0.6f;
         frameBox.set(m, m, getWidth() - m, getHeight() - m);
-        frameGlow.draw(cv, frameBox, dp, 24 * dp, 0.5f, Theme.NEON_WHITE, phase); // 境界は間接照明(控えめ)
+        frameGlow.draw(cv, frameBox, dp, 24 * dp, 0.72f, Theme.NEON_WHITE, phase); // 境界は間接照明(控えめだが見える)
         // 色編集ページ: 今の色・強さを「発光する丸いネオン」として見出しの右にプレビュー
         if (page == NEON_EDIT) drawOrb(cv, host.neonColor(neonWhich) | 0xFF000000, host.neonLevel(neonWhich) / 100f);
     }
@@ -566,7 +566,7 @@ final class PanelView extends ViewGroup {
             box.set(insetX, insetY, getWidth() - insetX, getHeight() - insetY);
             cv.drawRoundRect(box, radius, radius, fill);
             // 選択行も、メニュー枠と同じ“巡る”白いネオンで縁取る(売りの見た目・一体感)
-            glow.draw(cv, box, dp, radius, 0.8f, Theme.NEON_WHITE, PanelView.this.phase);
+            glow.draw(cv, box, dp, radius, 0.95f, Theme.NEON_WHITE, PanelView.this.phase);
         }
     }
 

@@ -48,6 +48,10 @@ final class PadInput implements PadServer.Sink {
         /** 2本指スクロール(操作中の画面へ)。 */
         void scroll(float dx, float dy);
         void scrollEnd();
+        /** MAZDA コマンダー: ダイヤルを回す(メニューの項目移動)。steps は +で次、-で前。 */
+        void commanderRotate(int steps);
+        /** MAZDA コマンダー: 倒す・押し込む(キーとして渡す。DPAD 上下左右・決定・戻る)。 */
+        void commanderKey(int keyCode);
     }
 
     private final Host host;
@@ -115,7 +119,14 @@ final class PadInput implements PadServer.Sink {
                     case "b": host.back(); break;
                     case "h": host.globalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_HOME); break;
                     case "r": host.globalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_RECENTS); break;
-                    case "m": host.openMenu(); break; // タスクボタン長押し → 設定
+                    case "m": host.openMenu(); break; // 設定メニューを開く
+                    // ── MAZDA コマンダー ──
+                    case "rot": if (a.length > 2) host.commanderRotate((int) f(a[2])); break; // 回す
+                    case "c": host.commanderKey(android.view.KeyEvent.KEYCODE_DPAD_CENTER); break; // 押し込み=決定
+                    case "up": host.commanderKey(android.view.KeyEvent.KEYCODE_DPAD_UP); break;   // 倒す(上)
+                    case "dn": host.commanderKey(android.view.KeyEvent.KEYCODE_DPAD_DOWN); break;  // 倒す(下)
+                    case "lf": host.commanderKey(android.view.KeyEvent.KEYCODE_DPAD_LEFT); break;  // 倒す(左)
+                    case "rt": host.commanderKey(android.view.KeyEvent.KEYCODE_DPAD_RIGHT); break; // 倒す(右)
                 }
                 break;
             case "t": if (s.length() > 2) host.typeText(s.substring(2)); break;

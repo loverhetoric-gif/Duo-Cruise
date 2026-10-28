@@ -723,6 +723,19 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     /** タスクボタン長押し: 設定メニューを開く。 */
     @Override public void openMenu() { if (panel.getVisibility() != View.VISIBLE) openPanel(); }
 
+    /** MAZDA コマンダー: 回す。メニュー表示中は項目移動、それ以外は操作中の画面のスクロールに回す。 */
+    @Override public void commanderRotate(int steps) {
+        if (panel.getVisibility() == View.VISIBLE) panel.rotate(steps);
+        else { try { active().scroll(0, steps * 40f); active().scrollEnd(); } catch (Throwable ignored) {} }
+    }
+
+    /** MAZDA コマンダー: 倒す・押し込み。キーとして土台へ(メニュー表示中は操作盤、それ以外は操作中の画面)。 */
+    @Override public void commanderKey(int keyCode) {
+        long t = SystemClock.uptimeMillis();
+        deliver(keyCode, KeyEvent.ACTION_DOWN, t, null);
+        deliver(keyCode, KeyEvent.ACTION_UP, t, null);
+    }
+
     /** 2本指スクロールは、操作中の画面本来の送り方(YouTube=矢印、CarPlay=ダイヤル)に渡す。メニュー表示中は裏へ渡さない。 */
     @Override public void scroll(float dx, float dy) { if (panel.getVisibility() == View.VISIBLE) return; active().scroll(dx, dy); }
     @Override public void scrollEnd() { if (panel.getVisibility() == View.VISIBLE) return; active().scrollEnd(); }

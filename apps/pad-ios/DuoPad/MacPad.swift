@@ -35,6 +35,7 @@ struct MacPadScreen: View {
     @State private var captured = false
     @State private var notice: Notice?
     @State private var settings = false
+    @State private var commander = false
 
     // 接続中は、モードで色を決める: Duo Cruise の中＝昼夜問わず暗く / ホーム等＝グレー。
     // つながっていない間は、いつもの昼・夜に合わせる。
@@ -74,12 +75,19 @@ struct MacPadScreen: View {
                     key("house") { link.send("k h") }
                     key("square.on.square") { link.send("k r") }
                         .simultaneousGesture(LongPressGesture(minimumDuration: 0.5).onEnded { _ in link.send("k m") }) // 長押しで設定メニュー
+                    key("line.3.horizontal") { link.send("k m") }      // 設定メニューを開く
+                    key("dial.min") { commander.toggle() }             // MAZDA コマンダー(開発用)
                 }
                 .frame(height: 44)
                 .padding(.horizontal, 16)
                 .padding(.bottom, 14)
             }
+            if commander {
+                CommanderPanel(c: c) { link.send($0) } close: { commander = false }
+                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
+            }
         }
+        .animation(.easeOut(duration: 0.18), value: commander)
         .preferredColorScheme(theme == 1 ? .light : theme == 2 ? .dark : nil)
         .onChange(of: connected) { was, now in
             if now { notice = Notice(kind: .duo) } else if was { notice = Notice(kind: .lost) }
@@ -105,6 +113,111 @@ struct MacPadScreen: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(KeyStyle(c: c))
+    }
+}
+
+/// MAZDA コマンダー風の操作盤(開発用)。回す=メニュー移動、押す=決定、倒す=カーソル、周囲ボタン。
+/// Mazda Connect のコマンダー: 中央のダイヤル(回す・倒す・押す)＋周囲に Home/Nav/Music/Back/Fav、手前に音量ノブ。
+struct CommanderPanel: View {
+    let c: Palette
+    let send: (String) -> Void
+    let close: () -> Void
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.55).ignoresSafeArea().onTapGesture { close() }
+            VStack(spacing: 20) {
+                HStack {
+                    Text("コマンダー（開発用）").font(.system(size: 13, weight: .medium)).foregroundStyle(c.icon.opacity(0.8))
+                    Spacer()
+                    Button { close() } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 18)) }
+                        .buttonStyle(.plain).foregroundStyle(c.icon.opacity(0.7))
+                }
+                // 中央ダイヤルと、その周りのハードボタン(Mazda の配置に寄せる)
+                ZStack {
+                    CommanderDial(c: c, send: send)
+                        .frame(width: 210, height: 210)
+                    hard("map", "ナビ") {}.offset(x: 150, y: -92)          // Nav/Map(飾り)
+                    hard("music.note", "ミュージック") {}.offset(x: 150, y: 0) // Music(飾り)
+                    hard("star", "お気に入り") {}.offset(x: 150, y: 92)       // Fav(飾り)
+                    hard("arrow.uturn.backward", "戻る") { send("k b") }.offset(x: -150, y: -92) // Back
+                    hard("house", "ホーム") { send("k h") }.offset(x: -150, y: 0)                 // Home
+                    hard("line.3.horizontal", "メニュー") { send("k m") }.offset(x: -150, y: 92)  // メニュー(開発用の追加)
+                }
+                .frame(width: 360, height: 230)
+                Text("回す=項目移動 / 押す=決定 / 倒す=カーソル").font(.system(size: 11)).foregroundStyle(c.icon.opacity(0.5))
+            }
+            .padding(26)
+            .background(RoundedRectangle(cornerRadius: 22).fill(c.surface).shadow(radius: 24, y: 8))
+            .overlay(RoundedRectangle(cornerRadius: 22).stroke(c.edge, lineWidth: 1))
+        }
+    }
+
+    private func hard(_ icon: String, _ label: String, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 3) {
+                Image(systemName: icon).font(.system(size: 16, weight: .regular))
+                Text(label).font(.system(size: 9))
+            }
+            .frame(width: 66, height: 46)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(KeyStyle(c: c))
+    }
+}
+
+/// コマンダーの中央ダイヤル。ドラッグで回す(回した角度ぶん項目移動)、中央タップで決定、4方向チップで倒す。
+struct CommanderDial: View {
+    let c: Palette
+    let send: (String) -> Void
+    @State private var lastAngle: Double? = nil
+    @State private var accum: Double = 0
+    private let stepDeg = 14.0
+
+    var body: some View {
+        GeometryReader { geo in
+            let w = geo.size.width, h = geo.size.height, rr = min(w, h)
+            ZStack {
+                Circle().fill(c.key)
+                    .overlay(Circle().stroke(c.edge, lineWidth: 2))
+                Circle().stroke(c.icon.opacity(0.15), lineWidth: 1).padding(10)
+                // 4方向(倒す)
+                tilt("chevron.up").offset(y: -rr * 0.34).onTapGesture { send("k up") }
+                tilt("chevron.down").offset(y: rr * 0.34).onTapGesture { send("k dn") }
+                tilt("chevron.left").offset(x: -rr * 0.34).onTapGesture { send("k lf") }
+                tilt("chevron.right").offset(x: rr * 0.34).onTapGesture { send("k rt") }
+                // 中央(押す=決定)
+                Circle().fill(c.surface)
+                    .overlay(Circle().stroke(c.edge, lineWidth: 1))
+                    .overlay(Text("OK").font(.system(size: 13, weight: .semibold)).foregroundStyle(c.icon))
+                    .frame(width: rr * 0.42, height: rr * 0.42)
+                    .onTapGesture { send("k c") }
+            }
+            .contentShape(Circle())
+            .gesture(
+                DragGesture(minimumDistance: 2)
+                    .onChanged { v in
+                        let cx = w / 2, cy = h / 2
+                        let ang = atan2(Double(v.location.y) - cy, Double(v.location.x) - cx) * 180 / .pi
+                        if let last = lastAngle {
+                            var d = ang - last
+                            if d > 180 { d -= 360 }; if d < -180 { d += 360 }
+                            accum += d
+                            while accum >= stepDeg { send("k rot 1"); accum -= stepDeg }
+                            while accum <= -stepDeg { send("k rot -1"); accum += stepDeg }
+                        }
+                        lastAngle = ang
+                    }
+                    .onEnded { _ in lastAngle = nil; accum = 0 }
+            )
+        }
+    }
+
+    private func tilt(_ icon: String) -> some View {
+        Image(systemName: icon).font(.system(size: 15, weight: .semibold))
+            .foregroundStyle(c.icon.opacity(0.7))
+            .frame(width: 30, height: 30)
+            .contentShape(Rectangle())
     }
 }
 
