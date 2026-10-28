@@ -153,8 +153,9 @@ public final class TvPane {
             while (scrollAccY >= SCROLL_NOTCH) { typeKey(KeyEvent.KEYCODE_DPAD_DOWN); scrollAccY -= SCROLL_NOTCH; }
             while (scrollAccY <= -SCROLL_NOTCH) { typeKey(KeyEvent.KEYCODE_DPAD_UP); scrollAccY += SCROLL_NOTCH; }
         } else {
-            while (scrollAccX >= SCROLL_NOTCH) { typeKey(KeyEvent.KEYCODE_DPAD_RIGHT); scrollAccX -= SCROLL_NOTCH; }
-            while (scrollAccX <= -SCROLL_NOTCH) { typeKey(KeyEvent.KEYCODE_DPAD_LEFT); scrollAccX += SCROLL_NOTCH; }
+            // 左右は、指を動かした向きに選択が動くよう入れ替え(2026-10-28 実機で左右が逆だった)
+            while (scrollAccX >= SCROLL_NOTCH) { typeKey(KeyEvent.KEYCODE_DPAD_LEFT); scrollAccX -= SCROLL_NOTCH; }
+            while (scrollAccX <= -SCROLL_NOTCH) { typeKey(KeyEvent.KEYCODE_DPAD_RIGHT); scrollAccX += SCROLL_NOTCH; }
         }
     }
 
