@@ -25,6 +25,7 @@ public class PaneService extends AccessibilityService {
         try {
             systemPad = new SystemPad(this);
             PadRouter.get(this).setSystemSink(systemPad);
+            PadRouter.get(this).setForegroundSource(this::foregroundPackage);
         } catch (Throwable t) {
             DuoLog.error("汎用タッチパッドを用意できません: " + DuoLog.why(t));
         }
@@ -34,6 +35,7 @@ public class PaneService extends AccessibilityService {
 
     @Override public boolean onUnbind(android.content.Intent i) {
         live = null;
+        PadRouter.get(this).setForegroundSource(null);
         PadRouter.get(this).setSystemSink(null);
         if (systemPad != null) { systemPad.dispose(); systemPad = null; }
         DuoLog.log("ユーザー補助が止まりました");
@@ -49,6 +51,19 @@ public class PaneService extends AccessibilityService {
     }
 
     @Override public void onInterrupt() {}
+
+    /** いま前面のアプリのパッケージ名。確かめられなければ空。 */
+    private String foregroundPackage() {
+        try {
+            android.view.accessibility.AccessibilityNodeInfo r = getRootInActiveWindow();
+            if (r != null) {
+                CharSequence p = r.getPackageName();
+                r.recycle();
+                return p == null ? "" : p.toString();
+            }
+        } catch (Throwable ignored) {}
+        return "";
+    }
 
     @Override protected boolean onKeyEvent(KeyEvent e) {
         DuoActivity a = DuoActivity.front;
