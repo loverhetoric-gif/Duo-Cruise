@@ -73,6 +73,18 @@ final class NeonGlow {
         halo(dst, box, LINE_DP * dp, sweep, Math.min(1f, 0.8f * k), new float[]{ 0f, 1f }, new float[]{ 1f, 1f });
     }
 
+    /** 外側の細い線だけを引く(ぼかした層は GlowLayer が受け持つとき用)。 */
+    void line(Canvas dst, RectF box, float dp, float strength, int[] palette, float phase) {
+        if (strength <= 0 || box.width() < 2 || box.height() < 2) return;
+        int[] cols = new int[palette.length + 1];
+        System.arraycopy(palette, 0, cols, 0, palette.length);
+        cols[palette.length] = palette[0];
+        SweepGradient sweep = new SweepGradient(box.centerX(), box.centerY(), cols, null);
+        m.setRotate(phase * 360f, box.centerX(), box.centerY());
+        sweep.setLocalMatrix(m);
+        halo(dst, box, LINE_DP * dp, sweep, Math.min(1f, strength), new float[]{ 0f, 1f }, new float[]{ 1f, 1f });
+    }
+
     /**
      * 縁から内側へ深さ d の帯を、四隅を 45°で突き合わせた台形で塗る。
      * 色は sweep、濃さは縁からの距離の曲線(pos/alpha)で決める。

@@ -95,6 +95,8 @@ final class PanelView extends ViewGroup {
     private final ListPane list;
     private final RectF frameBox = new RectF();
     private final NeonGlow frameGlow = new NeonGlow();
+    private final GlowLayer glowWide, glowMid;
+    private float glowStrength = 0;
     private android.animation.ValueAnimator shimmer;
     float phase = 0; // 発光の揺らぎ(枠・選択行で共有)
     private final List<Item> items = new ArrayList<>();
@@ -117,6 +119,11 @@ final class PanelView extends ViewGroup {
         logText.setTypeface(Typeface.MONOSPACE);
         logText.setPadding(px(14), px(10), px(14), px(10));
         list = new ListPane(c);
+        // 縁の光(Duo Pad の band と同じ三層)。ぼかす二層は View ごと GPU でぼかす。細い線は dispatchDraw で最後に引く
+        glowWide = new GlowLayer(c, 46, 28, true);
+        glowMid = new GlowLayer(c, 10, 7, false);
+        addView(glowWide);
+        addView(glowMid);
         addView(title);
         addView(logText);
         addView(list);
@@ -144,9 +151,17 @@ final class PanelView extends ViewGroup {
         frameBox.set(0, 0, getWidth(), getHeight());
         // 開いた瞬間に光がふわっと膨らみ(強く・深く)、すぐ落ち着く
         float burst = intro < 0.35f ? intro / 0.35f * 1.35f : 1.35f - 0.35f * (intro - 0.35f) / 0.65f;
-        frameGlow.draw(cv, frameBox, dp, 0, 0.55f * burst, NeonGlow.AURORA, phase); // 普段 0.55(Duo Pad と同じ)
+        glowStrength = 0.55f * burst;                       // 普段 0.55(Duo Pad と同じ)
+        glowWide.set(0.38f * glowStrength, NeonGlow.AURORA, phase);
+        glowMid.set(0.60f * glowStrength, NeonGlow.AURORA, phase);
         // 色編集ページ: 今の色・強さを「発光する丸いネオン」として見出しの右にプレビュー
         if (page == NEON_EDIT) drawOrb(cv, host.neonColor(neonWhich) | 0xFF000000, host.neonLevel(neonWhich) / 100f);
+    }
+
+    @Override protected void dispatchDraw(Canvas cv) {
+        super.dispatchDraw(cv);
+        // 外側の細い線(1.6dp)。ぼかした二層の上に、くっきりと淡く
+        frameGlow.line(cv, frameBox, dp, Math.min(1f, 1.1f * glowStrength), NeonGlow.AURORA, phase);
     }
 
     /** 発光する丸いネオン(オーブ)。色と強さを反映。NEON_EDIT のプレビューに使う。 */
@@ -524,6 +539,8 @@ final class PanelView extends ViewGroup {
         int side = px(34);
         int listW = w - side * 2;
         int left = side;
+        place(glowWide, 0, 0, w, h, measure);
+        place(glowMid, 0, 0, w, h, measure);
         place(title, left, pad, left + listW, pad + px(38), measure);
 
         int top = pad + head;
