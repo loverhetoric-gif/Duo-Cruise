@@ -31,6 +31,8 @@ final class SplitRoot extends ViewGroup {
     View car, tv;
     /** タッチパッドのカーソル(いちばん上に置く)。 */
     View cursor;
+    /** スクロール中は、触れた側への切り替えをしない。 */
+    boolean padScrolling;
     PanelView panel;
     boolean swapped, panelHalf, single;
     int side;
@@ -185,7 +187,7 @@ final class SplitRoot extends ViewGroup {
     }
 
     @Override public boolean onInterceptTouchEvent(MotionEvent e) {
-        if (e.getActionMasked() == MotionEvent.ACTION_DOWN && (panel == null || panel.getVisibility() != VISIBLE)) {
+        if (!padScrolling && e.getActionMasked() == MotionEvent.ACTION_DOWN && (panel == null || panel.getVisibility() != VISIBLE)) {
             float x = e.getX() - getPaddingLeft();
             listener.touched(x < contentW() / 2f ? SplitGeometry.SIDE_LEFT : SplitGeometry.SIDE_RIGHT);
         }

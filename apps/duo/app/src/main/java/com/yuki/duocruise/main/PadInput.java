@@ -41,6 +41,8 @@ final class PadInput implements PadServer.Sink {
         void globalAction(int action);
         void typeText(String text);
         void typeKey(int keyCode);
+        /** スクロール中(本当のなぞり)。この間は「操作する側」を切り替えない。 */
+        void scrollActive(boolean on);
     }
 
     private final Host host;
@@ -48,8 +50,7 @@ final class PadInput implements PadServer.Sink {
     private final Handler main = new Handler(Looper.getMainLooper());
     private float x = -1, y = -1;
     private long downTime;
-    private boolean dragging, two;
-    private float bx, by; // 2本目の指の場所
+    private boolean dragging;
     private final Runnable hide = this::hideCursor;
     static final long HIDE_MS = 6000;
 
@@ -72,7 +73,7 @@ final class PadInput implements PadServer.Sink {
         DuoLog.log("タッチパッド: " + (on ? "つながりました(" + who + ")" : "切れました"));
         if (!on) {
             if (dragging) { send(MotionEvent.ACTION_UP); dragging = false; }
-            if (two) endTwo();
+            if (scrolling) endWheel();
             cursor.setVisibility(View.INVISIBLE);
         }
         DuoActivity.stateChanged();
@@ -94,8 +95,16 @@ final class PadInput implements PadServer.Sink {
             case "c": show(); send(MotionEvent.ACTION_DOWN); send(MotionEvent.ACTION_UP); break;
             case "d": show(); if (!dragging) { dragging = true; send(MotionEvent.ACTION_DOWN); } break;
             case "u": if (dragging) { dragging = false; send(MotionEvent.ACTION_UP); } break;
-            case "p": two(a); break;
-            case "w": wheel(a); break;
+            case "p": // iPhone の2本指 → スクロール(1本指のなぞり)にする
+                if (a.length > 1) switch (a[1]) {
+                    case "m": if (a.length > 5) scrollStep((f(a[2]) + f(a[4])) / 2f, (f(a[3]) + f(a[5])) / 2f); break;
+                    case "u": endWheel(); break;
+                    default: break; // "d"(指を2本置いただけ)は、動いてから始める
+                }
+                break;
+            case "w": // Mac の2本指スクロール
+                if (a[1].equals("end")) endWheel(); else scrollStep(f(a[1]), f(a[2]));
+                break;
             case "k":
                 switch (a[1]) {
                     case "b": host.back(); break;
@@ -124,52 +133,26 @@ final class PadInput implements PadServer.Sink {
         if (dragging) send(MotionEvent.ACTION_MOVE);
     }
 
-    private void two(String[] a) {
-        show();
-        switch (a[1]) {
-            case "d":
-                if (dragging) { dragging = false; send(MotionEvent.ACTION_UP); }
-                int[] wh = screen();
-                bx = clamp(x + f(a[2]), 0, wh[0] - 1);
-                by = clamp(y + f(a[3]), 0, wh[1] - 1);
-                two = true;
-                downTime = SystemClock.uptimeMillis();
-                sendTwo(MotionEvent.ACTION_DOWN, 1);
-                sendTwo(MotionEvent.ACTION_POINTER_DOWN | (1 << MotionEvent.ACTION_POINTER_INDEX_SHIFT), 2);
-                break;
-            case "m":
-                if (!two) return;
-                int[] s = screen();
-                x = clamp(x + f(a[2]), 0, s[0] - 1); y = clamp(y + f(a[3]), 0, s[1] - 1);
-                bx = clamp(bx + f(a[4]), 0, s[0] - 1); by = clamp(by + f(a[5]), 0, s[1] - 1);
-                // 2本指スクロール中は、見えるカーソルは動かさない(スクロールに追従しないように)
-                sendTwo(MotionEvent.ACTION_MOVE, 2);
-                break;
-            case "u":
-                if (two) endTwo();
-                break;
-        }
-    }
-
     // ── スクロール: 指を置いて(カーソルの場所)、動かした分だけずらし、止まったら離す ──
     private boolean scrolling;
     private float wx, wy;
     private long wheelDown;
     private final Runnable wheelEnd = this::endWheel;
 
-    private void wheel(String[] a) {
-        if (a[1].equals("end")) { endWheel(); return; }
-        if (dragging || two) return;
+    /** スクロール1歩。指を置いた所(カーソル)から、動いた分だけなぞる。カーソルは動かさない。 */
+    private void scrollStep(float dx, float dy) {
+        if (dragging) return;
         int[] wh = screen();
         if (!scrolling) {
-            show();
             scrolling = true;
-            wx = x; wy = y;
+            wx = x < 0 ? wh[0] / 2f : x;
+            wy = y < 0 ? wh[1] / 2f : y;
             wheelDown = SystemClock.uptimeMillis();
+            host.scrollActive(true);          // この間は操作する側を切り替えない
             touchAt(MotionEvent.ACTION_DOWN, wheelDown, wx, wy);
         }
-        wx = clamp(wx + f(a[1]), 0, wh[0] - 1);
-        wy = clamp(wy + f(a[2]), 0, wh[1] - 1);
+        wx = clamp(wx + dx, 0, wh[0] - 1);
+        wy = clamp(wy + dy, 0, wh[1] - 1);
         touchAt(MotionEvent.ACTION_MOVE, wheelDown, wx, wy);
         main.removeCallbacks(wheelEnd);
         main.postDelayed(wheelEnd, 150);
@@ -180,6 +163,7 @@ final class PadInput implements PadServer.Sink {
         if (!scrolling) return;
         scrolling = false;
         touchAt(MotionEvent.ACTION_UP, wheelDown, wx, wy);
+        host.scrollActive(false);
     }
 
     private void touchAt(int action, long down, float px, float py) {
@@ -187,12 +171,6 @@ final class PadInput implements PadServer.Sink {
         e.setSource(InputDevice.SOURCE_TOUCHSCREEN);
         host.touch(e);
         e.recycle();
-    }
-
-    private void endTwo() {
-        sendTwo(MotionEvent.ACTION_POINTER_UP | (1 << MotionEvent.ACTION_POINTER_INDEX_SHIFT), 2);
-        sendTwo(MotionEvent.ACTION_UP, 1);
-        two = false;
     }
 
     private void show() {
@@ -212,24 +190,6 @@ final class PadInput implements PadServer.Sink {
         e.recycle();
     }
 
-    private void sendTwo(int action, int count) {
-        MotionEvent.PointerProperties[] pp = new MotionEvent.PointerProperties[count];
-        MotionEvent.PointerCoords[] pc = new MotionEvent.PointerCoords[count];
-        for (int i = 0; i < count; i++) {
-            pp[i] = new MotionEvent.PointerProperties();
-            pp[i].id = i;
-            pp[i].toolType = MotionEvent.TOOL_TYPE_FINGER;
-            pc[i] = new MotionEvent.PointerCoords();
-            pc[i].x = i == 0 ? x : bx;
-            pc[i].y = i == 0 ? y : by;
-            pc[i].pressure = 1;
-            pc[i].size = 1;
-        }
-        MotionEvent e = MotionEvent.obtain(downTime, SystemClock.uptimeMillis(), action, count, pp, pc,
-                0, 0, 1, 1, 0, 0, InputDevice.SOURCE_TOUCHSCREEN, 0);
-        host.touch(e);
-        e.recycle();
-    }
 
     static float clamp(float v, float lo, float hi) { return v < lo ? lo : v > hi ? hi : v; }
 

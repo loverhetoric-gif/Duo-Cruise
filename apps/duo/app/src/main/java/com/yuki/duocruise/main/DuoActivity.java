@@ -605,6 +605,9 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
 
     @Override public void typeKey(int keyCode) { active().typeKey(keyCode); }
 
+    /** スクロール中は、操作する側を切り替えない(2本指スクロールで意図せず切り替わらないように)。 */
+    @Override public void scrollActive(boolean on) { root.padScrolling = on; }
+
     @Override public void touched(int side) {
         if (side != Store.side(this)) setSide(side);
     }
