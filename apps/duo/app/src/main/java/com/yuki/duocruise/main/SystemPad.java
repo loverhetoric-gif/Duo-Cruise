@@ -46,12 +46,14 @@ final class SystemPad implements PadServer.Sink {
     private float downX, downY;
     private long downAt;
 
-    // スクロール(2本指・ホイール)
+    // スクロール(2本指・Mac のホイール): たまった動きを本物のなぞりにして送る。カーソルは動かさない
     private boolean scrolling;
-    private float scFromX, scFromY, scToX, scToY;
+    private float scOX, scOY, scAX, scAY;
+    private boolean gestureBusy;
+    private static final float SCROLL_STEP = 40;
     private final Runnable scrollEnd = this::endScroll;
     private final Runnable hide = this::hideCursor;
-    private boolean warnedText, warnedPinch;
+    private boolean warnedText;
 
     SystemPad(AccessibilityService s) {
         svc = s;
@@ -71,9 +73,17 @@ final class SystemPad implements PadServer.Sink {
     }
 
     private void measure() {
-        DisplayMetrics dm = svc.getResources().getDisplayMetrics();
-        w = Math.max(1, dm.widthPixels);
-        h = Math.max(1, dm.heightPixels);
+        // アプリが使える高さ(システムバーを除く=416)ではなく、画面全体(480)で測る。
+        // そうしないとカーソルが画面の一番下まで行けない(2026-10-28 実機)。
+        try {
+            android.graphics.Rect b = wm.getMaximumWindowMetrics().getBounds();
+            w = Math.max(1, b.width());
+            h = Math.max(1, b.height());
+        } catch (Throwable t) {
+            DisplayMetrics dm = svc.getResources().getDisplayMetrics();
+            w = Math.max(1, dm.widthPixels);
+            h = Math.max(1, dm.heightPixels);
+        }
     }
 
     /** ユーザー補助が止まるとき。重ね表示を消す。 */
@@ -113,8 +123,17 @@ final class SystemPad implements PadServer.Sink {
             case "c": show(); tap(x, y); break;
             case "d": show(); startDrag(); break;
             case "u": endDrag(); break;
-            case "w": break; // 汎用モードでは2本指スクロールは使わない
-            case "p": pinchUnsupported(); break;
+            case "w": // Mac の2本指スクロール
+                if (a.length > 1 && a[1].equals("end")) endScroll();
+                else if (a.length > 2) scrollBy(f(a[1]), f(a[2]));
+                break;
+            case "p": // iPhone の2本指スクロール
+                if (a.length > 1) switch (a[1]) {
+                    case "d": scrollBegin(); break;
+                    case "m": if (a.length > 5) scrollBy((f(a[2]) + f(a[4])) / 2f, (f(a[3]) + f(a[5])) / 2f); break;
+                    case "u": endScroll(); break;
+                }
+                break;
             case "k":
                 switch (a[1]) {
                     case "b": svc.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK); break;
@@ -148,23 +167,62 @@ final class SystemPad implements PadServer.Sink {
         swipe(downX, downY, x, y, dur);
     }
 
-    private void wheel(String[] a) {
-        if (a[1].equals("end")) { endScroll(); return; }
+    private void scrollBegin() {
+        if (scrolling) return;
+        scrolling = true;
+        scOX = (x < 0) ? w / 2f : x;
+        scOY = (y < 0) ? h / 2f : y;
+        scAX = 0; scAY = 0;
+    }
+
+    private void scrollBy(float dx, float dy) {
         if (dragging) return;
-        show();
-        if (!scrolling) { scrolling = true; scFromX = x; scFromY = y; scToX = x; scToY = y; }
-        scToX = PadInput.clamp(scToX + f(a[1]), 0, w - 1);
-        scToY = PadInput.clamp(scToY + f(a[2]), 0, h - 1);
-        x = scToX; y = scToY; place();
+        scrollBegin();
+        scAX += dx; scAY += dy;
+        flushScroll();
         main.removeCallbacks(scrollEnd);
-        main.postDelayed(scrollEnd, 150);
+        main.postDelayed(scrollEnd, 200);
+    }
+
+    /** たまりが十分あって、前のなぞりが終わっていれば、1回ぶんのスクロールを送る(カーソルは動かさない)。 */
+    private void flushScroll() {
+        if (!scrolling || gestureBusy) return;
+        if (Math.hypot(scAX, scAY) < SCROLL_STEP) return;
+        float toX = PadInput.clamp(scOX + scAX, 0, w - 1);
+        float toY = PadInput.clamp(scOY + scAY, 0, h - 1);
+        scAX = 0; scAY = 0;
+        swipeScroll(scOX, scOY, toX, toY);
     }
 
     private void endScroll() {
         main.removeCallbacks(scrollEnd);
         if (!scrolling) return;
+        if (!gestureBusy && (scAX != 0 || scAY != 0)) {
+            float toX = PadInput.clamp(scOX + scAX, 0, w - 1);
+            float toY = PadInput.clamp(scOY + scAY, 0, h - 1);
+            scAX = 0; scAY = 0;
+            swipeScroll(scOX, scOY, toX, toY);
+        }
         scrolling = false;
-        if (scFromX != scToX || scFromY != scToY) swipe(scFromX, scFromY, scToX, scToY, SCROLL_MS);
+    }
+
+    private void swipeScroll(float x1, float y1, float x2, float y2) {
+        if (x1 == x2 && y1 == y2) return;
+        Path p = new Path();
+        p.moveTo(x1, y1);
+        p.lineTo(x2, y2);
+        try {
+            GestureDescription g = new GestureDescription.Builder()
+                    .addStroke(new GestureDescription.StrokeDescription(p, 0, SCROLL_MS)).build();
+            gestureBusy = true;
+            svc.dispatchGesture(g, new AccessibilityService.GestureResultCallback() {
+                @Override public void onCompleted(GestureDescription d) { gestureBusy = false; main.post(() -> flushScroll()); }
+                @Override public void onCancelled(GestureDescription d) { gestureBusy = false; }
+            }, main);
+        } catch (Throwable t) {
+            gestureBusy = false;
+            DuoLog.error("汎用タッチパッド: スクロールを送れません " + DuoLog.why(t));
+        }
     }
 
     private void tap(float px, float py) {
@@ -192,10 +250,6 @@ final class SystemPad implements PadServer.Sink {
 
     private void textUnsupported() {
         if (!warnedText) { warnedText = true; DuoLog.log("汎用モードでは文字入力は未対応(Duo Cruise の中だけ)"); }
-    }
-
-    private void pinchUnsupported() {
-        if (!warnedPinch) { warnedPinch = true; DuoLog.log("汎用モードでは2本指操作は未対応"); }
     }
 
     private void show() {

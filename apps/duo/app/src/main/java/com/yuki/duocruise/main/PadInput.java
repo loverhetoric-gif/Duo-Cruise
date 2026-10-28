@@ -142,7 +142,7 @@ final class PadInput implements PadServer.Sink {
                 int[] s = screen();
                 x = clamp(x + f(a[2]), 0, s[0] - 1); y = clamp(y + f(a[3]), 0, s[1] - 1);
                 bx = clamp(bx + f(a[4]), 0, s[0] - 1); by = clamp(by + f(a[5]), 0, s[1] - 1);
-                cursor.setTranslationX(x); cursor.setTranslationY(y);
+                // 2本指スクロール中は、見えるカーソルは動かさない(スクロールに追従しないように)
                 sendTwo(MotionEvent.ACTION_MOVE, 2);
                 break;
             case "u":
