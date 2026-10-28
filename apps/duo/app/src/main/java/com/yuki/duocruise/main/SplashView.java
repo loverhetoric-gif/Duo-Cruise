@@ -16,7 +16,7 @@ import android.view.View;
 import android.view.animation.LinearInterpolator;
 
 /**
- * 起動演出(「DuoCruise・DuoSlate 起動演出の指示書」どおり。素材はリポジトリの assets/brand/)。
+ * 起動演出(仕様と素材はリポジトリの assets/brand/。README に時間・配置・昼夜の決まりがある)。
  *
  * ・昼は白地、夜は黒地。どちらにするかは OS のダーク表示に従う
  * ・上にシンボル、下にロゴ。横も縦も中央
