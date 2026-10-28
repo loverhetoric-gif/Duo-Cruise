@@ -38,7 +38,7 @@ final class NeonGlow {
         float shortSide = Math.min(box.width(), box.height());
         float depth = depthDp > 0 ? depthDp * dp : 64 * dp;
         depth = Math.min(depth, shortSide * 0.5f);
-        edges(dst, box, depth, color, Math.round(72 * k * breath));
+        edges(dst, box, depth, color, Math.round(98 * k * breath));
     }
 
     /** 既定の色・深さで描く(白)。 */

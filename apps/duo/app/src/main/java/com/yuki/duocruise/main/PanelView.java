@@ -550,6 +550,7 @@ final class PanelView extends ViewGroup {
             setGravity(Gravity.CENTER_VERTICAL);
             setFocusable(true);
             setFocusableInTouchMode(false);
+            setDefaultFocusHighlightEnabled(false); // 既定の灰色ハイライトは出さない(選択は文字の大きさで示す)
         }
     }
 
