@@ -28,14 +28,23 @@ final class NeonGlow {
     /** @deprecated 旧名。 */
     static final int[] VIVID = AURORA;
 
-    /** 一周期ぶんの明るさの起伏(0〜1)。山は鋭すぎず、谷は深く。 */
-    static final float[] PATTERN = { 1.00f, 0.82f, 0.50f, 0.36f, 0.58f, 0.92f, 1.00f, 0.74f, 0.44f, 0.66f, 0.96f, 0.86f };
+    /**
+     * 一周期ぶんの明るさの起伏(0〜1)。Duo Pad の [glow, 0.75, glow, 0.85] と同じ振幅(谷は 0.75・0.85)。
+     * 計測では、Duo Pad の自律的な動きはこの程度で、ほとんど意識に上らない。生きて見えるのは操作への応答の方。
+     */
+    static final float[] PATTERN = { 1.00f, 0.75f, 1.00f, 0.85f };
 
     static final float LINE_DP = 1.6f;
 
     private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Path path = new Path();
-    private final float[] edge = new float[8];
+    /** 応答の光(指やコマンダーの位置に寄る光)。次の ribbon だけに掛かる。 */
+    private Shader spot;
+
+    /** 次の ribbon を、(cx,cy) を中心に半径 r で丸く切り抜く(中心 1 → 外 0)。null で解除。 */
+    void spot(float cx, float cy, float r) {
+        spot = r > 0 ? new android.graphics.RadialGradient(cx, cy, r, 0xFFFFFFFF, 0x00FFFFFF, Shader.TileMode.CLAMP) : null;
+    }
 
     /** 次に描く帯の濃さ(0〜1)。 */
     void alpha(float a) { p.setAlpha(Math.round(255 * Math.max(0f, Math.min(1f, a)))); }
@@ -73,6 +82,7 @@ final class NeonGlow {
         trapezoid(l, bt, l, t, l + d, t + d, l + d, bt - d);
         fill(dst, along(l, bt, l, t, 2 * w + h, per, per, color, cycles, u), mask == null ? null : new LinearGradient(l, 0, l + d, 0, mask, pos, Shader.TileMode.CLAMP));
         p.setShader(null);
+        spot = null;
     }
 
     /** 一辺に沿った明るさのグラデ。辺は縁の距離 s0〜s1 を受け持ち、模様はその距離で決まる。 */
@@ -106,7 +116,9 @@ final class NeonGlow {
     }
 
     private void fill(Canvas dst, Shader color, Shader inward) {
-        p.setShader(inward == null ? color : new ComposeShader(color, inward, PorterDuff.Mode.DST_IN));
+        Shader sh = inward == null ? color : new ComposeShader(color, inward, PorterDuff.Mode.DST_IN);
+        if (spot != null) sh = new ComposeShader(sh, spot, PorterDuff.Mode.DST_IN);
+        p.setShader(sh);
         dst.drawPath(path, p);
     }
 

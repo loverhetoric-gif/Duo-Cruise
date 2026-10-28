@@ -27,6 +27,7 @@ final class GlowLayer extends View {
     private final int cycles, dir;
     private float strength, phase;
     private int color = 0xFFFFFFFF;
+    private float spotX, spotY, spotR, spotK; // 応答の光: 位置・半径・強さ
 
     GlowLayer(Context c, float widthDp, float blurDp, int cycles, int dir) {
         super(c);
@@ -48,11 +49,25 @@ final class GlowLayer extends View {
         invalidate();
     }
 
+    /** 応答の光。(x,y) の周り半径 r に、強さ k で灯る。k=0 で消す。 */
+    void spot(float x, float y, float r, float k) {
+        spotX = x; spotY = y; spotR = r; spotK = k;
+        invalidate();
+    }
+
     @Override protected void onDraw(Canvas cv) {
         int w = getWidth(), h = getHeight();
-        if (strength <= 0 || w < 2 || h < 2) return;
+        if (w < 2 || h < 2) return;
         box.set(0, 0, w, h);
-        glow.alpha(strength);
-        glow.ribbon(cv, box, widthDp * dp * 0.5f, color, cycles, dir * phase, null, null);
+        float d = widthDp * dp * 0.5f;
+        if (strength > 0) {
+            glow.alpha(strength);
+            glow.ribbon(cv, box, d, color, cycles, dir * phase, null, null);
+        }
+        if (spotK > 0 && spotR > 0) {   // 一様な明るさの帯を、丸く切り抜いて重ねる
+            glow.alpha(spotK);
+            glow.spot(spotX, spotY, spotR);
+            glow.ribbon(cv, box, d, color, 0, 0, null, null);
+        }
     }
 }

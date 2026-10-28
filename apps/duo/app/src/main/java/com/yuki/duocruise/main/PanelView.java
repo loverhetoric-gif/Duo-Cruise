@@ -120,8 +120,8 @@ final class PanelView extends ViewGroup {
         logText.setPadding(px(14), px(10), px(14), px(10));
         list = new ListPane(c);
         // 縁の光(Duo Pad の band と同じ三層)。ぼかす二層は View ごと GPU でぼかす。細い線は dispatchDraw で最後に引く
-        glowWide = new GlowLayer(c, 46, 28, 2, +1);  // 広い裾: 模様 2 回、順方向
-        glowMid = new GlowLayer(c, 10, 7, 3, -1);    // 中のにじみ: 模様 3 回、逆方向(干渉で形が変わり続ける)
+        glowWide = new GlowLayer(c, 46, 48, 1, +1);  // 広い裾。Duo Pad の blur 28pt は Android の半径では 48(σ=0.577r+0.5)
+        glowMid = new GlowLayer(c, 10, 11, 1, -1);   // 中のにじみ。blur 7pt → 11。逆方向にゆっくり
         addView(glowWide);
         addView(glowMid);
         addView(title);
@@ -151,10 +151,13 @@ final class PanelView extends ViewGroup {
         frameBox.set(0, 0, getWidth(), getHeight());
         // 開いた瞬間に光がふわっと膨らみ(強く・深く)、すぐ落ち着く
         float burst = intro < 0.35f ? intro / 0.35f * 1.35f : 1.35f - 0.35f * (intro - 0.35f) / 0.65f;
-        float breath = 0.90f + 0.10f * (float) Math.sin(phase * 6 * 2 * Math.PI); // 6 秒で一呼吸
-        glowStrength = 0.55f * burst * breath;              // 普段 0.55(Duo Pad と同じ)
+        glowStrength = 0.55f * burst;                       // 普段 0.55(Duo Pad と同じ)。呼吸はさせない(Duo Pad もしない)
         glowWide.set(0.38f * glowStrength, 0xFFFFFFFF, phase);
         glowMid.set(0.60f * glowStrength, 0xFFFFFFFF, phase);
+        // 応答の光: コマンダーで選んだ行の縁に寄る(Duo Pad が指の近くを灯すのと同じ。半径 260dp、0.15 秒で灯り 0.6 秒で引く)
+        float sk = 0.6f * touchGlow;
+        glowWide.spot(touchX, touchY, 260 * dp, 0.38f * sk);
+        glowMid.spot(touchX, touchY, 260 * dp, 0.60f * sk);
         // 色編集ページ: 今の色・強さを「発光する丸いネオン」として見出しの右にプレビュー
         if (page == NEON_EDIT) drawOrb(cv, host.neonColor(neonWhich) | 0xFF000000, host.neonLevel(neonWhich) / 100f);
     }
@@ -162,7 +165,37 @@ final class PanelView extends ViewGroup {
     @Override protected void dispatchDraw(Canvas cv) {
         super.dispatchDraw(cv);
         // 外側の細い線(1.6dp)。ぼかした二層の上に、くっきりと淡く
-        frameGlow.line(cv, frameBox, dp, Math.min(1f, 1.1f * glowStrength), 0xFFFFFFFF, 2, phase);
+        frameGlow.line(cv, frameBox, dp, Math.min(1f, 1.1f * glowStrength), 0xFFFFFFFF, 1, phase);
+        if (touchGlow > 0) {
+            frameGlow.alpha(Math.min(1f, 1.1f * 0.6f * touchGlow));
+            frameGlow.spot(touchX, touchY, 260 * dp);
+            frameGlow.ribbon(cv, frameBox, NeonGlow.LINE_DP * dp, 0xFFFFFFFF, 0, 0, null, null);
+        }
+    }
+
+    // ───────── 応答の光(操作に答える) ─────────
+
+    private float touchX, touchY, touchGlow;
+    private android.animation.ValueAnimator touchAnim;
+
+    /** 選んだ行の縁(左端・行の中央)に光を寄せる。操作が続く間は灯り、止まると引く。 */
+    private void answer(int row, float peak) {
+        if (row < 0 || row >= list.getChildCount()) return;
+        View r = list.getChildAt(row);
+        touchX = 0;
+        touchY = list.getTop() + r.getTop() + r.getHeight() * 0.5f;
+        if (touchAnim != null) touchAnim.cancel();
+        float from = touchGlow;
+        touchAnim = android.animation.ValueAnimator.ofFloat(0f, 1f);
+        touchAnim.setDuration(150 + 600);
+        touchAnim.setInterpolator(new android.view.animation.LinearInterpolator());
+        touchAnim.addUpdateListener(a -> {
+            float f = (float) a.getAnimatedValue() * 750f;
+            if (f < 150) { float e = f / 150f; touchGlow = from + (peak - from) * (1 - (1 - e) * (1 - e)); } // easeOut で灯る
+            else { float e = (f - 150) / 600f; touchGlow = peak * (float) (0.5 + 0.5 * Math.cos(Math.PI * e)); } // easeInOut で引く
+            invalidate();
+        });
+        touchAnim.start();
     }
 
     /** 発光する丸いネオン(オーブ)。色と強さを反映。NEON_EDIT のプレビューに使う。 */
@@ -211,7 +244,7 @@ final class PanelView extends ViewGroup {
         introAnim.addUpdateListener(a -> { intro = (float) a.getAnimatedValue(); invalidate(); });
         introAnim.start();
         shimmer = android.animation.ValueAnimator.ofFloat(0f, 1f);
-        shimmer.setDuration(36000); // 明るさの並びが 36 秒で縁を一周(10°/秒。Duo Pad の 8°/秒に揃える)
+        shimmer.setDuration(72000); // 模様が 72 秒で縁を一周(約 55px/秒。Duo Pad の長辺での速さに揃える)
         shimmer.setRepeatCount(android.animation.ValueAnimator.INFINITE);
         shimmer.setInterpolator(new android.view.animation.LinearInterpolator());
         shimmer.addUpdateListener(a -> { phase = (float) a.getAnimatedValue(); invalidate(); list.invalidate(); });
@@ -387,6 +420,7 @@ final class PanelView extends ViewGroup {
         list.getChildAt(focus).requestFocus();
         list.requestLayout();  // タッチ操作中はフォーカスが付かないこともあるので、必ず描き直す
         refresh();
+        answer(focus, 1f);
     }
 
     // ───────── キー(コマンダー) ─────────
@@ -439,6 +473,7 @@ final class PanelView extends ViewGroup {
      */
     private void activate(int idx) {
         if (idx < 0 || idx >= items.size()) return;
+        answer(idx, 1.5f); // 決定は少し強く
         Item it = items.get(idx);
         if (it.slider != null) { editing = (editing == idx) ? -1 : idx; refresh(); }
         else { editing = -1; it.run.run(); refresh(); }
