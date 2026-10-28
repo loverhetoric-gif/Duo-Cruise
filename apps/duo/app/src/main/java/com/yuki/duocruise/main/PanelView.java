@@ -151,7 +151,7 @@ final class PanelView extends ViewGroup {
         frameBox.set(0, 0, getWidth(), getHeight());
         // 開いた瞬間に光がふわっと膨らみ(強く・深く)、すぐ落ち着く
         float burst = intro < 0.35f ? intro / 0.35f * 1.35f : 1.35f - 0.35f * (intro - 0.35f) / 0.65f;
-        glowStrength = 0.55f * burst;                       // 普段 0.55(Duo Pad と同じ)。呼吸はさせない(Duo Pad もしない)
+        glowStrength = 0.30f * burst;                       // 普段は控えめ(0.30)。応答の光(+0.6)が立つ余地を残す。呼吸はさせない
         glowWide.set(0.38f * glowStrength, 0xFFFFFFFF, phase);
         glowMid.set(0.60f * glowStrength, 0xFFFFFFFF, phase);
         // 応答の光: コマンダーで選んだ行の縁に寄る(Duo Pad が指の近くを灯すのと同じ。半径 260dp、0.15 秒で灯り 0.6 秒で引く)
