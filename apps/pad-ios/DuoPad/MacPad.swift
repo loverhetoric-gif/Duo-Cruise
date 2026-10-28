@@ -225,6 +225,7 @@ struct CommanderDial: View {
 struct CaptureArea: NSViewRepresentable {
     @Binding var captured: Bool
     var sensitivity: Double
+    var active: Bool = true           // false のときはキャプチャしない(コマンダー表示中など)
     var send: (String) -> Void
 
     func makeNSView(context: Context) -> CaptureView {
@@ -236,12 +237,15 @@ struct CaptureArea: NSViewRepresentable {
     func updateNSView(_ v: CaptureView, context: Context) {
         v.send = send
         v.sensitivity = sensitivity
+        v.active = active
+        if !active { v.release() }
     }
 }
 
 final class CaptureView: NSView {
     var send: (String) -> Void = { _ in }
     var sensitivity = 1.0
+    var active = true
     var onCapture: (Bool) -> Void = { _ in }
     private var captured = false
     private var pressed = false, dragging = false
