@@ -26,7 +26,7 @@ targets:
           UIColorName: LaunchBackground  # 標準の起動画面は背景色だけ(昼は白・夜は黒)。演出は直後の Splash で出す
         UIRequiresFullScreen: true
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
-        NSLocalNetworkUsageDescription: 車の中の Wi-Fi で Duo Cruise(OTTO)に直接つないで、タッチパッドとして操作するために使います。
+        NSLocalNetworkUsageDescription: 同じ Wi-Fi にある接続先を見つけて、タッチパッドとして操作するために使います。
         NSBonjourServices: [_duopad._tcp]
     settings:
       base:

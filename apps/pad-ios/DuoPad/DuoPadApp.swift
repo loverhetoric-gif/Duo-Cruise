@@ -271,10 +271,10 @@ struct SettingsSheet: View {
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
                 } header: { Text("接続先の指定(通常は不要)") } footer: {
-                    Text("通常は空欄のままにしてください。車の Wi-Fi から OTTO を自動で見つけます。うまくつながらないときだけ、OTTO の IP アドレスを入力します。")
+                    Text("通常は空欄のままにしてください。接続先は自動で見つかります。うまくつながらないときだけ、接続先の IP アドレスを入力します。")
                 }
                 Section("接続") {
-                    Button("OTTO に接続し直す") { link.restart() }
+                    Button("再接続") { link.restart() }
                 }
             }
             .navigationTitle("Duo Slate の設定")
