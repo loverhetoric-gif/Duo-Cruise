@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- apps/duo/i18n/gen.py が strings.py から書き出す。直接は直さない -->
+<resources>
+    <string name="cp_perm">CarPlay benötigt weitere Berechtigungen\nErlauben Sie sie unter Menü › System › Android-Einstellungen öffnen</string>
+    <string name="cp_failed">Keine Verbindung zum iPhone\nVerbindung wird automatisch erneut hergestellt</string>
+    <string name="cp_ended">CarPlay getrennt\nVerbindung wird automatisch erneut hergestellt</string>
+    <string name="cp_waiting">Warten auf das iPhone\nSchalten Sie am iPhone Bluetooth und WLAN ein</string>
+    <string name="cp_connecting">Verbindung zum iPhone wird hergestellt</string>
+    <string name="cp_starting">CarPlay wird gestartet</string>
+    <string name="cp_stopped">CarPlay ist gestoppt</string>
+    <string name="cp_preparing">CarPlay wird vorbereitet</string>
+    <string name="cp_wifi_ask">Geben Sie das Passwort für das OTTO-WLAN „%1$s“\nmit der Duo-Slate-Tastatur ein und drücken Sie Return\n%2$s</string>
+    <string name="cp_wifi_len">Das Passwort muss 8–63 Zeichen lang sein. Bitte erneut eingeben\n%s</string>
+    <string name="cp_empty">(noch nichts eingegeben)</string>
+    <string name="cp_count">(%d Zeichen)</string>
+</resources>

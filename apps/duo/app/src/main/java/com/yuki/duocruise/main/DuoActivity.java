@@ -79,6 +79,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
         DuoLog.init(this);
+        Tx.init(this);
         Crash.install(this);
         // 二重に開かれたら、前の画面を閉じる(CarPlay の Wi-Fi・Bluetooth とタッチパッドの口を取り合わないように)
         DuoActivity old = live;
@@ -315,7 +316,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
 
     @Override public void action(KeyMap.Action a) {
         if (guiding()) return; // 案内の間は、裏の画面を動かさない
-        DuoLog.log("ボタン操作: " + a.label);
+        DuoLog.log("ボタン操作: " + a.label());
         switch (a) {
             case SWITCH_SIDE: switchSide(); break;
             case SWAP: swap(); break;
@@ -342,7 +343,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         keyMap.set(a, code, gesture, true);
         Store.setKeyMap(this, keyMap);
         router.setMap(keyMap);
-        DuoLog.log("割り当て: " + a.label + " = " + keyMap.describe(a) + "(" + keyMap.serialize() + ")");
+        DuoLog.log("割り当て: " + a.label() + " = " + keyMap.describe(a) + "(" + keyMap.serialize() + ")");
         if (panel.getVisibility() == View.VISIBLE) panel.refresh();
     }
 
@@ -521,7 +522,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     @Override public String navYtText() { int y = Store.navYt(this); return "YouTube " + y + "% ／ CarPlay " + (100 - y) + "%"; }
     @Override public boolean autoSplitOn() { return Store.autoSplit(this); }
     @Override public boolean autoSwapOn() { return Store.autoSwap(this); }
-    @Override public String navHoldText() { return (Store.navHoldMs(this) / 1000) + " 秒"; }
+    @Override public String navHoldText() { return Tx.s(R.string.seconds, Store.navHoldMs(this) / 1000); }
 
     /** 1画面と2画面の切り替え。1画面では操作中の側だけを出し、押し込み2回で YouTube だけ⇔マップだけになる。 */
     void toggleSingle() {
@@ -648,7 +649,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
 
     @Override public String otherHomeName() {
         ComponentName c = otherHome();
-        if (c == null) return "見つかりません";
+        if (c == null) return Tx.s(R.string.not_found);
         try { return String.valueOf(getPackageManager().getActivityInfo(c, 0).loadLabel(getPackageManager())); }
         catch (Exception e) { return c.getPackageName(); }
     }
@@ -710,12 +711,12 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     }
 
     @Override public String layoutText() {
-        if (Store.single(this)) return active().name() + " のみ表示";
-        return Store.swapped(this) ? "左 YouTube ／ 右 CarPlay" : "左 CarPlay ／ 右 YouTube";
+        if (Store.single(this)) return Tx.s(R.string.layout_single, active().name());
+        return Tx.s(Store.swapped(this) ? R.string.layout_rl : R.string.layout_lr);
     }
 
     @Override public String sideText() {
-        return (Store.side(this) == SplitGeometry.SIDE_LEFT ? "左" : "右") + "（" + active().name() + "）";
+        return Tx.s(Store.side(this) == SplitGeometry.SIDE_LEFT ? R.string.side_left : R.string.side_right, active().name());
     }
 
     @Override public KeyMap keyMap() { return keyMap; }
@@ -725,7 +726,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         router.setLearning(true);
         main.removeCallbacks(learnTimeout);
         main.postDelayed(learnTimeout, 10_000);
-        DuoLog.log("割り当ての登録: 「" + a.label + "」にするボタンを押してください(短く/長く)");
+        DuoLog.log("割り当ての登録: 「" + a.label() + "」にするボタンを押してください(短く/長く)");
     }
 
     @Override public void cancelLearn() {

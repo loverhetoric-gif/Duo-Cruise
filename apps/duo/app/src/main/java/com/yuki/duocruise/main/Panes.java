@@ -112,7 +112,7 @@ final class Panes {
             this.name = name;
             this.why = why;
             v = new TextView(c);
-            v.setText(name + " を開けませんでした\n" + why);
+            v.setText(Tx.s(R.string.pane_failed, name, why));
             v.setTextColor(Theme.SUB);
             v.setTextSize(15);
             v.setGravity(Gravity.CENTER);

@@ -16,6 +16,7 @@ import android.view.SurfaceView
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.TextView
+import com.shilapi.xcertplay.shared.R
 import com.shilapi.xcertplay.AirPlayPersistence
 import com.shilapi.xcertplay.airplay.AirPlayConfig
 import com.shilapi.xcertplay.airplay.AirPlayDisplayConfig
@@ -284,7 +285,8 @@ class CarPlayPane(context: Context, private val listener: Listener?) {
             KeyEvent.KEYCODE_DEL -> if (buf.isNotEmpty()) buf.setLength(buf.length - 1)
             KeyEvent.KEYCODE_ENTER -> {
                 if (buf.length !in 8..63) {
-                    setStatus("パスワードは 8〜63 文字です。もう一度入れてください\n" + dots(buf.length))
+                    typingText = app.getString(R.string.cp_wifi_len, dots(buf.length))
+                    setStatus("パスワードは 8〜63 文字です。もう一度入れてください")
                     return
                 }
                 app.getSharedPreferences(WIFI_PREFS, Context.MODE_PRIVATE).edit()
@@ -322,13 +324,14 @@ class CarPlayPane(context: Context, private val listener: Listener?) {
 
     private fun showTyping() {
         val n = typing?.length ?: 0
-        setStatus(
-            "OTTO の Wi-Fi「$OTTO_AP_SSID」のパスワードを\n" +
-                "Duo Pad のキーボードで入れて、Return を押してください\n" + dots(n),
-        )
+        typingText = app.getString(R.string.cp_wifi_ask, OTTO_AP_SSID, dots(n))
+        setStatus("OTTO の Wi-Fi「$OTTO_AP_SSID」のパスワード待ち($n 文字)")
     }
 
-    private fun dots(n: Int) = if (n == 0) "(まだ何も入っていません)" else "●".repeat(n) + "($n 文字)"
+    private fun dots(n: Int) = if (n == 0) app.getString(R.string.cp_empty) else "●".repeat(n) + app.getString(R.string.cp_count, n)
+
+    /** パスワード入力中に枠へ出す文(端末の言語)。 */
+    private var typingText: String? = null
 
     /**
      * コマンダーのキーを CarPlay へ渡す。渡した(このキーを使った)時は true。
@@ -554,15 +557,15 @@ class CarPlayPane(context: Context, private val listener: Listener?) {
      * 失敗・切断は Duo Cruise が自動でつなぎ直すので、そのことを伝える(英語の内部メッセージは出さない)。
      */
     private fun forPeople(s: String): String = when {
-        s.startsWith("権限が足りません") -> "CarPlay を使う許可が足りません\nメニュー › システム › Android の設定を開く から許可してください"
-        s.startsWith("パスワード") || s.contains("文字です") -> s
-        s.startsWith("失敗") || s.startsWith("始められません") -> "iPhone とつながりませんでした\n自動でつなぎ直しています"
-        s.startsWith("CarPlay が切れました") || s.startsWith("iPhone との接続が終わりました") -> "CarPlay が切れました\n自動でつなぎ直しています"
-        s.startsWith("ペアリング済みの iPhone") -> "iPhone を待っています\niPhone の Bluetooth と Wi-Fi をオンにしてください"
-        s.startsWith("Bluetooth で iPhone") -> "iPhone に接続しています"
-        s.startsWith("iPhone と準備中") || s.startsWith("無線 CarPlay") || s.startsWith("CarPlay 表示中") -> "CarPlay を開始しています"
-        s == "停止中" -> "CarPlay は停止しています"
-        else -> "CarPlay を準備しています"
+        s.startsWith("権限が足りません") -> app.getString(R.string.cp_perm)
+        s.startsWith("パスワード") || s.startsWith("OTTO の Wi-Fi") -> typingText ?: s
+        s.startsWith("失敗") || s.startsWith("始められません") -> app.getString(R.string.cp_failed)
+        s.startsWith("CarPlay が切れました") || s.startsWith("iPhone との接続が終わりました") -> app.getString(R.string.cp_ended)
+        s.startsWith("ペアリング済みの iPhone") -> app.getString(R.string.cp_waiting)
+        s.startsWith("Bluetooth で iPhone") -> app.getString(R.string.cp_connecting)
+        s.startsWith("iPhone と準備中") || s.startsWith("無線 CarPlay") || s.startsWith("CarPlay 表示中") -> app.getString(R.string.cp_starting)
+        s == "停止中" -> app.getString(R.string.cp_stopped)
+        else -> app.getString(R.string.cp_preparing)
     }
 
     private fun record(kind: String, text: String) {

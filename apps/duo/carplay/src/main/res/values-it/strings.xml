@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- apps/duo/i18n/gen.py が strings.py から書き出す。直接は直さない -->
+<resources>
+    <string name="cp_perm">CarPlay richiede altre autorizzazioni\nConsentile in Menu › Sistema › Apri impostazioni Android</string>
+    <string name="cp_failed">Impossibile collegarsi all’iPhone\nRiconnessione automatica in corso</string>
+    <string name="cp_ended">CarPlay disconnesso\nRiconnessione automatica in corso</string>
+    <string name="cp_waiting">In attesa dell’iPhone\nAttiva Bluetooth e Wi-Fi sull’iPhone</string>
+    <string name="cp_connecting">Connessione all’iPhone</string>
+    <string name="cp_starting">Avvio di CarPlay</string>
+    <string name="cp_stopped">CarPlay è interrotto</string>
+    <string name="cp_preparing">Preparazione di CarPlay</string>
+    <string name="cp_wifi_ask">Inserisci la password del Wi-Fi OTTO “%1$s”\ncon la tastiera di Duo Slate, poi premi Invio\n%2$s</string>
+    <string name="cp_wifi_len">La password deve contenere 8–63 caratteri. Riprova\n%s</string>
+    <string name="cp_empty">(ancora nessun carattere)</string>
+    <string name="cp_count">(%d caratteri)</string>
+</resources>

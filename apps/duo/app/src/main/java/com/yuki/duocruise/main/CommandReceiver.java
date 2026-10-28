@@ -40,7 +40,7 @@ public class CommandReceiver extends BroadcastReceiver {
         if (cmd.equals("keys")) {
             KeyMap m = Store.keyMap(c);
             StringBuilder b = new StringBuilder("keys:");
-            for (KeyMap.Action a : KeyMap.Action.values()) b.append(' ').append(a.label).append('=').append(m.describe(a)).append(';');
+            for (KeyMap.Action a : KeyMap.Action.values()) b.append(' ').append(a.label()).append('=').append(m.describe(a)).append(';');
             b.append(" 文字列=").append(m.serialize()).append(" 長押し=").append(Store.longMs(c)).append("ms");
             DuoLog.result(b.toString());
             return;

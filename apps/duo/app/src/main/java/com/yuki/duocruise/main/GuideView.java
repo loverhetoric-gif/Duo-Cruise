@@ -25,15 +25,12 @@ import android.view.View;
  * 最後に押すと、文字が引いて、地が透けるように 2 画面が現れ、縁に光がひと巡りして落ち着く。
  */
 final class GuideView extends View {
-    private static final String[][] PAGES = {
-        { "ふたつの画面を、ひとつに",
-          "左に CarPlay、右に YouTube。\n地図を見ながら、映像も楽しめます。" },
-        { "iPhone と接続する",
-          "iPhone の Bluetooth と Wi-Fi をオンにして、\n［設定］›［一般］›［CarPlay］から「Duo Cruise」を選択してください。\n次回からは、エンジンを始動するだけで自動的に接続されます。" },
-        { "コマンダーで操作する",
-          "回す・倒す\t項目を選ぶ\n押す\t決定する\n2 回押す\t操作する画面を切り替える\n3 回押す\tメニューを開く\n戻るを 2 回\t左右の画面を入れ替える\n戻るを 3 回\t1 画面と 2 画面を切り替える" },
-        { "iPhone から YouTube を再生する",
-          "iPhone の YouTube で動画を開き、キャストボタンから\n「Duo Cruise」を選ぶと、この画面で再生が始まります。" },
+    /** ページ: 見出しと本文の文言(res/values-*\/strings.xml)。本文の「操作\t意味」は二段組み。 */
+    private static final int[][] PAGES = {
+        { R.string.g1_t, R.string.g1_b },
+        { R.string.g2_t, R.string.g2_b },
+        { R.string.g3_t, R.string.g3_r1, R.string.g3_r2, R.string.g3_r3, R.string.g3_r4, R.string.g3_r5, R.string.g3_r6 },
+        { R.string.g4_t, R.string.g4_b },
     };
     /** ロゴと同じ差し色(暖色 → 寒色)。 */
     private static final int WARM_A = 0xFFFFA347, WARM_B = 0xFFFF5C3C, COOL_A = 0xFF3CA8FF, COOL_B = 0xFF2860F0;
@@ -212,7 +209,7 @@ final class GuideView extends View {
         }
         line.setShader(null);
         hint.setAlpha(Math.round(alphaOf(sub) * content));
-        cv.drawText(page == PAGES.length - 1 ? "押して開始" : "押して次へ", w - pad, by + hint.getTextSize() * 0.35f, hint);
+        cv.drawText(Tx.s(page == PAGES.length - 1 ? R.string.g_start : R.string.g_next), w - pad, by + hint.getTextSize() * 0.35f, hint);
     }
 
     private static int alphaOf(int c) { return (c >>> 24) & 0xFF; }
@@ -220,16 +217,22 @@ final class GuideView extends View {
     /** 1 ページ。dx だけ横にずらし、a の濃さで描く。 */
     private void drawPage(Canvas cv, int p, int w, int h, float dx, float a) {
         if (a <= 0.001f) return;
-        String[] pg = PAGES[p];
-        String[] lines = pg[1].split("\n");
+        int[] pg = PAGES[p];
+        StringBuilder text = new StringBuilder();
+        for (int i = 1; i < pg.length; i++) { if (i > 1) text.append('\n'); text.append(Tx.s(pg[i])); }
+        String head = Tx.s(pg[0]);
+        String[] lines = text.toString().split("\n");
         float left = 68 * dp + dx;
         float lineH = body.getTextSize() * 1.75f;
         float blockH = title.getTextSize() + 30 * dp + (lines.length - 1) * lineH + body.getTextSize();
         float y = (h - blockH) / 2f + title.getTextSize() * 0.86f;
         title.setAlpha(Math.round(255 * a));
-        cv.drawText(pg[0], left, y, title);
+        cv.drawText(head, left, y, title);
         y += 30 * dp + body.getTextSize();
         int baseSub = alphaOf(sub);
+        float col = 0; // 二段組みの右の列の位置(左の列のいちばん長い語 ＋ 余白)
+        for (String l : lines) { int t = l.indexOf('\t'); if (t > 0) col = Math.max(col, body.measureText(l.substring(0, t))); }
+        col += 36 * dp;
         for (String l : lines) {
             int tab = l.indexOf('\t'); // 「操作\t意味」は二段組み。操作は濃く、意味は薄く
             if (tab < 0) { body.setColor(sub); body.setAlpha(Math.round(baseSub * a)); cv.drawText(l, left, y, body); }
@@ -237,7 +240,7 @@ final class GuideView extends View {
                 body.setColor(ink); body.setAlpha(Math.round(255 * a));
                 cv.drawText(l.substring(0, tab), left, y, body);
                 body.setColor(sub); body.setAlpha(Math.round(baseSub * a));
-                cv.drawText(l.substring(tab + 1), left + 180 * dp, y, body);
+                cv.drawText(l.substring(tab + 1), left + col, y, body);
             }
             y += lineH;
         }

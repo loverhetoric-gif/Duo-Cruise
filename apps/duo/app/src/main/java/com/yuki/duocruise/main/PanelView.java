@@ -139,6 +139,9 @@ final class PanelView extends ViewGroup {
 
     private int px(float v) { return Math.round(v * dp); }
 
+    /** 画面の文言(端末の言語に合わせる)。 */
+    private String T(int id, Object... args) { return Tx.s(id, args); }
+
     private TextView text(float sp, int color, boolean bold) {
         TextView t = new TextView(getContext());
         t.setTextSize(TypedValue.COMPLEX_UNIT_SP, sp);
@@ -270,71 +273,71 @@ final class PanelView extends ViewGroup {
         focus = 0;
         editing = -1;
         if (p == MAIN) {
-            title.setText("メニュー");
-            items.add(new Item(() -> "画面", () -> GO, () -> show(DISPLAY)));
-            items.add(new Item(() -> "操作・カスタマイズ", () -> GO, () -> show(CONTROLS)));
-            items.add(new Item(() -> "システム", () -> GO, () -> show(SYS)));
-            items.add(new Item(() -> host.carOn() ? "CarPlay を終了" : "CarPlay を開始",
-                    () -> host.carOn() ? "接続中" : "停止中", host::toggleCar, true));
-            items.add(new Item(() -> "メニューを閉じる", () -> "", host::closePanel));
+            title.setText(T(R.string.menu_title));
+            items.add(new Item(() -> T(R.string.m_display), () -> GO, () -> show(DISPLAY)));
+            items.add(new Item(() -> T(R.string.m_controls), () -> GO, () -> show(CONTROLS)));
+            items.add(new Item(() -> T(R.string.m_system), () -> GO, () -> show(SYS)));
+            items.add(new Item(() -> host.carOn() ? T(R.string.m_car_stop) : T(R.string.m_car_start),
+                    () -> host.carOn() ? T(R.string.v_connected) : T(R.string.v_stopped), host::toggleCar, true));
+            items.add(new Item(() -> T(R.string.m_close), () -> "", host::closePanel));
         } else if (p == DISPLAY) {
-            title.setText("画面");
-            items.add(new Item(() -> "操作対象の画面", host::sideText, host::switchSide, true));
-            items.add(new Item(() -> "画面の配置", host::layoutText, host::swap, true));
-            items.add(new Item(() -> "画面分割とナビ連動", () -> GO, () -> show(SPLIT)));
-            items.add(back("メニューへ"));
+            title.setText(T(R.string.m_display));
+            items.add(new Item(() -> T(R.string.d_target), host::sideText, host::switchSide, true));
+            items.add(new Item(() -> T(R.string.d_layout), host::layoutText, host::swap, true));
+            items.add(new Item(() -> T(R.string.d_split), () -> GO, () -> show(SPLIT)));
+            items.add(back(T(R.string.to_menu)));
         } else if (p == CONTROLS) {
-            title.setText("操作・カスタマイズ");
-            items.add(new Item(() -> "コマンダーのボタン割り当て", () -> GO, () -> show(KEYS)));
-            items.add(new Item(() -> "ネオンの色・強さ", () -> GO, () -> show(NEON)));
-            items.add(back("メニューへ"));
+            title.setText(T(R.string.m_controls));
+            items.add(new Item(() -> T(R.string.c_keys), () -> GO, () -> show(KEYS)));
+            items.add(new Item(() -> T(R.string.c_neon), () -> GO, () -> show(NEON)));
+            items.add(back(T(R.string.to_menu)));
         } else if (p == KEYS) {
-            title.setText("コマンダーのボタン割り当て");
+            title.setText(T(R.string.c_keys));
             for (KeyMap.Action a : KeyMap.Action.values()) {
-                items.add(new Item(() -> a.label,
-                        () -> host.learning() == a ? "▶ ボタンを押してください（連続1〜4回、または長押し）" : host.keyMap().describe(a),
+                items.add(new Item(() -> a.label(),
+                        () -> host.learning() == a ? T(R.string.k_waiting) : host.keyMap().describe(a),
                         () -> { host.startLearn(a); refresh(); }));
             }
-            items.add(new Item(() -> "割り当てを初期状態に戻す", () -> "", () -> { host.resetKeys(); refresh(); }));
-            items.add(back("操作・カスタマイズへ"));
+            items.add(new Item(() -> T(R.string.k_reset), () -> "", () -> { host.resetKeys(); refresh(); }));
+            items.add(back(T(R.string.to_controls)));
         } else if (p == SYS) {
-            title.setText("システム");
-            items.add(new Item(() -> "メニューの表示範囲", () -> host.panelHalf() ? "操作中の画面のみ" : "画面全体", host::togglePanelHalf, true));
-            items.add(new Item(() -> "ユーザー補助", () -> host.accessOn() ? "オン" : "オフ", host::openAccessibility));
-            items.add(new Item(() -> "ホームアプリ", () -> host.isDefaultHome() ? "Duo Cruise" : host.otherHomeName(), host::chooseHome));
-            items.add(new Item(() -> "Android の設定を開く", () -> "", host::openSettings));
-            items.add(new Item(() -> "起動音", () -> host.bootSound() ? "オン" : "オフ", () -> { host.toggleBootSound(); refresh(); }, true));
-            items.add(new Item(() -> "はじめての案内", () -> "", host::showGuide));
-            items.add(new Item(() -> "動作記録", () -> GO, () -> show(LOG)));
-            items.add(new Item(() -> "ホーム画面を開く", host::otherHomeName, host::goHome));
-            items.add(back("メニューへ"));
+            title.setText(T(R.string.m_system));
+            items.add(new Item(() -> T(R.string.s_range), () -> host.panelHalf() ? T(R.string.v_active_only) : T(R.string.v_full), host::togglePanelHalf, true));
+            items.add(new Item(() -> T(R.string.s_access), () -> host.accessOn() ? T(R.string.on) : T(R.string.off), host::openAccessibility));
+            items.add(new Item(() -> T(R.string.s_home), () -> host.isDefaultHome() ? "Duo Cruise" : host.otherHomeName(), host::chooseHome));
+            items.add(new Item(() -> T(R.string.s_settings), () -> "", host::openSettings));
+            items.add(new Item(() -> T(R.string.s_bootsound), () -> host.bootSound() ? T(R.string.on) : T(R.string.off), () -> { host.toggleBootSound(); refresh(); }, true));
+            items.add(new Item(() -> T(R.string.s_guide), () -> "", host::showGuide));
+            items.add(new Item(() -> T(R.string.s_log), () -> GO, () -> show(LOG)));
+            items.add(new Item(() -> T(R.string.s_open_home), host::otherHomeName, host::goHome));
+            items.add(back(T(R.string.to_menu)));
         } else if (p == SPLIT) {
-            title.setText("画面分割とナビ連動");
-            items.add(new Item(() -> "通常の分割比", () -> {}, pctSlider(true)));
-            items.add(new Item(() -> "ナビ案内中に自動で調整", () -> host.autoSplitOn() ? "オン" : "オフ", () -> { host.toggleAutoSplit(); refresh(); }, true));
-            items.add(new Item(() -> "ナビ案内中の分割比", () -> {}, pctSlider(false)));
-            items.add(new Item(() -> "ナビ案内中は地図を右に配置", () -> host.autoSwapOn() ? "オン" : "オフ", () -> { host.toggleAutoSwap(); refresh(); }, true));
-            items.add(new Item(() -> "通常の配置に戻るまでの時間", host::navHoldText, () -> { host.cycleNavHold(); refresh(); }, true));
-            items.add(back("画面へ"));
+            title.setText(T(R.string.d_split));
+            items.add(new Item(() -> T(R.string.sp_normal), () -> {}, pctSlider(true)));
+            items.add(new Item(() -> T(R.string.sp_auto), () -> host.autoSplitOn() ? T(R.string.on) : T(R.string.off), () -> { host.toggleAutoSplit(); refresh(); }, true));
+            items.add(new Item(() -> T(R.string.sp_nav), () -> {}, pctSlider(false)));
+            items.add(new Item(() -> T(R.string.sp_swap), () -> host.autoSwapOn() ? T(R.string.on) : T(R.string.off), () -> { host.toggleAutoSwap(); refresh(); }, true));
+            items.add(new Item(() -> T(R.string.sp_hold), host::navHoldText, () -> { host.cycleNavHold(); refresh(); }, true));
+            items.add(back(T(R.string.to_display)));
         } else if (p == NEON) {
-            title.setText("ネオンの色・強さ");
-            items.add(new Item(() -> "ターゲット切替", () -> host.neonColorText(0), () -> { neonWhich = 0; show(NEON_EDIT); }));
-            items.add(new Item(() -> "接続完了", () -> host.neonColorText(1), () -> { neonWhich = 1; show(NEON_EDIT); }));
-            items.add(new Item(() -> "接続不良", () -> host.neonColorText(2), () -> { neonWhich = 2; show(NEON_EDIT); }));
-            items.add(back("操作・カスタマイズへ"));
+            title.setText(T(R.string.c_neon));
+            items.add(new Item(() -> T(R.string.n_target), () -> host.neonColorText(0), () -> { neonWhich = 0; show(NEON_EDIT); }));
+            items.add(new Item(() -> T(R.string.n_ok), () -> host.neonColorText(1), () -> { neonWhich = 1; show(NEON_EDIT); }));
+            items.add(new Item(() -> T(R.string.n_alert), () -> host.neonColorText(2), () -> { neonWhich = 2; show(NEON_EDIT); }));
+            items.add(back(T(R.string.to_controls)));
         } else if (p == NEON_EDIT) {
-            title.setText(neonWhich == 0 ? "ターゲット切替の色" : neonWhich == 1 ? "接続完了の色" : "接続不良の色");
-            items.add(new Item(() -> "赤 (R)", () -> {}, channelSlider(0)));
-            items.add(new Item(() -> "緑 (G)", () -> {}, channelSlider(1)));
-            items.add(new Item(() -> "青 (B)", () -> {}, channelSlider(2)));
-            items.add(new Item(() -> "発光の強さ", () -> {}, levelSlider()));
-            items.add(back("ネオンの色・強さへ"));
+            title.setText(neonWhich == 0 ? T(R.string.n_target_color) : neonWhich == 1 ? T(R.string.n_ok_color) : T(R.string.n_alert_color));
+            items.add(new Item(() -> T(R.string.ne_r), () -> {}, channelSlider(0)));
+            items.add(new Item(() -> T(R.string.ne_g), () -> {}, channelSlider(1)));
+            items.add(new Item(() -> T(R.string.ne_b), () -> {}, channelSlider(2)));
+            items.add(new Item(() -> T(R.string.ne_level), () -> {}, levelSlider()));
+            items.add(back(T(R.string.to_neon)));
         } else {
-            title.setText("動作記録");
+            title.setText(T(R.string.s_log));
             logPage = 0;
-            items.add(new Item(() -> "新しい記録へ", () -> "", () -> { logPage = Math.max(0, logPage - 1); refresh(); }));
-            items.add(new Item(() -> "古い記録へ", () -> "", () -> { logPage++; refresh(); }));
-            items.add(back("システムへ"));
+            items.add(new Item(() -> T(R.string.log_newer), () -> "", () -> { logPage = Math.max(0, logPage - 1); refresh(); }));
+            items.add(new Item(() -> T(R.string.log_older), () -> "", () -> { logPage++; refresh(); }));
+            items.add(back(T(R.string.to_system)));
         }
         rebuildRows();
         logText.setVisibility(p == LOG ? VISIBLE : GONE);
@@ -421,6 +424,7 @@ final class PanelView extends ViewGroup {
             // 車載: 項目と詳細は離さない。項目の列は固定幅、詳細はそのすぐ右に左寄せで置く(視線が一度で届く)
             TextView label = text(19, Theme.TEXT, true);
             label.setGravity(Gravity.CENTER_VERTICAL);
+            label.setEllipsize(android.text.TextUtils.TruncateAt.END); // 長い言語(独・仏など)で列からはみ出さない
             r.addView(label, new LinearLayout.LayoutParams(px(LABEL_COL), LayoutParams.MATCH_PARENT));
 
             TextView value = text(14, VALUE, false);
@@ -485,8 +489,8 @@ final class PanelView extends ViewGroup {
                 if (sb.length() > 0) sb.append('\n');
                 sb.append(all.get(i));
             }
-            logText.setText(sb.length() == 0 ? "記録はまだありません" : sb.toString());
-            title.setText("動作記録 " + (logPage + 1) + "/" + (maxPage + 1));
+            logText.setText(sb.length() == 0 ? T(R.string.log_empty) : sb.toString());
+            title.setText(T(R.string.log_title, logPage + 1, maxPage + 1));
         }
     }
 
@@ -598,7 +602,7 @@ final class PanelView extends ViewGroup {
 
     /** 「戻る」の行。押すと1つ上のページへ。label に戻り先を書いて導線にする。 */
     private Item back(String label) {
-        return new Item(() -> "戻る", () -> label, this::back);
+        return new Item(() -> T(R.string.back), () -> label, this::back);
     }
 
     // ───────── スライダーの中身 ─────────
