@@ -43,19 +43,29 @@ final class PadLink: ObservableObject {
 
     var manualHost: String {
         get { UserDefaults.standard.string(forKey: "host") ?? "" }
-        set { UserDefaults.standard.set(newValue, forKey: "host"); restart() }
+        set {
+            // 同じ住所のまま設定を閉じたときは、つなぎ直さない
+            let old = manualHost
+            UserDefaults.standard.set(newValue, forKey: "host")
+            if newValue != old { restart() }
+        }
     }
 
     func start() {
         guard stopped else { return }
         stopped = false
         browse()
-        pingTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+        // .common で登録する: 標準モードだと、設定画面のスクロール中にタイマーが止まり、
+        // 4秒を超えると「返事がありません」でつなぎ直してしまうため
+        let ping = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.ping() }
         }
-        statsTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+        let stats = Timer(timeInterval: 30, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.sendStats() }
         }
+        RunLoop.main.add(ping, forMode: .common)
+        RunLoop.main.add(stats, forMode: .common)
+        pingTimer = ping; statsTimer = stats
     }
 
     func stop() {
@@ -99,6 +109,24 @@ final class PadLink: ObservableObject {
                 var name = "Duo Cruise"
                 if case let .service(n, _, _, _) = r.endpoint { name = n }
                 self.connect(to: r.endpoint, name: name)
+            }
+        }
+        b.stateUpdateHandler = { [weak self] st in
+            Task { @MainActor in
+                guard let self, self.browser === b else { return }
+                switch st {
+                case .waiting(let e):
+                    // ローカルネットワークの許可を断られた(-65570)か、Wi-Fi につながっていない
+                    if case .dns(let code) = e, code == -65570 {
+                        self.state = .failed("ローカルネットワークの許可が必要です(iPhone の設定 → Duo Pad → ローカルネットワーク)")
+                    } else {
+                        self.state = .failed("Wi-Fi につながっていません")
+                    }
+                case .failed:
+                    self.drop("探せませんでした")
+                default:
+                    break
+                }
             }
         }
         b.start(queue: queue)
