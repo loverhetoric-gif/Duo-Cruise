@@ -58,7 +58,7 @@ final class SystemPad implements PadServer.Sink {
     SystemPad(AccessibilityService s) {
         svc = s;
         wm = (WindowManager) s.getSystemService(Context.WINDOW_SERVICE);
-        cursor = new Arrow(s);
+        cursor = new PadCursor(s);
         lp = new WindowManager.LayoutParams(
                 WindowManager.LayoutParams.WRAP_CONTENT,
                 WindowManager.LayoutParams.WRAP_CONTENT,
@@ -139,11 +139,22 @@ final class SystemPad implements PadServer.Sink {
                     case "b": svc.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK); break;
                     case "h": svc.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME); break;
                     case "r": svc.performGlobalAction(AccessibilityService.GLOBAL_ACTION_RECENTS); break;
+                    case "m": openDuo(); break; // タスク長押し → Duo Cruise を前面に(設定はその中)
                 }
                 break;
             case "t": case "x": case "e": textUnsupported(); break;
             default: break; // r / h / i などは無視
         }
+    }
+
+    /** 汎用モードでタスク長押し: Duo Cruise を前面に出す(設定メニューはその中)。 */
+    private void openDuo() {
+        try {
+            android.content.Intent i = new android.content.Intent(svc, DuoActivity.class);
+            i.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK | android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            i.putExtra("openMenu", true);
+            svc.startActivity(i);
+        } catch (Throwable t) { DuoLog.error("メニューを開けません " + DuoLog.why(t)); }
     }
 
     private void move(float dx, float dy) {
@@ -276,43 +287,5 @@ final class SystemPad implements PadServer.Sink {
 
     private static float f(String s) { return Float.parseFloat(s); }
 
-    /** 白い矢印に黒い縁。左上の角が指している場所。 */
-    private static final class Arrow extends View {
-        private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG), edge = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final Path arrow = new Path();
-        private final float dp;
 
-        Arrow(Context c) {
-            super(c);
-            dp = c.getResources().getDisplayMetrics().density;
-            fill.setColor(Color.WHITE);
-            edge.setColor(Color.BLACK);
-            edge.setStyle(Paint.Style.STROKE);
-            edge.setStrokeWidth(1.5f * dp);
-            edge.setStrokeJoin(Paint.Join.ROUND);
-            float u = dp;
-            arrow.moveTo(0, 0);
-            arrow.lineTo(0, 17 * u);
-            arrow.lineTo(4.5f * u, 13 * u);
-            arrow.lineTo(7.5f * u, 20 * u);
-            arrow.lineTo(10 * u, 19 * u);
-            arrow.lineTo(7 * u, 12 * u);
-            arrow.lineTo(12.5f * u, 12 * u);
-            arrow.close();
-            setWillNotDraw(false);
-        }
-
-        @Override protected void onMeasure(int wm, int hm) {
-            int s = Math.round(24 * dp);
-            setMeasuredDimension(s, s);
-        }
-
-        @Override protected void onDraw(Canvas cv) {
-            cv.save();
-            cv.translate(1.5f * dp, 1.5f * dp);
-            cv.drawPath(arrow, fill);
-            cv.drawPath(arrow, edge);
-            cv.restore();
-        }
-    }
 }

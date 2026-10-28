@@ -184,6 +184,10 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     @Override protected void onResume() {
         super.onResume();
         front = this;
+        if (getIntent() != null && getIntent().getBooleanExtra("openMenu", false)) {
+            getIntent().removeExtra("openMenu");
+            main.post(() -> openMenu());
+        }
         DuoLog.listener = () -> { if (panel.getVisibility() == View.VISIBLE) panel.refresh(); };
         car.resume();
         tv.resume();
@@ -687,6 +691,9 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
 
     /** スクロール中は、操作する側を切り替えない(2本指スクロールで意図せず切り替わらないように)。 */
     @Override public void scrollActive(boolean on) { root.padScrolling = on; }
+
+    /** タスクボタン長押し: 設定メニューを開く。 */
+    @Override public void openMenu() { if (panel.getVisibility() != View.VISIBLE) openPanel(); }
 
     /** 2本指スクロールは、操作中の画面本来の送り方(YouTube=矢印、CarPlay=ダイヤル)に渡す。 */
     @Override public void scroll(float dx, float dy) { active().scroll(dx, dy); }

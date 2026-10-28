@@ -43,13 +43,15 @@ final class PadInput implements PadServer.Sink {
         void typeKey(int keyCode);
         /** スクロール中(本当のなぞり)。この間は「操作する側」を切り替えない。 */
         void scrollActive(boolean on);
+        /** メニュー(設定)を開く。タスクボタン長押しから。 */
+        void openMenu();
         /** 2本指スクロール(操作中の画面へ)。 */
         void scroll(float dx, float dy);
         void scrollEnd();
     }
 
     private final Host host;
-    private final Cursor cursor;
+    private final PadCursor cursor;
     private final Handler main = new Handler(Looper.getMainLooper());
     private float x = -1, y = -1;
     private long downTime;
@@ -59,7 +61,7 @@ final class PadInput implements PadServer.Sink {
 
     PadInput(Context c, Host host) {
         this.host = host;
-        cursor = new Cursor(c);
+        cursor = new PadCursor(c);
         cursor.setVisibility(View.INVISIBLE);
     }
 
@@ -113,6 +115,7 @@ final class PadInput implements PadServer.Sink {
                     case "b": host.back(); break;
                     case "h": host.globalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_HOME); break;
                     case "r": host.globalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_RECENTS); break;
+                    case "m": host.openMenu(); break; // タスクボタン長押し → 設定
                 }
                 break;
             case "t": if (s.length() > 2) host.typeText(s.substring(2)); break;
@@ -188,42 +191,5 @@ final class PadInput implements PadServer.Sink {
 
     private static float f(String s) { return Float.parseFloat(s); }
 
-    /** カーソル(白い矢印に黒い縁)。左上の角が指している場所。 */
-    private static final class Cursor extends View {
-        private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG), edge = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final Path arrow = new Path();
-        private final float dp;
 
-        Cursor(Context c) {
-            super(c);
-            dp = c.getResources().getDisplayMetrics().density;
-            fill.setColor(Color.WHITE);
-            edge.setColor(Color.BLACK);
-            edge.setStyle(Paint.Style.STROKE);
-            edge.setStrokeWidth(1.5f * dp);
-            edge.setStrokeJoin(Paint.Join.ROUND);
-            float u = dp;
-            arrow.moveTo(0, 0);
-            arrow.lineTo(0, 17 * u);
-            arrow.lineTo(4.5f * u, 13 * u);
-            arrow.lineTo(7.5f * u, 20 * u);
-            arrow.lineTo(10 * u, 19 * u);
-            arrow.lineTo(7 * u, 12 * u);
-            arrow.lineTo(12.5f * u, 12 * u);
-            arrow.close();
-            setWillNotDraw(false);
-        }
-
-        int size() { return Math.round(24 * dp); }
-
-        @Override protected void onMeasure(int w, int h) { setMeasuredDimension(size(), size()); }
-
-        @Override protected void onDraw(Canvas cv) {
-            cv.save();
-            cv.translate(1.5f * dp, 1.5f * dp);
-            cv.drawPath(arrow, fill);
-            cv.drawPath(arrow, edge);
-            cv.restore();
-        }
-    }
 }

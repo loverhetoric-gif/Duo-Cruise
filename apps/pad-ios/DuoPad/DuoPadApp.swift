@@ -74,6 +74,7 @@ struct PadScreen: View {
                     key("arrow.uturn.backward") { link.send("k b") }
                     key("house") { link.send("k h") }
                     key("square.on.square") { link.send("k r") }
+                        .simultaneousGesture(LongPressGesture(minimumDuration: 0.5).onEnded { _ in link.send("k m") }) // 長押しで設定メニュー
                     key(typing ? "keyboard.chevron.compact.down" : "keyboard") { typing.toggle() }
                 }
                 .frame(height: 50)
