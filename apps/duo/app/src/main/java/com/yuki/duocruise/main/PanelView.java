@@ -88,6 +88,9 @@ final class PanelView extends ViewGroup {
     private final TextView title, logText;
     private final ListPane list;
     private final RectF frameBox = new RectF();
+    private final NeonGlow frameGlow = new NeonGlow();
+    private android.animation.ValueAnimator shimmer;
+    float phase = 0; // 発光の揺らぎ(枠・選択行で共有)
     private final List<Item> items = new ArrayList<>();
     private int page = MAIN, focus = 0, logPage = 0, logLines = 8;
 
@@ -126,11 +129,34 @@ final class PanelView extends ViewGroup {
     // ───────── メニュー枠の発光 ─────────
 
     @Override protected void onDraw(Canvas cv) {
-        // メニューを開いている間は、窓の縁を白いネオンで光らせる(車内でも「設定中」がひと目で分かる)
+        // メニューを開いている間は、窓の縁を白いネオンで光らせる(車内でも「設定中」がひと目で分かる)。
+        // Duo Pad と同じく、柔らかい光が縁をゆっくり巡る。
         float m = px(PAD) * 0.6f;
         frameBox.set(m, m, getWidth() - m, getHeight() - m);
-        Theme.neonEdge(cv, frameBox, dp, 22 * dp, 0.7f);
+        frameGlow.draw(cv, frameBox, dp, 24 * dp, 0.85f, Theme.NEON_WHITE, phase);
     }
+
+    @Override protected void onVisibilityChanged(View changed, int visibility) {
+        super.onVisibilityChanged(changed, visibility);
+        if (getVisibility() == VISIBLE && isAttachedToWindow()) startShimmer(); else stopShimmer();
+    }
+
+    @Override protected void onAttachedToWindow() { super.onAttachedToWindow(); if (getVisibility() == VISIBLE) startShimmer(); }
+
+    @Override protected void onDetachedFromWindow() { stopShimmer(); super.onDetachedFromWindow(); }
+
+    /** 発光の“巡り”と明滅を動かす(メニューを開いている間だけ)。 */
+    private void startShimmer() {
+        if (shimmer != null) return;
+        shimmer = android.animation.ValueAnimator.ofFloat(0f, 1f);
+        shimmer.setDuration(2800);
+        shimmer.setRepeatCount(android.animation.ValueAnimator.INFINITE);
+        shimmer.setInterpolator(new android.view.animation.LinearInterpolator());
+        shimmer.addUpdateListener(a -> { phase = (float) a.getAnimatedValue(); invalidate(); list.invalidate(); });
+        shimmer.start();
+    }
+
+    private void stopShimmer() { if (shimmer != null) { shimmer.cancel(); shimmer = null; } }
 
     // ───────── ページの中身 ─────────
 
@@ -412,6 +438,7 @@ final class PanelView extends ViewGroup {
      */
     private final class Row extends LinearLayout {
         private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final NeonGlow glow = new NeonGlow();
         private final RectF box = new RectF();
         private final float insetX = 8 * dp, insetY = 4 * dp, radius = 16 * dp;
         private boolean on;
@@ -436,7 +463,8 @@ final class PanelView extends ViewGroup {
             if (!on) return; // 非選択は文字だけ(箱も枠も出さない)
             box.set(insetX, insetY, getWidth() - insetX, getHeight() - insetY);
             cv.drawRoundRect(box, radius, radius, fill);
-            Theme.neonEdge(cv, box, dp, radius, 1f); // 白いネオンの発光の縁(売りの見た目)
+            // 選択行も、メニュー枠と同じ“巡る”白いネオンで縁取る(売りの見た目・一体感)
+            glow.draw(cv, box, dp, radius, 1f, Theme.NEON_WHITE, PanelView.this.phase);
         }
     }
 

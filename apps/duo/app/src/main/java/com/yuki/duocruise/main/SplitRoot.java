@@ -219,10 +219,11 @@ final class SplitRoot extends ViewGroup {
      * アプリ全体で同じ発光(Theme.neonEdge)を使い、統一感を出す。余計な文字札などは出さない。
      */
     private final class Frame extends View {
-        private static final float STEADY = 0.42f; // 操作中の画面の、常時のほのかな発光の強さ
+        private final NeonGlow glow = new NeonGlow();
         private ValueAnimator glowAnim;
-        private float pulse = 0;                    // 切り替え直後の増光(1→0 へ減衰)
-        private int color = Theme.NEON_WHITE;       // 発光の色(状態で変わる。既定は白)
+        private float pulse = 0;                    // ターゲット切替の瞬間だけ光る(1→0 へ減衰)。常時は出さない
+        private float phase = 0;                     // 発光の揺らぎ
+        private int color = Theme.NEON_WHITE;        // 発光の色(状態で変わる。既定は白)
         /** 入れ替えで動いている間は縁を描かない。 */
         boolean moving;
 
@@ -233,23 +234,28 @@ final class SplitRoot extends ViewGroup {
 
         void setColor(int c) { if (c != color) { color = c; invalidate(); } }
 
+        /** 操作側(ターゲット)を切り替えた瞬間だけ、操作中の画面の縁を柔らかく光らせて消す。 */
         void glow() {
             if (glowAnim != null) glowAnim.cancel();
-            glowAnim = ValueAnimator.ofFloat(1f, 0f);
+            glowAnim = ValueAnimator.ofFloat(0f, 1f);
             glowAnim.setDuration(GLOW_MS);
             glowAnim.setInterpolator(new AccelerateDecelerateInterpolator());
-            glowAnim.addUpdateListener(a -> { pulse = (float) a.getAnimatedValue(); invalidate(); });
+            glowAnim.addUpdateListener(a -> {
+                float f = (float) a.getAnimatedValue();
+                pulse = f < 0.25f ? f / 0.25f : 1 - (f - 0.25f) / 0.75f; // すっと出て、ゆっくり消える
+                phase = f;                                               // その間だけ少し揺らぐ
+                invalidate();
+            });
             glowAnim.start();
         }
 
         @Override protected void onDraw(Canvas cv) {
-            // 操作盤が出ている間、入れ替えで動いている間は、画面の縁は描かない
-            if (moving || (panel != null && panel.getVisibility() == VISIBLE)) return;
+            if (pulse <= 0 || moving || (panel != null && panel.getVisibility() == VISIBLE)) return;
             int w = getWidth(), h = getHeight();
             int[] r = activeRect(w, h);
-            float s = 3 * dp;
+            float s = 6 * dp;
             RectF box = new RectF(r[0] + s, r[1] + s, r[2] - s, r[3] - s);
-            Theme.neonEdge(cv, box, dp, 12 * dp, STEADY + (1 - STEADY) * pulse, color);
+            glow.draw(cv, box, dp, 14 * dp, pulse, color, phase);
         }
     }
 }
