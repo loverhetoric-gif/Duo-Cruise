@@ -64,7 +64,8 @@ final class PanelView extends ViewGroup {
         void resetKeys();
     }
 
-    static final int MAIN = 0, KEYS = 1, LOG = 2, SYS = 3, SPLIT = 4, NEON = 5, NEON_EDIT = 6;
+    static final int MAIN = 0, KEYS = 1, LOG = 2, SYS = 3, SPLIT = 4, NEON = 5, NEON_EDIT = 6, DISPLAY = 7, CONTROLS = 8;
+    private static final String GO = "›"; // 下の階層へ進む導線
 
     private interface Text { String get(); }
     /** 左右(調整モードのダイヤル)で変えるスライダー。value は 0〜max。色のヒントと表示文字も持つ。 */
@@ -85,7 +86,8 @@ final class PanelView extends ViewGroup {
 
     // 寸法(dp)。行は画面高に収まる範囲でできるだけ大きく。
     private static final float ROW_MAX = 72, ROW_GAP = 6, HEADER = 56, PAD = 18, LIST_MAX = 1120;
-    private static final int VALUE = 0xFFBFCBDE; // 黒の透過でも読めるよう、値の文字は明るめ
+    private static final int VALUE = 0xB3FFFFFF;     // 値の文字(白・70%)。青は使わない
+    private static final int LABEL_DIM = 0x8CFFFFFF;  // 非選択のラベル(白・55%)
 
     private final Host host;
     private final float dp;
@@ -107,10 +109,10 @@ final class PanelView extends ViewGroup {
         super(c);
         this.host = host;
         dp = c.getResources().getDisplayMetrics().density;
-        setBackgroundColor(0xC2000000); // 黒の透過(後ろの映像をうっすら通す)
+        setBackgroundColor(0xE0000000); // 黒の透過(視認性のため濃いめ。後ろの映像はうっすら)
         setClickable(true);             // 下の2画面へタッチを通さない
         setWillNotDraw(false);
-        title = text(26, Theme.TEXT, true);
+        title = text(26, Color.WHITE, true);
         logText = text(14, Theme.TEXT, false);
         logText.setTypeface(Typeface.MONOSPACE);
         logText.setPadding(px(14), px(10), px(14), px(10));
@@ -198,17 +200,24 @@ final class PanelView extends ViewGroup {
         focus = 0;
         editing = -1;
         if (p == MAIN) {
-            title.setText("操作メニュー");
-            items.add(new Item(() -> "操作対象の画面", host::sideText, host::switchSide, true));
-            items.add(new Item(() -> "画面の配置", host::layoutText, host::swap, true));
-            items.add(new Item(() -> "画面分割とナビ連動", host::splitYtText, () -> show(SPLIT)));
+            title.setText("メニュー");
+            items.add(new Item(() -> "画面", () -> GO, () -> show(DISPLAY)));
+            items.add(new Item(() -> "操作・カスタマイズ", () -> GO, () -> show(CONTROLS)));
+            items.add(new Item(() -> "システム", () -> GO, () -> show(SYS)));
             items.add(new Item(() -> host.carOn() ? "CarPlay を終了" : "CarPlay を開始",
                     () -> host.carOn() ? "接続中" : "停止中", host::toggleCar, true));
-            items.add(new Item(() -> "コマンダーのボタン割り当て", () -> "操作ごとのボタンを設定", () -> show(KEYS)));
-            items.add(new Item(() -> "動作記録", () -> "状態とエラーの履歴", () -> show(LOG)));
-            items.add(new Item(() -> "ホーム画面を開く", host::otherHomeName, host::goHome));
-            items.add(new Item(() -> "設定", () -> "システム設定とホームアプリ", () -> show(SYS)));
             items.add(new Item(() -> "メニューを閉じる", () -> "", host::closePanel));
+        } else if (p == DISPLAY) {
+            title.setText("画面");
+            items.add(new Item(() -> "操作対象の画面", host::sideText, host::switchSide, true));
+            items.add(new Item(() -> "画面の配置", host::layoutText, host::swap, true));
+            items.add(new Item(() -> "画面分割とナビ連動", () -> GO, () -> show(SPLIT)));
+            items.add(back("メニューへ"));
+        } else if (p == CONTROLS) {
+            title.setText("操作・カスタマイズ");
+            items.add(new Item(() -> "コマンダーのボタン割り当て", () -> GO, () -> show(KEYS)));
+            items.add(new Item(() -> "ネオンの色・強さ", () -> GO, () -> show(NEON)));
+            items.add(back("メニューへ"));
         } else if (p == KEYS) {
             title.setText("コマンダーのボタン割り当て");
             for (KeyMap.Action a : KeyMap.Action.values()) {
@@ -216,20 +225,17 @@ final class PanelView extends ViewGroup {
                         () -> host.learning() == a ? "▶ ボタンを押してください（連続1〜4回、または長押し）" : host.keyMap().describe(a),
                         () -> { host.startLearn(a); refresh(); }));
             }
-            items.add(new Item(() -> "ユーザー補助", () -> host.accessOn() ? "オン" : "オフ（ホーム・タスク操作が行えません）",
-                    host::openAccessibility));
             items.add(new Item(() -> "割り当てを初期状態に戻す", () -> "", () -> { host.resetKeys(); refresh(); }));
-            items.add(new Item(() -> "戻る", () -> "", () -> { host.cancelLearn(); show(MAIN); }));
+            items.add(back("操作・カスタマイズへ"));
         } else if (p == SYS) {
-            title.setText("設定");
-            items.add(new Item(() -> "システム設定を開く", () -> "", host::openSettings));
-            items.add(new Item(() -> "ホームアプリ", () -> host.isDefaultHome() ? "Duo Cruise" : host.otherHomeName(), host::chooseHome));
+            title.setText("システム");
             items.add(new Item(() -> "メニューの表示範囲", () -> host.panelHalf() ? "操作中の画面のみ" : "画面全体", host::togglePanelHalf, true));
-            items.add(new Item(() -> "ユーザー補助", () -> host.accessOn() ? "オン" : "オフ（ホーム・タスク操作が行えません）",
-                    host::openAccessibility));
-            items.add(new Item(() -> "ネオンの色・強さ", () -> "", () -> show(NEON)));
+            items.add(new Item(() -> "ユーザー補助", () -> host.accessOn() ? "オン" : "オフ", host::openAccessibility));
+            items.add(new Item(() -> "ホームアプリ", () -> host.isDefaultHome() ? "Duo Cruise" : host.otherHomeName(), host::chooseHome));
+            items.add(new Item(() -> "Android の設定を開く", () -> "", host::openSettings));
+            items.add(new Item(() -> "動作記録", () -> GO, () -> show(LOG)));
             items.add(new Item(() -> "ホーム画面を開く", host::otherHomeName, host::goHome));
-            items.add(new Item(() -> "戻る", () -> "", () -> show(MAIN)));
+            items.add(back("メニューへ"));
         } else if (p == SPLIT) {
             title.setText("画面分割とナビ連動");
             items.add(new Item(() -> "通常の分割比", () -> {}, pctSlider(true)));
@@ -237,26 +243,26 @@ final class PanelView extends ViewGroup {
             items.add(new Item(() -> "ナビ案内中の分割比", () -> {}, pctSlider(false)));
             items.add(new Item(() -> "ナビ案内中は地図を右に配置", () -> host.autoSwapOn() ? "オン" : "オフ", () -> { host.toggleAutoSwap(); refresh(); }, true));
             items.add(new Item(() -> "通常の配置に戻るまでの時間", host::navHoldText, () -> { host.cycleNavHold(); refresh(); }, true));
-            items.add(new Item(() -> "戻る", () -> "", () -> show(MAIN)));
+            items.add(back("画面へ"));
         } else if (p == NEON) {
             title.setText("ネオンの色・強さ");
             items.add(new Item(() -> "ターゲット切替", () -> host.neonColorText(0), () -> { neonWhich = 0; show(NEON_EDIT); }));
             items.add(new Item(() -> "接続完了", () -> host.neonColorText(1), () -> { neonWhich = 1; show(NEON_EDIT); }));
             items.add(new Item(() -> "接続不良", () -> host.neonColorText(2), () -> { neonWhich = 2; show(NEON_EDIT); }));
-            items.add(new Item(() -> "戻る", () -> "", () -> show(SYS)));
+            items.add(back("操作・カスタマイズへ"));
         } else if (p == NEON_EDIT) {
             title.setText(neonWhich == 0 ? "ターゲット切替の色" : neonWhich == 1 ? "接続完了の色" : "接続不良の色");
             items.add(new Item(() -> "赤 (R)", () -> {}, channelSlider(0)));
             items.add(new Item(() -> "緑 (G)", () -> {}, channelSlider(1)));
             items.add(new Item(() -> "青 (B)", () -> {}, channelSlider(2)));
             items.add(new Item(() -> "発光の強さ", () -> {}, levelSlider()));
-            items.add(new Item(() -> "戻る", () -> "", () -> show(NEON)));
+            items.add(back("ネオンの色・強さへ"));
         } else {
             title.setText("動作記録");
             logPage = 0;
             items.add(new Item(() -> "新しい記録へ", () -> "", () -> { logPage = Math.max(0, logPage - 1); refresh(); }));
             items.add(new Item(() -> "古い記録へ", () -> "", () -> { logPage++; refresh(); }));
-            items.add(new Item(() -> "戻る", () -> "", () -> show(MAIN)));
+            items.add(back("システムへ"));
         }
         rebuildRows();
         logText.setVisibility(p == LOG ? VISIBLE : GONE);
@@ -302,7 +308,7 @@ final class PanelView extends ViewGroup {
         Row r = (Row) list.getChildAt(i);
         Item it = items.get(i);
         TextView label = (TextView) r.getChildAt(0);
-        label.setTextColor(on ? Color.WHITE : Theme.SUB);
+        label.setTextColor(on ? Color.WHITE : LABEL_DIM);   // 白のみ(選択=純白・非選択=薄い白)
         label.setTextSize(TypedValue.COMPLEX_UNIT_SP, on ? 30 : 19);  // 選択で拡大
         TextView value = (TextView) r.getChildAt(1);
         value.setTextSize(TypedValue.COMPLEX_UNIT_SP, on ? 17 : 14);
@@ -414,9 +420,26 @@ final class PanelView extends ViewGroup {
         else if (editing < 0 && it.adj) { it.run.run(); refresh(); }
     }
 
+    /** 今のページの1つ上(親)のページ。 */
+    private int parentPage(int p) {
+        switch (p) {
+            case DISPLAY: case CONTROLS: case SYS: return MAIN;
+            case SPLIT: return DISPLAY;
+            case KEYS: case NEON: return CONTROLS;
+            case LOG: return SYS;
+            case NEON_EDIT: return NEON;
+            default: return MAIN;
+        }
+    }
+
     void back() {
-        if (page != MAIN) { host.cancelLearn(); show(page == NEON_EDIT ? NEON : page == NEON ? SYS : MAIN); }
+        if (page != MAIN) { host.cancelLearn(); show(parentPage(page)); }
         else host.closePanel();
+    }
+
+    /** 「戻る」の行。押すと1つ上のページへ。label に戻り先を書いて導線にする。 */
+    private Item back(String label) {
+        return new Item(() -> "戻る", () -> label, this::back);
     }
 
     // ───────── スライダーの中身 ─────────

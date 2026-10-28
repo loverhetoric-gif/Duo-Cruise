@@ -3,6 +3,7 @@ package com.yuki.duocruise.main;
 import android.graphics.Canvas;
 import android.graphics.LinearGradient;
 import android.graphics.Paint;
+import android.graphics.RadialGradient;
 import android.graphics.RectF;
 import android.graphics.Shader;
 
@@ -38,7 +39,27 @@ final class NeonGlow {
         float shortSide = Math.min(box.width(), box.height());
         float depth = depthDp > 0 ? depthDp * dp : 64 * dp;
         depth = Math.min(depth, shortSide * 0.5f);
-        edges(dst, box, depth, color, Math.round(98 * k * breath));
+        // 土台: 縁から内側へ一様な間接照明(控えめ)
+        edges(dst, box, depth, color, Math.round(58 * k * breath));
+        // 動き: 明るい光のかたまりが、縁をぐるっと巡る(速さ違いの2つで単調さをなくす)
+        blob(dst, box, depth * 2.1f, color, Math.round(165 * k), phase);
+        blob(dst, box, depth * 1.5f, color, Math.round(120 * k), frac(phase * 0.6f + 0.37f));
+    }
+
+    private static float frac(float v) { v -= (float) Math.floor(v); return v; }
+
+    /** 縁の周り(t: 0〜1 で一周)の点に、内側へ滲む明るい光のかたまりを置く。 */
+    private void blob(Canvas dst, RectF box, float r, int color, int a, float t) {
+        if (a <= 0 || r < 1) return;
+        float w = box.width(), h = box.height(), per = 2 * (w + h), d = frac(t) * per;
+        float x, y;
+        if (d < w) { x = box.left + d; y = box.top; }
+        else if (d < w + h) { x = box.right; y = box.top + (d - w); }
+        else if (d < 2 * w + h) { x = box.right - (d - w - h); y = box.bottom; }
+        else { x = box.left; y = box.bottom - (d - 2 * w - h); }
+        p.setShader(new RadialGradient(x, y, r, withAlpha(color, a), withAlpha(color, 0), Shader.TileMode.CLAMP));
+        dst.drawCircle(x, y, r, p);
+        p.setShader(null);
     }
 
     /** 既定の色・深さで描く(白)。 */
