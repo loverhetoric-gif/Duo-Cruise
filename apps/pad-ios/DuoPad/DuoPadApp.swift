@@ -231,7 +231,9 @@ struct SettingsSheet: View {
                 }
             }
             .navigationTitle("Duo Pad の設定")
-            .toolbar { Button("閉じる") { link.manualHost = host.trimmingCharacters(in: .whitespaces); dismiss() } }
+            .toolbar { Button("閉じる") { dismiss() } }
+            // 下スワイプで閉じたときも住所を保存する(変わっていなければ、つなぎ直さない)
+            .onDisappear { link.manualHost = host.trimmingCharacters(in: .whitespaces) }
         }
     }
 }
