@@ -138,11 +138,9 @@ final class PanelView extends ViewGroup {
     // ───────── メニュー枠の発光 ─────────
 
     @Override protected void onDraw(Canvas cv) {
-        // メニューを開いている間は、窓の縁を白いネオンで光らせる(車内でも「設定中」がひと目で分かる)。
-        // Duo Pad と同じく、柔らかい光が縁をゆっくり巡る。
-        float m = px(PAD) * 0.6f;
-        frameBox.set(m, m, getWidth() - m, getHeight() - m);
-        frameGlow.draw(cv, frameBox, dp, 24 * dp, 0.72f, Theme.NEON_WHITE, phase); // 境界は間接照明(控えめだが見える)
+        // メニュー表示中は、ディスプレイの縁(画面端)から内側へ向けて間接照明で発光させる(枠線は出さない)。
+        frameBox.set(0, 0, getWidth(), getHeight());
+        frameGlow.draw(cv, frameBox, dp, 100, 0.95f, Theme.NEON_WHITE, phase);
         // 色編集ページ: 今の色・強さを「発光する丸いネオン」として見出しの右にプレビュー
         if (page == NEON_EDIT) drawOrb(cv, host.neonColor(neonWhich) | 0xFF000000, host.neonLevel(neonWhich) / 100f);
     }
@@ -273,41 +271,41 @@ final class PanelView extends ViewGroup {
             final int idx = i;
             Item it = items.get(i);
             Row r = new Row(getContext());
-            r.setPadding(px(30), 0, px(28), 0);
+            r.setPadding(px(34), 0, px(30), 0);
 
-            TextView label = text(21, Theme.TEXT, true);
+            TextView label = text(19, Theme.TEXT, true);
             label.setGravity(Gravity.CENTER_VERTICAL);
-            label.setAutoSizeTextTypeUniformWithConfiguration(14, 21, 1, TypedValue.COMPLEX_UNIT_SP);
             r.addView(label, new LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1f));
 
-            TextView value = text(15, VALUE, false);
+            TextView value = text(14, VALUE, false);
             value.setGravity(Gravity.CENTER_VERTICAL | Gravity.END);
             value.setPadding(px(14), 0, 0, 0);
-            value.setAutoSizeTextTypeUniformWithConfiguration(11, 15, 1, TypedValue.COMPLEX_UNIT_SP);
             r.addView(value, new LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1.1f));
 
             SliderBar bar = new SliderBar(getContext());
             bar.setVisibility(it.slider == null ? GONE : VISIBLE);
-            r.addView(bar, new LinearLayout.LayoutParams(px(300), LayoutParams.MATCH_PARENT));
+            r.addView(bar, new LinearLayout.LayoutParams(px(320), LayoutParams.MATCH_PARENT));
 
             r.setOnClickListener(v -> { focus = idx; activate(idx); });
             r.setOnFocusChangeListener((v, has) -> {
-                ((Row) v).setOn(has);
-                v.animate().scaleX(has ? 1.04f : 1f).scaleY(has ? 1.04f : 1f).setDuration(150).start();
                 if (has) focus = idx;
-                paintRow(idx, has);
+                list.requestLayout();  // 選択行を大きく見せるため測り直す
+                refresh();             // 文字の大きさ・色を更新
             });
             list.addView(r);
         }
     }
 
-    /** 選んでいる行は白い発光の縁と濃い黒の下地で、文字をはっきり出す。 */
+    /** 選んでいる行は、文字を大きく・純白にして「選択」を表す(発光は使わない)。 */
     private void paintRow(int i, boolean on) {
         if (i < 0 || i >= list.getChildCount() || i >= items.size()) return;
         Row r = (Row) list.getChildAt(i);
         Item it = items.get(i);
-        ((TextView) r.getChildAt(0)).setTextColor(on ? Color.WHITE : Theme.TEXT);
+        TextView label = (TextView) r.getChildAt(0);
+        label.setTextColor(on ? Color.WHITE : Theme.SUB);
+        label.setTextSize(TypedValue.COMPLEX_UNIT_SP, on ? 30 : 19);  // 選択で拡大
         TextView value = (TextView) r.getChildAt(1);
+        value.setTextSize(TypedValue.COMPLEX_UNIT_SP, on ? 17 : 14);
         SliderBar bar = (SliderBar) r.getChildAt(2);
         if (it.slider != null) {
             value.setVisibility(GONE);
@@ -482,8 +480,10 @@ final class PanelView extends ViewGroup {
 
     private void layoutChildren(int w, int h, boolean measure) {
         int pad = px(PAD), head = px(HEADER);
-        int listW = Math.min(w - pad * 2, px(LIST_MAX));
-        int left = (w - listW) / 2;
+        // 超横長を端まで使う(左右の余白は最小限だけ)
+        int side = px(34);
+        int listW = w - side * 2;
+        int left = side;
         place(title, left, pad, left + listW, pad + px(38), measure);
 
         int top = pad + head;
@@ -503,70 +503,53 @@ final class PanelView extends ViewGroup {
         place(list, left, top, left + listW, bottom, measure);
     }
 
-    /** 行を縦に積み、必ず全部が収まるように1行の高さを割り付ける(切れない)。発光のため子は切り取らない。 */
+    /** 行を縦に積む。選んでいる行だけ大きく、他は小さくして「選択」を表す(全部が画面に収まる)。 */
     private final class ListPane extends ViewGroup {
+        private static final float FOCUS = 1.9f;  // 選択行は他の何倍の高さか
+
         ListPane(Context c) { super(c); setClipChildren(false); setClipToPadding(false); }
 
-        private int rowH(int n, int h) {
+        private int baseH(int n, int h) {
             if (n <= 0) return 0;
             int gap = px(ROW_GAP);
-            return Math.max(px(28), Math.min(px(ROW_MAX), (h - gap * (n - 1)) / n));
+            int avail = h - gap * (n - 1);
+            return Math.max(px(24), Math.round(avail / ((n - 1) + FOCUS)));
+        }
+
+        private int heightOf(int i, int base) {
+            return i == focus ? Math.round(base * FOCUS) : base;
         }
 
         @Override protected void onMeasure(int wSpec, int hSpec) {
             int w = MeasureSpec.getSize(wSpec), h = MeasureSpec.getSize(hSpec);
             setMeasuredDimension(w, h);
-            int n = getChildCount();
-            int rh = MeasureSpec.makeMeasureSpec(rowH(n, h), MeasureSpec.EXACTLY);
+            int n = getChildCount(), base = baseH(n, h);
             int rw = MeasureSpec.makeMeasureSpec(w, MeasureSpec.EXACTLY);
-            for (int i = 0; i < n; i++) getChildAt(i).measure(rw, rh);
+            for (int i = 0; i < n; i++)
+                getChildAt(i).measure(rw, MeasureSpec.makeMeasureSpec(heightOf(i, base), MeasureSpec.EXACTLY));
         }
 
         @Override protected void onLayout(boolean changed, int l, int t, int r, int b) {
-            int w = r - l, h = b - t, n = getChildCount();
-            int rh = rowH(n, h), gap = px(ROW_GAP);
-            int listH = n * rh + (n - 1) * gap;
-            int y = Math.max(0, (h - listH) / 2);  // 少なければ中央寄せ
+            int w = r - l, h = b - t, n = getChildCount(), gap = px(ROW_GAP), base = baseH(n, h);
+            int total = (n - 1) * gap;
+            for (int i = 0; i < n; i++) total += heightOf(i, base);
+            int y = Math.max(0, (h - total) / 2);
             for (int i = 0; i < n; i++) {
+                int rh = heightOf(i, base);
                 getChildAt(i).layout(0, y, w, y + rh);
                 y += rh + gap;
             }
         }
     }
 
-    /**
-     * 1行。非選択は文字だけ。選んでいる間だけ、黒の下地＋白いネオンの発光で縁取る(視認性と統一感)。
-     * 発光は software でしか効かないので、選択時だけ software にする。
-     */
+    /** 1行。文字だけ(発光・下地は使わない)。選択は文字の大きさと白さで表す。 */
     private final class Row extends LinearLayout {
-        private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final NeonGlow glow = new NeonGlow();
-        private final RectF box = new RectF();
-        private final float insetX = 8 * dp, insetY = 4 * dp, radius = 16 * dp;
-        private boolean on;
-
         Row(Context c) {
             super(c);
             setOrientation(HORIZONTAL);
             setGravity(Gravity.CENTER_VERTICAL);
             setFocusable(true);
             setFocusableInTouchMode(false);
-            setWillNotDraw(false);
-            fill.setColor(0x73000000); // 選択行の黒い下地(文字をはっきり読ませる)
-        }
-
-        void setOn(boolean b) {
-            if (on == b) return;
-            on = b;
-            invalidate();
-        }
-
-        @Override protected void onDraw(Canvas cv) {
-            if (!on) return; // 非選択は文字だけ(箱も枠も出さない)
-            box.set(0, 0, getWidth(), getHeight());
-            cv.drawRect(box, fill);  // 下地は四角(角丸にしない)
-            // 選択行も、メニュー枠と同じ間接照明で縁取る(一体感)
-            glow.draw(cv, box, dp, 0, 0.95f, Theme.NEON_WHITE, PanelView.this.phase);
         }
     }
 

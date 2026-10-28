@@ -27,18 +27,23 @@ final class NeonGlow {
     }
 
     /**
-     * box の各辺に沿って発光させる。Duo Pad と同じ二層構造:
-     *   ・リム … 縁のすぐ内側だけ明るい、細い光(実測ピーク≈144)
-     *   ・裾  … そこから内側へ、広く・ゆるやかに減衰する微光(実測 51→20 を約140px かけて)
-     * これで“線”や“帯”に見えず、本物の間接照明になる。intensity 0〜1、phase 0〜1(明滅)。
+     * box の各辺(ディスプレイの縁)から内側へ向けて発光させる。線やリムは出さず、
+     * 縁で明るく→内側へ広くゆるやかに減衰する「間接照明」だけを落とす。intensity 0〜1、phase 0〜1(明滅)。
+     * depthDp で光の届く深さ(内側への広がり)を指定できる(0 以下なら自動)。
      */
-    void draw(Canvas dst, RectF box, float dp, float radius, float intensity, int color, float phase) {
+    void draw(Canvas dst, RectF box, float dp, float depthDp, float intensity, int color, float phase) {
         if (intensity <= 0 || box.width() < 2 || box.height() < 2) return;
         float k = Math.min(1f, intensity);
         float breath = 0.86f + 0.14f * (float) Math.sin(phase * 2 * Math.PI);
         float shortSide = Math.min(box.width(), box.height());
-        edges(dst, box, Math.min(52 * dp, shortSide * 0.5f), color, Math.round(40 * k * breath));  // 広い裾
-        edges(dst, box, Math.min(3.5f * dp, shortSide * 0.3f), color, Math.round(140 * k * breath)); // 細いリム
+        float depth = depthDp > 0 ? depthDp * dp : 64 * dp;
+        depth = Math.min(depth, shortSide * 0.5f);
+        edges(dst, box, depth, color, Math.round(72 * k * breath));
+    }
+
+    /** 既定の色・深さで描く(白)。 */
+    void draw(Canvas dst, RectF box, float dp, float intensity, float phase) {
+        draw(dst, box, dp, 0, intensity, Theme.NEON_WHITE, phase);
     }
 
     /** 各辺に「縁で c0A → 内側へ透明」の線形グラデを depth ぶん敷く。 */
