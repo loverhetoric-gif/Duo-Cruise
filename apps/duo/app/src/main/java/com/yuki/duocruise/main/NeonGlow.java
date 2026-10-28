@@ -27,7 +27,7 @@ import java.util.Map;
  */
 final class NeonGlow {
     /** メニュー用。白が基調で、桃・空・薄荷がほのかに混じる。 */
-    static final int[] AURORA = { 0xFFFFFFFF, 0xFFFFE4EE, 0xFFFFFFFF, 0xFFE0EAFF, 0xFFFFFFFF, 0xFFE2FFF4, 0xFFFFFFFF };
+    static final int[] AURORA = { 0xFFFFFFFF, 0xFFFFC4DC, 0xFFFFFFFF, 0xFFBFD6FF, 0xFFFFFFFF, 0xFFC4FFE8, 0xFFE6D2FF };
     /** @deprecated 旧名。AURORA を使う。 */
     static final int[] VIVID = AURORA;
 
@@ -35,7 +35,7 @@ final class NeonGlow {
     private static final int[]   SPEED  = {  1, -1,  2, -2,  1, -3,  2 };
     private static final float[] START  = { 0.00f, 0.31f, 0.52f, 0.68f, 0.84f, 0.14f, 0.44f };
     private static final float[] SIZE   = { 2.6f, 1.9f, 2.2f, 1.6f, 2.9f, 1.4f, 2.0f };
-    private static final float[] BRIGHT = { 0.60f, 0.48f, 0.55f, 0.42f, 0.66f, 0.38f, 0.50f };
+    private static final float[] BRIGHT = { 0.85f, 0.70f, 0.78f, 0.62f, 0.90f, 0.56f, 0.72f };
     private static final int[]   WOBBLE = {  3,  5,  2,  7,  4,  6,  3 };
 
     private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -87,6 +87,15 @@ final class NeonGlow {
             add.setShader(g);
             add.setAlpha(Math.round(255 * Math.min(1f, BRIGHT[i] * flicker * breath * k)));
             dst.drawRect(box, add);
+            // 芯: 縁のすぐ内側だけが白く締まって光る。これが「光源がそこにある」感を作る
+            m.setScale(r * 0.75f, r * 0.30f);
+            m.postRotate(pt[2]);
+            m.postTranslate(pt[0], pt[1]);
+            RadialGradient c = blob(0xFFFFFFFF);
+            c.setLocalMatrix(m);
+            add.setShader(c);
+            add.setAlpha(Math.round(255 * Math.min(1f, 0.55f * BRIGHT[i] * flicker * breath * k)));
+            dst.drawRect(box, add);
         }
         add.setShader(null);
         dst.restoreToCount(save);
@@ -98,8 +107,8 @@ final class NeonGlow {
         if (g == null) {
             int c = tint & 0x00FFFFFF;
             g = new RadialGradient(0, 0, 1,
-                    new int[]{ 0xFF000000 | c, 0x73000000 | c, 0x1F000000 | c, c },
-                    new float[]{ 0f, 0.32f, 0.68f, 1f }, Shader.TileMode.CLAMP);
+                    new int[]{ 0xFF000000 | c, 0x8C000000 | c, 0x24000000 | c, c },
+                    new float[]{ 0f, 0.25f, 0.60f, 1f }, Shader.TileMode.CLAMP);
             blobs.put(tint, g);
         }
         return g;
