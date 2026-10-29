@@ -99,6 +99,9 @@ class CarPlayPane @JvmOverloads constructor(
         /** 左右それぞれの枠の大きさ(画面は 1480×480)。 */
         const val WIDTH = 740
         const val HEIGHT = 480
+        /** 車の画面(1480×480)の、映る部分の実際の大きさ(mm、本人の実測)。 */
+        private const val SCREEN_W_MM = 230
+        private const val SCREEN_H_MM = 90
         private const val SCREEN_TYPE_MAIN = 110
         private const val FPS = 60
         /**
@@ -718,9 +721,10 @@ class CarPlayPane @JvmOverloads constructor(
     )
 
     private fun createAirPlayConfig(microphone: Boolean): AirPlayConfig {
-        val metrics = app.resources.displayMetrics
-        val widthMm = Math.round(streamWidth() / metrics.xdpi * 25.4f).coerceAtLeast(1)
-        val heightMm = Math.round(streamH / metrics.ydpi * 25.4f).coerceAtLeast(1)
+        // 実際の画面の大きさ(本人の実測: 1480×480 の映る部分が 幅 23cm・高さ 9cm)。
+        // 機器が申告する画素の細かさ(321dpi)はスマホ並みの値で、そこから求めると幅 117mm の小さな画面として伝わっていた
+        val widthMm = Math.round(streamWidth() * SCREEN_W_MM / 1480f).coerceAtLeast(1)
+        val heightMm = Math.round(streamH * SCREEN_H_MM / 480f).coerceAtLeast(1)
         return AirPlayConfig(
             deviceName = "Duo Cruise",
             deviceId = "02:00:00:00:00:02",
