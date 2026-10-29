@@ -108,6 +108,9 @@ struct MacPadScreen: View {
         }
         .onChange(of: link.bluetoothUps) { _, _ in notice = Notice(kind: .bluetooth) }
         .onChange(of: link.switches) { _, _ in notice = Notice(kind: .switched) }
+        .onChange(of: link.turns) { _, _ in
+            notice = Notice(kind: .turn, side: link.turnSide, tint: link.turnColor, level: link.turnLevel)
+        }
         .popover(isPresented: $settings) {
             VStack(alignment: .leading, spacing: 10) {
                 Text("感度 \(String(format: "%.1f", sensitivity))")

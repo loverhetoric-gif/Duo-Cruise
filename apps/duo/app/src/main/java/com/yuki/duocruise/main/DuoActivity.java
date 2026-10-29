@@ -19,6 +19,8 @@ import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.WindowManager;
 
+import com.yuki.duocruise.carplay.Route;
+
 /**
  * Duo Cruise 本体の画面。1つの画面の中に、左右2つの枠(各 740×416)を持つ。
  * ・左＝CarPlay(B の CarPlayPane)、右＝TV 版 YouTube(D の TvPane)。入れ替え中は逆
@@ -135,7 +137,8 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         padServer.setState(Store.single(this) ? "s F" : Store.side(this) == SplitGeometry.SIDE_LEFT ? "s L" : "s R");
         try { tv.start(); } catch (Throwable t) { DuoLog.error("YouTube を始められません: " + DuoLog.why(t)); }
         boolean asHome = getIntent() != null && getIntent().hasCategory(Intent.CATEGORY_HOME);
-        DuoLog.log("Duo Cruise を開きました(版 " + DuoLog.version() + (asHome ? "、ホームとして" : "") + ")");
+        DuoLog.log((BuildConfig.UNLIMITED ? "Duo Cruise Unlimited Edition" : "Duo Cruise") + " を開きました(版 "
+                + DuoLog.version() + (asHome ? "、ホームとして" : "") + ")");
         stateChanged();
     }
 
@@ -197,6 +200,9 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         setIntent(i);
         boolean home = i != null && i.hasCategory(Intent.CATEGORY_HOME);
         DuoLog.log(home ? "ホームとして開かれました" : "もう一度開かれました");
+        // 見た目の確かめ用(adb から): 案内のテストだけを受ける。ほかの指示は署名で守った受け口からだけ
+        String t = i == null ? null : i.getStringExtra("routeTest");
+        if (t != null && (t.startsWith("route-test") || t.equals("route-end"))) DuoLog.log(routeTest(t));
         if (root != null) root.requestApplyInsets();
     }
 
@@ -415,6 +421,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         if (curYt < 0) curYt = Store.splitYt(this);
         root.setSingle(Store.single(this));
         root.apply(Store.swapped(this), Store.side(this), Store.panelHalf(this), curYt);
+        updateHint();
     }
 
     /** CarPlay の接続状態(前回値)。変化した瞬間だけ、メインビューを色で知らせる。 */
@@ -471,7 +478,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
                     swap();                 // マップを右へ(くるっと)。比率も navYt で並べ直る
                 } else {
                     navDidSwap = false;
-                    animateYt(Store.navYt(this));
+                    animateYt(targetYt());
                 }
             }
         } else if (navEngaged) {
@@ -486,11 +493,163 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         navEngaged = false;
         if (navDidSwap) {
             navDidSwap = false;
-            curYt = Store.splitYt(this);
+            curYt = targetYt();
             if (Store.swapped(this)) swap();   // 元(マップ左・YouTube 右)へ戻す
             else applyLayout();
         } else {
-            animateYt(Store.splitYt(this));
+            animateYt(targetYt());
+        }
+    }
+
+    /**
+     * いま向かうべき YouTube の幅の割合。強いものから:
+     * 曲がり角で地図を表示中(Unlimited Edition) → ナビ音声の間 → 到着後の全画面(Unlimited Edition) → 普段。
+     */
+    private int targetYt() {
+        if (mapEngaged) return Store.mapYt(this);
+        if (navEngaged) return Store.navYt(this);
+        if (arriveEngaged) return 100;
+        return Store.splitYt(this);
+    }
+
+    // ───────── 曲がり角の案内(Duo Cruise Unlimited Edition だけ。リリース版では案内が届かない) ─────────
+    private final TurnPlan plan = new TurnPlan();
+    private Route route;
+    /** 曲がり角で地図を表示中 / そのために 1 画面の表示を地図へ切り替えた / 到着後の全画面 / 曲がり角の手前で音量を下げ中。 */
+    private boolean mapEngaged, mapFlipped, arriveEngaged, turnDucked;
+    private final Runnable mapRelease = this::mapRelease;
+
+    /** CarPlay から(メインスレッド)。CarPlay が止まったら null。 */
+    static void carRoute(Route r) {
+        DuoActivity a = live;
+        if (a != null && BuildConfig.UNLIMITED) { a.routeTesting = false; a.onRoute(r); }
+    }
+
+    private void onRoute(Route r) {
+        boolean wasGuiding = route != null && route.getGuiding();
+        route = r;
+        if (r == null) plan.clear();
+        else {
+            plan.hintDist = Store.hintDist(this);
+            plan.mapDist = Store.mapDist(this);
+            plan.lightDist = Store.lightDist(this);
+            plan.duckDist = Store.duckDist(this);
+            plan.update(r.getGuiding(), r.getArrived(), r.turnIndex, r.distanceToTurnM, r.getSide());
+        }
+        // 新しいルートが始まったら、到着後の全画面をやめる
+        if (r != null && r.getGuiding() && !wasGuiding && arriveEngaged) { arriveEngaged = false; animateYt(targetYt()); }
+        applyRoute();
+        if (plan.light != null && Store.turnLight(this)) {
+            int c = Store.neon(this, 3), lv = Store.neonLevel(this, 3);
+            root.turnGlow(plan.light, c, lv / 100f);
+            if (padServer != null) padServer.turn(plan.light, c, lv);
+            DuoLog.log("曲がり角の案内: " + ("L".equals(plan.light) ? "左" : "右") + "の縁を光らせました(あと " + r.distanceToTurnM + " m)");
+        }
+        if (plan.arrivedNow && Store.arriveFull(this)) arrive();
+    }
+
+    /** 設定が変わった・案内が届いたときに、表示・地図・音量を今の設定に合わせる。 */
+    private void applyRoute() {
+        updateHint();
+        boolean want = plan.map && Store.mapFront(this);
+        if (want) {
+            main.removeCallbacks(mapRelease);
+            if (!mapEngaged) engageMap();
+        } else if (mapEngaged) {
+            main.removeCallbacks(mapRelease);
+            if (route == null || !Store.mapFront(this)) mapRelease();
+            else main.postDelayed(mapRelease, Store.mapHoldMs(this)); // 曲がり終えて少し待ってから戻す
+        }
+        boolean duck = plan.duck && Store.turnDuck(this);
+        if (duck != turnDucked) { turnDucked = duck; applyDuck(); }
+    }
+
+    /** 案内の板を出すか。表示の設定・地図が見えているか・メニューが出ているかで決める。 */
+    private void updateHint() {
+        if (!BuildConfig.UNLIMITED || root == null) return;
+        int mode = Store.hintMode(this);
+        Route r = route;
+        boolean show = r != null && plan.hint && mode != 0 && (mode == 2 || !root.carVisible())
+                && (panel == null || panel.getVisibility() != View.VISIBLE) && !guiding();
+        root.turnHint(show, r == null ? 0 : r.getTurn(), r == null ? null : r.exitAngle,
+                r == null ? -1 : r.drivingSide, r == null ? null : distanceText(r), r == null ? null : r.onto);
+    }
+
+    /** 曲がり角までの距離の文字。iPhone の表示が無ければ、m から作る(案内と同じ丸め方)。 */
+    private static String distanceText(Route r) {
+        if (r.distanceText != null) return r.distanceText;
+        long m = r.distanceToTurnM;
+        if (m < 0) return "";
+        if (m >= 10_000) return (m / 1000) + " km";
+        if (m >= 1_000) return String.format(java.util.Locale.ROOT, "%.1f km", m / 1000.0);
+        return Tx.s(R.string.meters, m >= 100 ? (m + 25) / 50 * 50 : (m + 5) / 10 * 10);
+    }
+
+    /** 地図を表示する。2 画面なら地図を広げ、1 画面で YouTube を出していれば地図に切り替える。 */
+    private void engageMap() {
+        mapEngaged = true;
+        if (Store.single(this)) {
+            if (active() == tv) { mapFlipped = true; flipQuietly(); }
+        } else {
+            animateYt(targetYt());
+        }
+        DuoLog.log("曲がり角の案内: 地図を表示しました");
+    }
+
+    private void mapRelease() {
+        main.removeCallbacks(mapRelease);
+        if (!mapEngaged) return;
+        mapEngaged = false;
+        if (mapFlipped) {
+            mapFlipped = false;
+            if (Store.single(this) && active() == car) flipQuietly();
+        } else {
+            animateYt(targetYt());
+        }
+        DuoLog.log("曲がり角の案内: 元の表示に戻しました");
+    }
+
+    /** 到着: 地図をやめ、YouTube を全画面にする(次のルートが始まるまで)。 */
+    private void arrive() {
+        arriveEngaged = true;
+        mapRelease();
+        if (Store.single(this)) { if (active() == car) flipQuietly(); }
+        else animateYt(targetYt());
+        DuoLog.log("曲がり角の案内: 到着したので YouTube を全画面にしました");
+    }
+
+    /** 1 画面の表示を、光らせずに反対側へ(操作する側も一緒に移る)。 */
+    private void flipQuietly() {
+        Store.setSide(this, Store.side(this) == SplitGeometry.SIDE_LEFT ? SplitGeometry.SIDE_RIGHT : SplitGeometry.SIDE_LEFT);
+        relayout();
+        focusActive();
+    }
+
+    @Override public void routeSettingsChanged() { applyRoute(); }
+
+    /**
+     * 見た目の確かめ用(Unlimited Edition)。停車中に、案内が届いたことにして表示・光・地図・音量を動かす。
+     *   route-test 2 250 … 曲がり方 2(右折)・あと 250 m(曲がり方の番号は iAP2 の 0〜53。1=左折 4=Uターン 12=到着)
+     *   route-end        … 案内を終わらせる
+     * 番号は呼ぶたびに 1 つ進む(同じ番号のまま距離だけ縮めたいときは、末尾に same)。
+     */
+    private int testIndex;
+    /** テストの案内を出している間(CarPlay がつながっていなくても消さない)。本物の案内が届いたら false。 */
+    private boolean routeTesting;
+    private String routeTest(String cmd) {
+        if (!BuildConfig.UNLIMITED) return "この版(Duo Cruise)には曲がり角の案内がありません";
+        String[] p = cmd.trim().split("\\s+");
+        routeTesting = !p[0].equals("route-end");
+        if (!routeTesting) { onRoute(null); return "案内を終わらせました"; }
+        try {
+            int type = p.length > 1 ? Integer.parseInt(p[1]) : 2;
+            long dist = p.length > 2 ? Long.parseLong(p[2]) : 250;
+            if (!(p.length > 3 && p[3].equals("same"))) testIndex++;
+            int state = type == 12 ? 2 : 1;
+            onRoute(new Route(state, dist, null, type, "テスト通り", null, null, 1, testIndex, "テスト", -1, "テスト"));
+            return "案内(テスト): " + route;
+        } catch (NumberFormatException e) {
+            return "使い方: route-test <曲がり方 0〜53> <距離 m> [same] / route-end";
         }
     }
 
@@ -499,21 +658,19 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     @Override public void cycleSplitYt() {
         int v = Store.splitYt(this) + 10; if (v > 100) v = 30;
         Store.setSplitYt(this, v);
-        if (!navEngaged) animateYt(v);
+        animateYt(targetYt());
     }
-    @Override public void cycleNavYt() { int v = Store.navYt(this) + 10; if (v > 100) v = 30; Store.setNavYt(this, v); if (navEngaged) animateYt(v); }
+    @Override public void cycleNavYt() { int v = Store.navYt(this) + 10; if (v > 100) v = 30; Store.setNavYt(this, v); animateYt(targetYt()); }
     // スライダーでの増減(左右で 5% ずつ)。
     @Override public int splitYtPct() { return Store.splitYt(this); }
     @Override public int navYtPct() { return Store.navYt(this); }
     @Override public void adjustSplitYt(int dir) {
-        int v = SplitGeometry.clampYt(Store.splitYt(this) + dir * 5);
-        Store.setSplitYt(this, v);
-        if (!navEngaged) animateYt(v);
+        Store.setSplitYt(this, SplitGeometry.clampYt(Store.splitYt(this) + dir * 5));
+        animateYt(targetYt());
     }
     @Override public void adjustNavYt(int dir) {
-        int v = SplitGeometry.clampYt(Store.navYt(this) + dir * 5);
-        Store.setNavYt(this, v);
-        if (navEngaged) animateYt(v);
+        Store.setNavYt(this, SplitGeometry.clampYt(Store.navYt(this) + dir * 5));
+        animateYt(targetYt());
     }
     @Override public void toggleAutoSplit() { Store.setAutoSplit(this, !Store.autoSplit(this)); updateNavSplit(); }
     @Override public void toggleAutoSwap() { Store.setAutoSwap(this, !Store.autoSwap(this)); }
@@ -866,6 +1023,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
             if (t.equals("telephony") || t.equals("speechrecognition")) { level = 0f; call = true; }
             else if (!t.equals("media")) level = Math.min(level, DUCK_NAV);
         }
+        if (turnDucked) level = Math.min(level, Store.duckLevel(this) / 100f); // 曲がり角の手前(Unlimited Edition)
         tv.duck(level);
         tv.hold(call); // 電話・Siri の間は一時停止。終わったら、止める前に再生していれば再開
     }
@@ -874,7 +1032,9 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     static void stateChanged() {
         DuoActivity a = live;
         if (a == null) return;
-        if (a.padServer != null) a.padServer.setBluetooth(carBluetooth(safeStatus(a.car)));
+        boolean bt = carBluetooth(safeStatus(a.car));
+        if (a.padServer != null) a.padServer.setBluetooth(bt);
+        if (!bt && a.route != null && !a.routeTesting) a.onRoute(null); // iPhone と切れたら、案内も終わり
         a.onConnChanged();
         a.main.removeCallbacks(a.sendState);
         a.main.postDelayed(a.sendState, 800);
@@ -896,7 +1056,8 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
             // 遠くからは「止める」だけ。始めるのは OTTO の画面の操作盤からだけ
             case "car-stop": if (carOn) stopCar(); return "CarPlay は止まっています";
             case "car-wifi-reset": { String r = car.command(cmd); return r == null ? "CarPlay の部品がありません" : r; }
-            default: return null;
+            case "route-end": return routeTest(cmd);
+            default: return cmd.startsWith("route-test") ? routeTest(cmd) : null;
         }
     }
 }

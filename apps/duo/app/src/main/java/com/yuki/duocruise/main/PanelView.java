@@ -65,9 +65,15 @@ final class PanelView extends ViewGroup {
         void cancelLearn();
         KeyMap.Action learning();
         void resetKeys();
+        /** 曲がり角の案内の設定が変わった(Duo Cruise Unlimited Edition)。表示・地図・音量を合わせ直す。 */
+        void routeSettingsChanged();
     }
 
     static final int MAIN = 0, KEYS = 1, LOG = 2, SYS = 3, SPLIT = 4, NEON = 5, NEON_EDIT = 6, DISPLAY = 7, CONTROLS = 8;
+    /** 曲がり角の案内(Duo Cruise Unlimited Edition だけ)。ROUTE が入口、R_* がその下。 */
+    static final int ROUTE = 9, R_HINT = 10, R_MAP = 11, R_LIGHT = 12, R_AUDIO = 13, R_ARRIVE = 14;
+    /** 曲がる方向の光の色(ネオンの色編集ページを使い回す番号。Store.neon の which と同じ)。 */
+    private static final int NEON_TURN = 3;
     private static final String GO = "›"; // 下の階層へ進む導線
 
     private interface Text { String get(); }
@@ -285,6 +291,7 @@ final class PanelView extends ViewGroup {
             items.add(new Item(() -> T(R.string.d_target), host::sideText, host::switchSide, true));
             items.add(new Item(() -> T(R.string.d_layout), host::layoutText, host::swap, true));
             items.add(new Item(() -> T(R.string.d_split), () -> GO, () -> show(SPLIT)));
+            if (BuildConfig.UNLIMITED) items.add(new Item(() -> T(R.string.d_route), () -> GO, () -> show(ROUTE)));
             items.add(back(T(R.string.to_menu)));
         } else if (p == CONTROLS) {
             title.setText(T(R.string.m_controls));
@@ -326,12 +333,15 @@ final class PanelView extends ViewGroup {
             items.add(new Item(() -> T(R.string.n_alert), () -> host.neonColorText(2), () -> { neonWhich = 2; show(NEON_EDIT); }));
             items.add(back(T(R.string.to_controls)));
         } else if (p == NEON_EDIT) {
-            title.setText(neonWhich == 0 ? T(R.string.n_target_color) : neonWhich == 1 ? T(R.string.n_ok_color) : T(R.string.n_alert_color));
+            title.setText(neonWhich == 0 ? T(R.string.n_target_color) : neonWhich == 1 ? T(R.string.n_ok_color)
+                    : neonWhich == NEON_TURN ? T(R.string.n_turn_color) : T(R.string.n_alert_color));
             items.add(new Item(() -> T(R.string.ne_r), () -> {}, channelSlider(0)));
             items.add(new Item(() -> T(R.string.ne_g), () -> {}, channelSlider(1)));
             items.add(new Item(() -> T(R.string.ne_b), () -> {}, channelSlider(2)));
             items.add(new Item(() -> T(R.string.ne_level), () -> {}, levelSlider()));
-            items.add(back(T(R.string.to_neon)));
+            items.add(back(neonWhich == NEON_TURN ? T(R.string.to_route_light) : T(R.string.to_neon)));
+        } else if (p >= ROUTE && p <= R_ARRIVE) {
+            routePage(p);
         } else {
             title.setText(T(R.string.s_log));
             logPage = 0;
@@ -354,11 +364,12 @@ final class PanelView extends ViewGroup {
     //   メインに戻る   : 中身が少し沈みながら、面ごと 0.2 秒で消える
     //   いずれも移動と透明度だけ(ハードウェア描画)。CarPlay の映像を壊さない。
 
-    private static int depth(int p) {
+    private int depth(int p) {
         switch (p) {
             case MAIN: return 0;
             case DISPLAY: case CONTROLS: case SYS: return 1;
-            case NEON_EDIT: return 3;
+            case NEON_EDIT: return neonWhich == NEON_TURN ? 4 : 3;
+            case R_HINT: case R_MAP: case R_LIGHT: case R_AUDIO: case R_ARRIVE: return 3;
             default: return 2;
         }
     }
@@ -590,7 +601,9 @@ final class PanelView extends ViewGroup {
             case SPLIT: return DISPLAY;
             case KEYS: case NEON: return CONTROLS;
             case LOG: return SYS;
-            case NEON_EDIT: return NEON;
+            case NEON_EDIT: return neonWhich == NEON_TURN ? R_LIGHT : NEON;
+            case ROUTE: return DISPLAY;
+            case R_HINT: case R_MAP: case R_LIGHT: case R_AUDIO: case R_ARRIVE: return ROUTE;
             default: return MAIN;
         }
     }
@@ -603,6 +616,102 @@ final class PanelView extends ViewGroup {
     /** 「戻る」の行。押すと1つ上のページへ。label に戻り先を書いて導線にする。 */
     private Item back(String label) {
         return new Item(() -> T(R.string.back), () -> label, this::back);
+    }
+
+    // ───────── 曲がり角の案内のページ(Duo Cruise Unlimited Edition) ─────────
+    //   設定は Store に直接書き、そのたびに host.routeSettingsChanged() で今の案内に合わせ直す。
+
+    private android.content.Context ctx() { return getContext(); }
+    private String onOff(boolean v) { return v ? T(R.string.on) : T(R.string.off); }
+    private String hintModeText() {
+        int m = Store.hintMode(ctx());
+        return T(m == 0 ? R.string.v_hint_off : m == 1 ? R.string.v_hint_nomap : R.string.v_hint_always);
+    }
+    private void changed() { host.routeSettingsChanged(); refresh(); }
+
+    private void routePage(int p) {
+        android.content.Context c = ctx();
+        switch (p) {
+            case ROUTE:
+                title.setText(T(R.string.d_route));
+                items.add(new Item(() -> T(R.string.r_hint), this::hintModeText, () -> show(R_HINT)));
+                items.add(new Item(() -> T(R.string.r_map), () -> onOff(Store.mapFront(c)), () -> show(R_MAP)));
+                items.add(new Item(() -> T(R.string.r_light), () -> onOff(Store.turnLight(c)), () -> show(R_LIGHT)));
+                items.add(new Item(() -> T(R.string.r_audio), () -> onOff(Store.turnDuck(c)), () -> show(R_AUDIO)));
+                items.add(new Item(() -> T(R.string.r_arrive), () -> onOff(Store.arriveFull(c)), () -> show(R_ARRIVE)));
+                items.add(back(T(R.string.to_display)));
+                break;
+            case R_HINT:
+                title.setText(T(R.string.r_hint));
+                items.add(new Item(() -> T(R.string.rh_show), this::hintModeText,
+                        () -> { Store.setHintMode(c, Store.hintMode(c) + 1); changed(); }, true));
+                items.add(new Item(() -> T(R.string.rh_dist), () -> {}, distSlider(() -> Store.hintDist(c), v -> Store.setHintDist(c, v))));
+                items.add(back(T(R.string.to_route)));
+                break;
+            case R_MAP:
+                title.setText(T(R.string.r_map));
+                items.add(new Item(() -> T(R.string.rm_on), () -> onOff(Store.mapFront(c)),
+                        () -> { Store.setMapFront(c, !Store.mapFront(c)); changed(); }, true));
+                items.add(new Item(() -> T(R.string.rm_dist), () -> {}, distSlider(() -> Store.mapDist(c), v -> Store.setMapDist(c, v))));
+                items.add(new Item(() -> T(R.string.rm_split), () -> {}, new Slider() {
+                    public int value() { return Store.mapYt(c); }
+                    public int max() { return 100; }
+                    public void nudge(int d) { Store.setMapYt(c, value() + d * 5); changed(); }
+                    public String text() { return value() + "%"; }
+                    public int tint() { return Theme.NEON_WHITE; }
+                }));
+                items.add(new Item(() -> T(R.string.rm_hold), () -> T(R.string.seconds, Store.mapHoldMs(c) / 1000),
+                        () -> { long v = Store.mapHoldMs(c) / 1000 + 1; if (v > 10) v = 0; Store.setMapHoldMs(c, v * 1000); changed(); }, true));
+                items.add(back(T(R.string.to_route)));
+                break;
+            case R_LIGHT:
+                title.setText(T(R.string.r_light));
+                items.add(new Item(() -> T(R.string.rl_on), () -> onOff(Store.turnLight(c)),
+                        () -> { Store.setTurnLight(c, !Store.turnLight(c)); changed(); }, true));
+                items.add(new Item(() -> T(R.string.rl_dist), () -> {}, distSlider(() -> Store.lightDist(c), v -> Store.setLightDist(c, v))));
+                items.add(new Item(() -> T(R.string.rl_color), () -> host.neonColorText(NEON_TURN), () -> { neonWhich = NEON_TURN; show(NEON_EDIT); }));
+                items.add(back(T(R.string.to_route)));
+                break;
+            case R_AUDIO:
+                title.setText(T(R.string.r_audio));
+                items.add(new Item(() -> T(R.string.ra_on), () -> onOff(Store.turnDuck(c)),
+                        () -> { Store.setTurnDuck(c, !Store.turnDuck(c)); changed(); }, true));
+                items.add(new Item(() -> T(R.string.ra_dist), () -> {}, distSlider(() -> Store.duckDist(c), v -> Store.setDuckDist(c, v))));
+                items.add(new Item(() -> T(R.string.ra_level), () -> {}, new Slider() {
+                    public int value() { return Store.duckLevel(c); }
+                    public int max() { return 100; }
+                    public void nudge(int d) { Store.setDuckLevel(c, value() + d * 5); changed(); }
+                    public String text() { return value() + "%"; }
+                    public int tint() { return Theme.NEON_WHITE; }
+                }));
+                items.add(back(T(R.string.to_route)));
+                break;
+            default: // R_ARRIVE
+                title.setText(T(R.string.r_arrive));
+                items.add(new Item(() -> T(R.string.rr_on), () -> onOff(Store.arriveFull(c)),
+                        () -> { Store.setArriveFull(c, !Store.arriveFull(c)); changed(); }, true));
+                items.add(back(T(R.string.to_route)));
+                break;
+        }
+    }
+
+    private interface IntGet { int get(); }
+    private interface IntSet { void set(int v); }
+
+    /** 距離のスライダー(50〜2000 m)。500 m までは 50 m、その先は 100 m ずつ。 */
+    private Slider distSlider(IntGet get, IntSet set) {
+        return new Slider() {
+            public int value() { return get.get(); }
+            public int max() { return Store.DIST_MAX; }
+            public void nudge(int d) {
+                int v = value();
+                int step = (d > 0 ? v >= 500 : v > 500) ? 100 : 50;
+                set.set(Store.clampDist(v + d * step));
+                changed();
+            }
+            public String text() { return T(R.string.meters, value()); }
+            public int tint() { return Theme.NEON_WHITE; }
+        };
     }
 
     // ───────── スライダーの中身 ─────────
@@ -866,9 +975,11 @@ final class PanelView extends ViewGroup {
                 cv.drawText("‹", x0 - 16 * dp, cy + chev.getTextSize() * 0.36f, chev);
                 cv.drawText("›", x1 + 16 * dp, cy + chev.getTextSize() * 0.36f, chev);
             }
-            // 数字: 一目で読める大きさ。「%」は小さく添える
+            // 数字: 一目で読める大きさ。単位(「%」「m」など、数字の後ろ)は小さく添える
             String n = label, u = "";
-            if (n.endsWith("%")) { n = n.substring(0, n.length() - 1); u = "%"; }
+            int end = n.length();
+            while (end > 0 && !Character.isDigit(n.charAt(end - 1))) end--;
+            if (end > 0 && end < n.length()) { u = n.substring(end).trim(); n = n.substring(0, end); }
             float nx = x1 + (editing ? 28 : 12) * dp + 14 * dp; // 溝の終わり(と ›)のすぐ右から、左寄せ
             float base = cy + num.getTextSize() * 0.36f;
             num.setTextAlign(Paint.Align.LEFT);

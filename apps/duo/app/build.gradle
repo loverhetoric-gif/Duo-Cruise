@@ -1,5 +1,9 @@
 plugins { alias(libs.plugins.android.application) }
 def vcode = (project.findProperty('vc') ?: '1').toString().toInteger()
+// 版の種類。unlimited＝Duo Cruise Unlimited Edition(個人用。今の車で使う版、既定)、standard＝Duo Cruise(リリース版)。
+// リリース版を作るときは -Pedition=standard。個人用の機能(ナビの案内の中身を使うもの)と、その設定が丸ごと外れる
+def edition = (project.findProperty('edition') ?: 'unlimited').toString()
+if (!(edition in ['unlimited', 'standard'])) throw new GradleException("edition は unlimited か standard: " + edition)
 android {
     namespace = 'com.yuki.duocruise.main'
     compileSdk = 37
@@ -11,7 +15,9 @@ android {
         targetSdk = 33
         versionCode = vcode
         versionName = "0.1." + vcode
+        buildConfigField 'boolean', 'UNLIMITED', (edition == 'unlimited').toString()
     }
+    buildFeatures { buildConfig = true }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

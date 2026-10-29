@@ -230,6 +230,14 @@ final class PadServer {
         broadcast(s);
     }
 
+    /**
+     * 曲がる方向の光(Duo Cruise Unlimited Edition)。Duo Slate の縁の、曲がる側を一瞬灯す合図。
+     * 「t L FFC24F 55」= 左・色・強さ(%)。その瞬間だけの合図なので、あとからつないだ端末には送らない。
+     */
+    void turn(String side, int color, int level) {
+        broadcast(String.format(java.util.Locale.ROOT, "t %s %06X %d", side, color & 0xFFFFFF, level));
+    }
+
     private void broadcast(String s) {
         for (OutputStream o : clients.values()) writer.execute(() -> { try { send(o, s); } catch (Exception ignored) {} });
     }

@@ -157,9 +157,14 @@ struct KeyStyle: ButtonStyle {
 /// 知らせる出来事。色は「完了・切断の合図」で、普段は白。
 /// - duo: Duo Cruise とつながった(青)  - bluetooth: CarPlay の Bluetooth がつながった(緑)
 /// - lost: 切れた(赤。切れている間はうっすら赤が残る)  - switched: 操作する側を切り替えた(白)
+/// - turn: 曲がり角が近づいた(Duo Cruise Unlimited Edition。曲がる側の縁だけ、Duo Cruise で選んだ色で)
 struct Notice: Equatable {
-    enum Kind { case duo, bluetooth, lost, switched }
+    enum Kind { case duo, bluetooth, lost, switched, turn }
     let kind: Kind
+    /// turn のときの、曲がる側("L"/"R")・色・強さ(0〜1)。
+    var side: String? = nil
+    var tint: Color? = nil
+    var level: Double = 1
     let at = Date()
 
     /// Siri のように、近い色を何色か混ぜる(どれも少し白寄り。濃い色は外側の細い線だけに出る)。
@@ -173,6 +178,7 @@ struct Notice: Equatable {
             // 切断: アイコンの朱(オレンジ寄り)と分けるため、青みのある深い赤 1 色
             case .lost: return [rgb(0.80, 0.04, 0.22), rgb(0.76, 0.02, 0.26), rgb(0.80, 0.04, 0.22), rgb(0.84, 0.06, 0.24)]
             case .switched: return c.flow
+            case .turn: let t = tint ?? .orange; return [t, t, t, t]
             }
         }
         switch kind {
@@ -180,6 +186,7 @@ struct Notice: Equatable {
         case .bluetooth: return [rgb(0.46, 0.93, 0.74), rgb(0.36, 0.82, 0.78), rgb(0.72, 0.94, 0.50), rgb(0.70, 1.0, 0.86)]
         case .lost: return [rgb(1.0, 0.52, 0.48), rgb(1.0, 0.46, 0.62), rgb(1.0, 0.64, 0.48), rgb(1.0, 0.72, 0.74)]
         case .switched: return [c.glow, c.glow.opacity(0.7), c.glow, c.glow.opacity(0.8)]
+        case .turn: let t = tint ?? .orange; return [t, t.opacity(0.85), t, t.opacity(0.9)]
         }
     }
     var label: String {
@@ -187,7 +194,7 @@ struct Notice: Equatable {
         case .duo: return "Duo Cruise"
         case .bluetooth: return "Bluetooth"
         case .lost: return String(localized: "未接続")
-        case .switched: return "Duo Cruise"
+        case .switched, .turn: return "Duo Cruise"
         }
     }
     /// 知らせる長さ(秒)。広がる 0.35 秒 → 縁で流れる → ゆっくり消える。
@@ -286,15 +293,18 @@ struct Lights: View {
                         let env = Envelope.at(e)
                         if env.edge > 0 || env.wash > 0 {
                             let cols = n.colors(c)
-                            // 面全体が一瞬染まる
+                            let mask: AnyView = n.kind == .switched ? AnyView(sideMask)
+                                : n.kind == .turn ? AnyView(turnMask(n.side ?? "L")) : AnyView(Color.white)
+                            // 面全体が一瞬染まる(曲がる方向の合図は、その側だけ)
                             Rectangle()
                                 .fill(AngularGradient(colors: cols + [cols[0]], center: .center, angle: .degrees(e * 60)))
                                 .drawingGroup()
-                                .opacity(0.22 * env.wash * dim)
+                                .opacity(0.22 * env.wash * dim * n.level)
                                 .blur(radius: 30)
-                            // 縁で流れる(切り替えのときは、操作している側を強く)
-                            band(shape, cols, spin: e * 90, strength: env.edge * dim)
-                                .mask(n.kind == .switched ? AnyView(sideMask) : AnyView(Color.white))
+                                .mask(mask)
+                            // 縁で流れる(切り替えのときは操作している側を強く、曲がる方向の合図はその側だけ)
+                            band(shape, cols, spin: e * 90, strength: env.edge * dim * n.level)
+                                .mask(mask)
                         }
                     }
                 }
@@ -312,6 +322,15 @@ struct Lights: View {
         return LinearGradient(stops: [
             .init(color: .white.opacity(l), location: 0), .init(color: .white.opacity(l), location: 0.38),
             .init(color: .white.opacity(r), location: 0.62), .init(color: .white.opacity(r), location: 1)],
+            startPoint: .leading, endPoint: .trailing)
+    }
+
+    /// 曲がる側だけを残す(反対側は消す)。真ん中はなめらかにつなぐ。
+    private func turnMask(_ side: String) -> some View {
+        let (l, r): (Double, Double) = side == "L" ? (1, 0) : (0, 1)
+        return LinearGradient(stops: [
+            .init(color: .white.opacity(l), location: 0), .init(color: .white.opacity(l), location: 0.3),
+            .init(color: .white.opacity(r), location: 0.7), .init(color: .white.opacity(r), location: 1)],
             startPoint: .leading, endPoint: .trailing)
     }
 

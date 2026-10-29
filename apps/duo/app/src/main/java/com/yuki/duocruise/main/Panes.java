@@ -9,6 +9,7 @@ import android.view.View;
 import android.widget.TextView;
 
 import com.yuki.duocruise.carplay.CarPlayPane;
+import com.yuki.duocruise.carplay.Route;
 import com.yuki.duocruise.main.tv.TvPane;
 
 /**
@@ -36,7 +37,12 @@ final class Panes {
                 @Override public void onAudio(String audioType, boolean active) {
                     DuoActivity.carAudio(audioType, active);
                 }
-            }));
+
+                /** ナビの案内(Duo Cruise Unlimited Edition だけ。リリース版では届かない)。 */
+                @Override public void onRoute(Route route) {
+                    DuoActivity.carRoute(route);
+                }
+            }, BuildConfig.UNLIMITED));
         } catch (Throwable t) {
             DuoLog.error("CarPlay の部品を作れません: " + DuoLog.why(t));
             return new Broken(a, "CarPlay", DuoLog.why(t));

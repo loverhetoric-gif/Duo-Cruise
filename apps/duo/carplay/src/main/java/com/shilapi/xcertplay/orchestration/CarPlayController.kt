@@ -153,6 +153,8 @@ class CarPlayController(
     private val clearPairRecord: () -> Unit = {},
     private val locationProvider: Iap2LocationProvider? = null,
     private val vehicleStatusProvider: com.shilapi.xcertplay.transport.VehicleStatusProvider? = null,
+    /** Duo Cruise: ナビの案内(0x5201/0x5202)を受け取った。iAP2 の受信スレッドで呼ばれる。 */
+    private val onRouteGuidance: (Iap2Frame) -> Unit = {},
 ) : Closeable {
     init {
         require(!config.locationReportingEnabled || locationProvider != null) {
@@ -405,6 +407,14 @@ class CarPlayController(
     }
 
     private fun onIap2Incoming(frame: Iap2Frame) {
+        if (frame.messageId == ROUTE_GUIDANCE_UPDATE || frame.messageId == ROUTE_GUIDANCE_MANEUVER_UPDATE) {
+            try {
+                onRouteGuidance(frame)
+            } catch (error: RuntimeException) {
+                debugLog("Could not handle iAP2 route guidance", error)
+            }
+            return
+        }
         if (frame.messageId != NOW_PLAYING_UPDATE) return
         try {
             CarPlayMediaSessionBridge.publish(this, nowPlaying.update(frame))
@@ -2053,6 +2063,8 @@ class CarPlayController(
         /** DFS の確認(CAC)は 60 秒。少し余裕を足す。 */
         private const val DFS_CAC_WAIT_MILLIS = 65_000L
         private const val NOW_PLAYING_UPDATE = 0x5001
+        private const val ROUTE_GUIDANCE_UPDATE = 0x5201
+        private const val ROUTE_GUIDANCE_MANEUVER_UPDATE = 0x5202
         private const val MEDIA_REMOTE_SEND_TIMEOUT_MILLIS = 2_000L
         private const val HID_REPORT_HOLD_MILLIS = 50L
         private const val IAP2_IPHONE_UUID = "00000000-deca-fade-deca-deafdecacafe"

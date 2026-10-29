@@ -52,7 +52,12 @@ import java.util.concurrent.atomic.AtomicInteger
  * MultiPlay とは止めずに「使う時間を分ける」。[stop] で Wi-Fi・Bluetooth・チップを全部手放す。
  * メインスレッドから呼ぶこと。
  */
-class CarPlayPane(context: Context, private val listener: Listener?) {
+class CarPlayPane @JvmOverloads constructor(
+    context: Context,
+    private val listener: Listener?,
+    /** Duo Cruise Unlimited Edition: ナビの案内(曲がり角・距離・到着)を iPhone から受け取る。false なら元のまま。 */
+    private val routeGuidance: Boolean = false,
+) {
 
     /** 持ち主への知らせ(どれもメインスレッドで呼ばれる)。 */
     interface Listener {
@@ -64,6 +69,9 @@ class CarPlayPane(context: Context, private val listener: Listener?) {
 
         /** CarPlay の音の流れが始まった/終わった(audioType: media・default(ナビ)・alert・telephony・speechrecognition)。 */
         fun onAudio(audioType: String, active: Boolean)
+
+        /** ナビの案内が変わった(Duo Cruise Unlimited Edition)。CarPlay が止まったら null。 */
+        fun onRoute(route: Route?)
     }
 
     companion object {
@@ -241,6 +249,7 @@ class CarPlayPane(context: Context, private val listener: Listener?) {
                 identity = AirPlayPersistence.loadIdentity(app),
                 pairings = pairings,
                 listener = sessionListener(myGeneration),
+                onRouteGuidance = { frame -> onRouteFrame(frame, myGeneration) },
                 media = media,
                 reportStatus = { status -> if (myGeneration == generation) onControllerStatus(status) },
                 loadPairRecord = { AirPlayPersistence.loadLockdownRecord(app) },
@@ -263,6 +272,7 @@ class CarPlayPane(context: Context, private val listener: Listener?) {
     fun stop() {
         if (!isRunning) return
         generation++
+        clearRoute()
         releaseAll()
         setStatus("停止中")
         record(DuoRecord.KIND_STATE, "CarPlay 停止(Wi-Fi・Bluetooth・チップを手放した)")
@@ -428,6 +438,7 @@ class CarPlayPane(context: Context, private val listener: Listener?) {
             firmwareVersion = "1.0.0",
             hardwareVersion = "1.0",
             carPlayUsbInterfaceNumber = 3,
+            routeGuidanceEnabled = routeGuidance,
         ),
         label = "Duo Cruise",
         hostName = "DuoCruise",
@@ -566,6 +577,32 @@ class CarPlayPane(context: Context, private val listener: Listener?) {
         s.startsWith("iPhone と準備中") || s.startsWith("無線 CarPlay") || s.startsWith("CarPlay 表示中") -> app.getString(R.string.cp_starting)
         s == "停止中" -> app.getString(R.string.cp_stopped)
         else -> app.getString(R.string.cp_preparing)
+    }
+
+    // ───────── ナビの案内(Duo Cruise Unlimited Edition) ─────────
+
+    private val route = RouteGuidanceAccumulator()
+    private var lastRouteLog = ""
+
+    /** iAP2 の受信スレッドから。積み重ねて、メインスレッドで持ち主へ渡す。 */
+    private fun onRouteFrame(frame: com.shilapi.xcertplay.iap2.wire.Iap2Frame, myGeneration: Int) {
+        val now = route.update(frame) ?: return
+        main.post {
+            if (myGeneration != generation) return@post
+            // 記録は、状態か曲がり角が変わったときだけ(距離が縮むたびには残さない)
+            val key = "${now.state}/${now.turnIndex}/${now.maneuverType}/${now.onto}"
+            if (key != lastRouteLog) {
+                lastRouteLog = key
+                record(DuoRecord.KIND_STATE, "ナビの案内: $now")
+            }
+            listener?.onRoute(now)
+        }
+    }
+
+    private fun clearRoute() {
+        route.reset()
+        lastRouteLog = ""
+        listener?.onRoute(null)
     }
 
     private fun record(kind: String, text: String) {

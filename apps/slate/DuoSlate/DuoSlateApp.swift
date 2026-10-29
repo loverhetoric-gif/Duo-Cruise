@@ -109,6 +109,9 @@ struct PadScreen: View {
         }
         .onChange(of: link.bluetoothUps) { _, _ in notice = Notice(kind: .bluetooth) }
         .onChange(of: link.switches) { _, _ in notice = Notice(kind: .switched) }
+        .onChange(of: link.turns) { _, _ in
+            notice = Notice(kind: .turn, side: link.turnSide, tint: link.turnColor, level: link.turnLevel)
+        }
         .sheet(isPresented: $settings) {
             SettingsSheet(sensitivity: $sensitivity, acceleration: $acceleration, theme: $theme,
                           dayTone: $dayTone, nightTone: $nightTone, dayNeon: $dayNeon, nightNeon: $nightNeon)

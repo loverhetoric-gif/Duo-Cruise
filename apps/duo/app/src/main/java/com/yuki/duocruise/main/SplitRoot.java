@@ -28,6 +28,9 @@ final class SplitRoot extends ViewGroup {
     private final float dp;
     private final Listener listener;
     private final Frame frame;
+    /** 曲がり角の案内と、曲がる方向の光(Duo Cruise Unlimited Edition)。 */
+    private final TurnHintView hint;
+    private final TurnGlow turnGlow;
     View car, tv;
     /** タッチパッドのカーソル(いちばん上に置く)。 */
     View cursor;
@@ -50,6 +53,8 @@ final class SplitRoot extends ViewGroup {
         dp = c.getResources().getDisplayMetrics().density;
         setBackgroundColor(Theme.BG);
         frame = new Frame(c);
+        hint = new TurnHintView(c);
+        turnGlow = new TurnGlow(c);
     }
 
     void setPanes(View carView, View tvView, PanelView p) {
@@ -60,6 +65,8 @@ final class SplitRoot extends ViewGroup {
         addView(car);
         addView(tv);
         addView(frame);
+        addView(hint);
+        addView(turnGlow);
         addView(panel);
         if (cursor != null) { if (cursor.getParent() != null) ((ViewGroup) cursor.getParent()).removeView(cursor); addView(cursor); }
     }
@@ -67,6 +74,20 @@ final class SplitRoot extends ViewGroup {
     /** 並べ直す(入れ替え・操作側・操作盤の場所が変わったとき)。 */
     /** 1画面にするか。apply の前に呼ぶ。 */
     void setSingle(boolean v) { single = v; }
+
+    /** CarPlay(地図)が画面に見えているか。 */
+    boolean carVisible() {
+        if (single) return !tvShown();
+        return ytPct < 98;
+    }
+
+    /** 曲がり角の案内を出す/引っ込める(YouTube の枠の右上)。 */
+    void turnHint(boolean show, int turn, Integer exitAngle, int drivingSide, String dist, String road) {
+        hint.set(show, turn, exitAngle, drivingSide, dist, road);
+    }
+
+    /** 曲がる方向の縁を一瞬光らせる。side は "L"/"R"。 */
+    void turnGlow(String side, int color, float strength) { turnGlow.glow(side, color, strength); }
 
     /** 1画面のとき YouTube を出しているか。 */
     private boolean tvShown() { return SplitGeometry.tvOn(side, swapped); }
@@ -145,6 +166,8 @@ final class SplitRoot extends ViewGroup {
         front.setLayerType(View.LAYER_TYPE_HARDWARE, null); // 動く間は描き直さず、絵として動かす
         front.bringToFront();
         frame.bringToFront();
+        hint.bringToFront();
+        turnGlow.bringToFront();
         if (cursor != null) cursor.bringToFront();
         if (panel != null) panel.bringToFront();
         swapAnim.start();
@@ -164,6 +187,9 @@ final class SplitRoot extends ViewGroup {
         measureTo(car, carRect(w, h));
         measureTo(tv, tvRect(w, h));
         measureTo(frame, new int[]{0, 0, w, h});
+        measureTo(turnGlow, new int[]{0, 0, w, h});
+        hint.measure(MeasureSpec.makeMeasureSpec(Math.round(TurnHintView.W_DP * dp), MeasureSpec.EXACTLY),
+                MeasureSpec.makeMeasureSpec(Math.round(TurnHintView.H_DP * dp), MeasureSpec.EXACTLY));
         if (panel != null) measureTo(panel, SplitGeometry.panel(w, h, panelHalf && !single, side));
         if (cursor != null) cursor.measure(MeasureSpec.UNSPECIFIED, MeasureSpec.UNSPECIFIED);
     }
@@ -185,6 +211,11 @@ final class SplitRoot extends ViewGroup {
         layoutTo(car, c);
         layoutTo(tv, v);
         layoutTo(frame, new int[]{0, 0, w, h});
+        layoutTo(turnGlow, new int[]{0, 0, w, h});
+        // 案内は YouTube の枠の右上。枠が画面の外(1画面で地図だけ)なら、画面の右上
+        int[] at = v[0] >= w || v[2] <= 0 ? new int[]{0, 0, w, h} : v;
+        int m = Math.round(16 * dp), hw = hint.getMeasuredWidth(), hh = hint.getMeasuredHeight();
+        layoutTo(hint, new int[]{at[2] - m - hw, at[1] + m, at[2] - m, at[1] + m + hh});
         if (panel != null) layoutTo(panel, SplitGeometry.panel(w, h, panelHalf && !single, side));
         if (cursor != null) cursor.layout(getPaddingLeft(), getPaddingTop(),
                 getPaddingLeft() + cursor.getMeasuredWidth(), getPaddingTop() + cursor.getMeasuredHeight());
@@ -213,6 +244,80 @@ final class SplitRoot extends ViewGroup {
     @Override public boolean onTouchEvent(MotionEvent e) {
         // メニュー表示中に横取りした「メニュー外」のタッチを飲み込む(後ろの画面を操作させない)
         return panel != null && panel.getVisibility() == VISIBLE;
+    }
+
+    /**
+     * 曲がる方向の光(Duo Cruise Unlimited Edition)。画面全体の左か右の縁だけが、その色で一瞬灯って消える。
+     * 作りと出方はメインビューのイベント発光(Frame)と同じ三層・同じ 2.4 秒。違うのは、光を曲がる側の縁の
+     * 真ん中を中心とした大きな円で切り抜くこと(GlowLayer.spot)。左右の縁と、その側の上下の縁の端が光る。
+     */
+    private final class TurnGlow extends ViewGroup {
+        private final NeonGlow line = new NeonGlow();
+        private final GlowLayer wide, mid;
+        private final RectF box = new RectF();
+        private ValueAnimator anim;
+        private float edge, phase, strength = 0.55f;
+        private int color = Store.NEON_TURN;
+        private boolean left;
+
+        TurnGlow(Context c) {
+            super(c);
+            setWillNotDraw(false);
+            wide = new GlowLayer(c, 46, 48, 1, +1);
+            mid = new GlowLayer(c, 10, 11, 1, -1);
+            addView(wide);
+            addView(mid);
+        }
+
+        void glow(String side, int c, float s) {
+            left = "L".equals(side);
+            color = c;
+            strength = Math.max(0f, Math.min(1f, s));
+            if (anim != null) anim.cancel();
+            anim = ValueAnimator.ofFloat(0f, GLOW_MS / 1000f);
+            anim.setDuration(GLOW_MS);
+            anim.setInterpolator(new android.view.animation.LinearInterpolator());
+            anim.addUpdateListener(a -> {
+                float e = (float) a.getAnimatedValue(), d = GLOW_MS / 1000f;
+                edge = e < 0.35f ? e / 0.35f : e < 1.3f ? 1f : Math.max(0f, 1 - (e - 1.3f) / (d - 1.3f));
+                phase = e * 0.25f;
+                update();
+            });
+            anim.start();
+        }
+
+        private float cx() { return left ? 0 : getWidth(); }
+        private float radius() { return getHeight() * 1.2f; }
+        private boolean off() { return edge <= 0 || (panel != null && panel.getVisibility() == VISIBLE); }
+
+        private void update() {
+            float k = off() ? 0 : edge * strength;
+            float cy = getHeight() / 2f, r = radius();
+            wide.set(0, NeonGlow.mix(color, 0xFFFFFFFF, 0.30f), phase);
+            mid.set(0, NeonGlow.mix(color, 0xFFFFFFFF, 0.15f), phase);
+            wide.spot(cx(), cy, r, 0.38f * k);
+            mid.spot(cx(), cy, r, 0.60f * k);
+            invalidate();
+        }
+
+        @Override protected void onMeasure(int wSpec, int hSpec) {
+            setMeasuredDimension(MeasureSpec.getSize(wSpec), MeasureSpec.getSize(hSpec));
+            for (View v : new View[]{wide, mid}) v.measure(wSpec, hSpec);
+        }
+
+        @Override protected void onLayout(boolean changed, int l, int t, int r, int b) {
+            wide.layout(0, 0, r - l, b - t);
+            mid.layout(0, 0, r - l, b - t);
+        }
+
+        @Override protected void dispatchDraw(Canvas cv) {
+            super.dispatchDraw(cv);
+            if (off()) return;
+            box.set(0, 0, getWidth(), getHeight());
+            line.alpha(Math.min(1f, 1.1f * edge * strength));
+            line.spot(cx(), getHeight() / 2f, radius());
+            line.ribbon(cv, box, NeonGlow.LINE_DP * dp, NeonGlow.mix(color, 0xFFFFFFFF, 0.45f), 0, 0, null, null);
+        }
     }
 
     /**

@@ -69,16 +69,74 @@ final class Store {
     static int neonOk(Context c) { return p(c).getInt("neonOk", Theme.NEON_NAV); }
     /** 接続不良の色(既定: 赤)。 */
     static int neonAlert(Context c) { return p(c).getInt("neonAlert", Theme.NEON_ALERT); }
-    static void setNeon(Context c, int which, int color) {
-        p(c).edit().putInt(which == 0 ? "neonTarget" : which == 1 ? "neonOk" : "neonAlert", color | 0xFF000000).apply();
+
+    /** 曲がる方向の光の色(既定: アンバー。方向指示器と同じ色味)。Duo Cruise Unlimited Edition。 */
+    static int neonTurn(Context c) { return p(c).getInt("neonTurn", NEON_TURN); }
+    static final int NEON_TURN = 0xFFFFC24F;
+
+    private static String neonKey(int which) {
+        return which == 0 ? "neonTarget" : which == 1 ? "neonOk" : which == 3 ? "neonTurn" : "neonAlert";
     }
-    static int neon(Context c, int which) { return which == 0 ? neonTarget(c) : which == 1 ? neonOk(c) : neonAlert(c); }
+    private static String levelKey(int which) {
+        return which == 0 ? "neonLvT" : which == 1 ? "neonLvO" : which == 3 ? "neonLvTurn" : "neonLvA";
+    }
+
+    /** which: 0=ターゲット切替 / 1=接続完了 / 2=接続不良 / 3=曲がる方向(Unlimited Edition)。 */
+    static void setNeon(Context c, int which, int color) {
+        p(c).edit().putInt(neonKey(which), color | 0xFF000000).apply();
+    }
+    static int neon(Context c, int which) {
+        return which == 0 ? neonTarget(c) : which == 1 ? neonOk(c) : which == 3 ? neonTurn(c) : neonAlert(c);
+    }
 
     /** 各イベントの発光の強さ(0〜100%)。既定 55%(控えめ)。 */
-    static int neonLevel(Context c, int which) {
-        return p(c).getInt(which == 0 ? "neonLvT" : which == 1 ? "neonLvO" : "neonLvA", 55);
-    }
+    static int neonLevel(Context c, int which) { return p(c).getInt(levelKey(which), 55); }
     static void setNeonLevel(Context c, int which, int lv) {
-        p(c).edit().putInt(which == 0 ? "neonLvT" : which == 1 ? "neonLvO" : "neonLvA", Math.max(0, Math.min(100, lv))).apply();
+        p(c).edit().putInt(levelKey(which), Math.max(0, Math.min(100, lv))).apply();
     }
+
+    // ───────── 曲がり角の案内(Duo Cruise Unlimited Edition だけが使う) ─────────
+    // 距離はすべて m。初期値は、出しゃばらない側(画面と音を勝手に変えるものはオフ)。
+
+    /** 曲がり角の案内の表示: 0=表示しない / 1=地図が見えないときだけ / 2=常に。 */
+    static int hintMode(Context c) { return p(c).getInt("rtHint", 1); }
+    static void setHintMode(Context c, int v) { p(c).edit().putInt("rtHint", ((v % 3) + 3) % 3).apply(); }
+    /** 案内を出し始める距離。 */
+    static int hintDist(Context c) { return p(c).getInt("rtHintDist", 1000); }
+    static void setHintDist(Context c, int v) { p(c).edit().putInt("rtHintDist", clampDist(v)).apply(); }
+
+    /** 曲がり角が近づいたら地図を表示するか。 */
+    static boolean mapFront(Context c) { return p(c).getBoolean("rtMap", false); }
+    static void setMapFront(Context c, boolean v) { p(c).edit().putBoolean("rtMap", v).apply(); }
+    static int mapDist(Context c) { return p(c).getInt("rtMapDist", 300); }
+    static void setMapDist(Context c, int v) { p(c).edit().putInt("rtMapDist", clampDist(v)).apply(); }
+    /** 地図を表示している間の、YouTube の幅の割合(%)。 */
+    static int mapYt(Context c) { return SplitGeometry.clampYt(p(c).getInt("rtMapYt", 30)); }
+    static void setMapYt(Context c, int v) { p(c).edit().putInt("rtMapYt", SplitGeometry.clampYt(v)).apply(); }
+    /** 曲がり終えてから元に戻すまでの待ち(ms)。 */
+    static long mapHoldMs(Context c) { return p(c).getLong("rtMapHold", 3000); }
+    static void setMapHoldMs(Context c, long v) { p(c).edit().putLong("rtMapHold", Math.max(0, v)).apply(); }
+
+    /** 曲がる方向を縁の光で知らせるか。 */
+    static boolean turnLight(Context c) { return p(c).getBoolean("rtLight", true); }
+    static void setTurnLight(Context c, boolean v) { p(c).edit().putBoolean("rtLight", v).apply(); }
+    static int lightDist(Context c) { return p(c).getInt("rtLightDist", 200); }
+    static void setLightDist(Context c, int v) { p(c).edit().putInt("rtLightDist", clampDist(v)).apply(); }
+
+    /** 曲がり角の手前で YouTube の音量を下げるか。 */
+    static boolean turnDuck(Context c) { return p(c).getBoolean("rtDuck", false); }
+    static void setTurnDuck(Context c, boolean v) { p(c).edit().putBoolean("rtDuck", v).apply(); }
+    static int duckDist(Context c) { return p(c).getInt("rtDuckDist", 150); }
+    static void setDuckDist(Context c, int v) { p(c).edit().putInt("rtDuckDist", clampDist(v)).apply(); }
+    /** 下げたときの音量(%)。 */
+    static int duckLevel(Context c) { return p(c).getInt("rtDuckLv", 30); }
+    static void setDuckLevel(Context c, int v) { p(c).edit().putInt("rtDuckLv", Math.max(0, Math.min(100, v))).apply(); }
+
+    /** 到着したら YouTube を全画面にするか。 */
+    static boolean arriveFull(Context c) { return p(c).getBoolean("rtArrive", false); }
+    static void setArriveFull(Context c, boolean v) { p(c).edit().putBoolean("rtArrive", v).apply(); }
+
+    /** 距離の設定の範囲(50〜2000 m)。 */
+    static final int DIST_MIN = 50, DIST_MAX = 2000;
+    static int clampDist(int v) { return Math.max(DIST_MIN, Math.min(DIST_MAX, v)); }
 }
