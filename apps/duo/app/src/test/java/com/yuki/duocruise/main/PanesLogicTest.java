@@ -44,7 +44,7 @@ public final class PanesLogicTest {
         int[] t = SplitGeometry.single(1480, 480, true), c = SplitGeometry.single(1480, 480, false), o = SplitGeometry.offscreen(1480, 480);
         ok(t[0] == 0 && t[2] == 1480 && t[3] == 480, "1画面 YouTube は横いっぱい");
         ok(c[0] == 370 && c[2] == 1110 && c[3] == 480, "1画面 CarPlay は 740 幅のまま真ん中");
-        ok(o[0] == 1480 && o[2] - o[0] == 740, "出さない側は画面の外、大きさは半分のまま");
+        ok(o[0] == 1480 && o[2] - o[0] == 1480, "出さない側は画面の外、大きさは画面と同じ");
         int[] c7 = SplitGeometry.single(741, 480, false);
         ok(c7[0] >= 0 && c7[2] <= 741, "奇数幅でもはみ出さない");
     }

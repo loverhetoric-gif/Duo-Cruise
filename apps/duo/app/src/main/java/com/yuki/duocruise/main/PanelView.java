@@ -677,15 +677,8 @@ final class PanelView extends ViewGroup {
                 items.add(new Item(() -> T(R.string.rm_on), () -> onOff(Store.mapFront(c)),
                         () -> { Store.setMapFront(c, !Store.mapFront(c)); changed(); }, true));
                 items.add(new Item(() -> T(R.string.rm_dist), () -> {}, distSlider(() -> Store.mapDist(c), v -> Store.setMapDist(c, v))));
-                items.add(new Item(() -> T(R.string.rm_split), () -> {}, new Slider() {
-                    public int value() { return Store.mapYt(c); }
-                    public int max() { return 100; }
-                    public void nudge(int d) { Store.setMapYt(c, value() + d * 5); changed(); }
-                    public String text() { return value() + "%"; }
-                    public int tint() { return Theme.NEON_WHITE; }
-                }));
                 items.add(new Item(() -> T(R.string.rm_hold), () -> T(R.string.seconds, Store.mapHoldMs(c) / 1000),
-                        () -> { long v = Store.mapHoldMs(c) / 1000 + 1; if (v > 10) v = 0; Store.setMapHoldMs(c, v * 1000); changed(); }, true));
+                        () -> { long v = Store.mapHoldMs(c) / 1000 + 1; if (v > 10) v = 1; Store.setMapHoldMs(c, v * 1000); changed(); }, true));
                 items.add(back(T(R.string.to_route)));
                 break;
             case R_LIGHT:

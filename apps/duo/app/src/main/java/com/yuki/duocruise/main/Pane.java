@@ -23,6 +23,8 @@ interface Pane {
     String status();
     /** 記録シートの指示(例「tv-status」)。結果の1行を返す。扱わない部品は null。 */
     String command(String cmd);
+    /** CarPlay: 枠がこの幅に落ち着く(描く範囲を選ぶ)。 */
+    default void fitWidth(int px) {}
     /** 音量を下げる(1＝そのまま、0.2＝小さく、0＝消す)。音を出す部品だけが使う。 */
     default void duck(float level) {}
     /** 電話・Siri の間は止め(on)、終わったら止める前の状態に戻す(off)。音を出す部品だけが使う。 */

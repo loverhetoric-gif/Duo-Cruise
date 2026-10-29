@@ -10,9 +10,8 @@ final class SplitGeometry {
     static final int SIDE_LEFT = 0, SIDE_RIGHT = 1;
 
     /** YouTube の幅の割合(%)の下限・上限。 */
-    // 通常の分割比は、CarPlay を完全には消さない(必ず 15% 以上残す)。
-    // YouTube を全画面にしたいときは「1画面」モードを使う。
-    static int clampYt(int pct) { return pct < 20 ? 20 : pct > 85 ? 85 : pct; }
+    // 0〜100%。0 で CarPlay だけ、100 で YouTube だけの全画面になる。
+    static int clampYt(int pct) { return pct < 0 ? 0 : pct > 100 ? 100 : pct; }
 
     /** 画面上の左半分(side=0)か右半分(side=1)。50:50。操作盤などで使う。 */
     static int[] half(int w, int h, int side) {
@@ -51,21 +50,20 @@ final class SplitGeometry {
         return halfOnly ? half(w, h, side) : new int[]{0, 0, w, h};
     }
 
-    /**
-     * 1画面のときの、出す側の枠。YouTube は横いっぱい。
-     * CarPlay は iPhone と決めた大きさ(半分の幅)のまま真ん中に置く(引き伸ばすと絵がゆがむため)。
-     */
-    static int[] single(int w, int h, boolean tv) {
-        if (tv) return new int[]{0, 0, w, h};
-        int hw = w / 2, left = (w - hw) / 2;
-        return new int[]{left, 0, left + hw, h};
+    /** 1画面のときの、出す側の枠。どちらも横いっぱい(CarPlay は iPhone に画面全体の範囲で描かせる)。 */
+    static int[] single(int w, int h, boolean tv) { return new int[]{0, 0, w, h}; }
+
+    /** 曲がり角の小窓(YouTube)。幅は画面の 1/3、16:9。運転席と反対側の下の隅。 */
+    static int[] pip(int w, int h, boolean left) {
+        int pw = Math.round(w / 3f), ph = Math.min(h, Math.round(pw * 9 / 16f)), m = 16;
+        return left ? new int[]{m, h - m - ph, m + pw, h - m} : new int[]{w - m - pw, h - m - ph, w - m, h - m};
     }
 
     /**
-     * 1画面のときの、出さない側の置き場所(画面の右の外)。大きさは半分のまま変えない。
+     * 1画面のときの、出さない側の置き場所(画面の右の外)。大きさは画面と同じ。
      * 隠す(INVISIBLE)と CarPlay の映像の面が消えて作り直しになるため、外へ出すだけにする。YouTube の再生も止めない。
      */
-    static int[] offscreen(int w, int h) { return new int[]{w, 0, w + w / 2, h}; }
+    static int[] offscreen(int w, int h) { return new int[]{w, 0, w + w, h}; }
 
     static String str(int[] r) { return (r[2] - r[0]) + "×" + (r[3] - r[1]) + "@" + r[0] + "," + r[1]; }
 }

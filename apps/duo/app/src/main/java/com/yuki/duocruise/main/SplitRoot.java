@@ -42,6 +42,12 @@ final class SplitRoot extends ViewGroup {
     boolean padScrolling;
     PanelView panel;
     boolean swapped, panelHalf, single;
+    /** 曲がり角の小窓: CarPlay を画面いっぱいに、YouTube を隅の小窓に(pipLeft なら左下)。 */
+    private boolean pip, pipLeft;
+    /** 並べ方が変わったときの動き。動いている間は、枠を animCar / animTv に置いて変形で見せる。 */
+    private ValueAnimator moveAnim;
+    private int[] animCar, animTv, lastCar, lastTv;
+    private String lastShape = "";
     int side;
     /** YouTube の幅の割合(%)。50＝半々。 */
     int ytPct = 50;
@@ -49,7 +55,7 @@ final class SplitRoot extends ViewGroup {
     /** 入れ替えの動き: 並べ直す前の左端。並べ直した後、ここから新しい場所へ動かす。 */
     private int swapFromCar = Integer.MIN_VALUE, swapFromTv = Integer.MIN_VALUE;
     private ValueAnimator swapAnim;
-    static final long SWAP_MS = 380, GLOW_MS = 2400; // 光は Duo Slate と同じ 2.4 秒
+    static final long SWAP_MS = Motion.MS, GLOW_MS = 2400; // 光は Duo Slate と同じ 2.4 秒
 
     SplitRoot(Context c, Listener l) {
         super(c);
@@ -83,8 +89,20 @@ final class SplitRoot extends ViewGroup {
     /** 1画面にするか。apply の前に呼ぶ。 */
     void setSingle(boolean v) { single = v; }
 
+    /** 曲がり角の小窓を出す/やめる。apply の前に呼ぶ。 */
+    void setPip(boolean on, boolean left) { pip = on; pipLeft = left; }
+
+    /** YouTube の幅の割合が yt のときの CarPlay の枠の幅(描く範囲を選ぶため)。並べる前は 0。 */
+    int carWidth(int yt) {
+        int w = contentW(), h = contentH();
+        if (w <= 0) return 0;
+        int[] r = carRect(w, h, yt);
+        return r[0] >= w ? w : r[2] - r[0];
+    }
+
     /** CarPlay(地図)が画面に見えているか。 */
     boolean carVisible() {
+        if (pip) return true;
         if (single) return !tvShown();
         return ytPct < 98;
     }
@@ -106,21 +124,28 @@ final class SplitRoot extends ViewGroup {
     /** 1画面のとき YouTube を出しているか。 */
     private boolean tvShown() { return SplitGeometry.tvOn(side, swapped); }
 
-    private int[] carRect(int w, int h) {
+    private int[] carRect(int w, int h) { return carRect(w, h, ytPct); }
+
+    private int[] carRect(int w, int h, int yt) {
+        if (pip) return new int[]{0, 0, w, h};
         if (single) return tvShown() ? SplitGeometry.offscreen(w, h) : SplitGeometry.single(w, h, false);
         // YouTube が全画面に近いとき、CarPlay は幅0になり映像面が壊れるので、画面の外へ置く
-        if (ytPct >= 98) return SplitGeometry.offscreen(w, h);
-        return SplitGeometry.car(w, h, swapped, ytPct);
+        if (yt >= 98) return SplitGeometry.offscreen(w, h);
+        if (yt <= 2) return new int[]{0, 0, w, h};
+        return SplitGeometry.car(w, h, swapped, yt);
     }
 
     private int[] tvRect(int w, int h) {
+        if (pip) return SplitGeometry.pip(w, h, pipLeft);
         if (single) return tvShown() ? SplitGeometry.single(w, h, true) : SplitGeometry.offscreen(w, h);
         if (ytPct >= 98) return SplitGeometry.single(w, h, true);
+        if (ytPct <= 2) return SplitGeometry.offscreen(w, h);
         return SplitGeometry.tv(w, h, swapped, ytPct);
     }
 
     /** 操作している枠(線と光を描く場所)。 */
     int[] activeRect(int w, int h) {
+        if (pip) return tvShown() ? SplitGeometry.pip(w, h, pipLeft) : new int[]{0, 0, w, h};
         if (single) return SplitGeometry.single(w, h, tvShown());
         if (ytPct >= 98) return SplitGeometry.single(w, h, tvShown());
         return SplitGeometry.activeHalf(w, h, side, swapped, ytPct);
@@ -135,9 +160,110 @@ final class SplitRoot extends ViewGroup {
         this.side = side;
         this.panelHalf = panelHalf;
         this.ytPct = ytPct;
+        // 並べ方の形(1画面・小窓・1画面で出す側)が変わったら、前の位置から動かす。比率だけの変化は呼び手が動かす
+        String shape = single + "," + pip + "," + (single && !pip ? tvShown() : "");
+        int w = contentW(), h = contentH();
+        if (!shape.equals(lastShape) && lastCar != null && w > 0) {
+            boolean flip = single && !pip && lastShape.startsWith("true,false,");
+            boolean fromPip = lastShape.contains(",true,");
+            move(lastCar, carRect(w, h), lastTv, tvRect(w, h), w, flip, pip, fromPip);
+        }
+        lastShape = shape;
         requestLayout();
         frame.requestLayout();
         frame.invalidate();
+    }
+
+    /**
+     * 枠を前の位置 (fc, fv) から新しい位置 (tc, tv) へ、慣性のある動き(Motion)で運ぶ。
+     * 動く間は、各枠を「前と新しい位置の広い方」に置き、移動と拡大縮小(変形)だけで見せる(中身を描き直させない)。
+     * CarPlay は伸び縮みさせず移動だけ(絵がゆがむため。小窓へは上の YouTube が縮んで、下の CarPlay が現れる)。
+     * flip(1画面で出す側の切り替え)はシャッフル: 出ていく側は縮みながら右の外へ、入る側は左の奥から手前へ。
+     */
+    private void move(int[] fc, int[] tc, int[] fv, int[] tv2, int w, boolean flip, boolean toPip, boolean fromPip) {
+        if (moveAnim != null) moveAnim.cancel();
+        boolean carIn = fc[0] >= w && tc[0] < w, tvIn = fv[0] >= w && tv2[0] < w;
+        // 小窓へ: CarPlay は最初から画面いっぱいに下にいて、縮む YouTube の下から現れる。小窓から戻る: 広がる YouTube に隠れるまで動かない
+        if (toPip && carIn) fc = tc;
+        if (fromPip && tc[0] >= w) tc = fc;
+        if (flip) {
+            if (carIn) fc = shuffleIn(tc, w); else if (tc[0] >= w) tc = shrink(tc, 0.86f);
+            if (tvIn) fv = shuffleIn(tv2, w); else if (tv2[0] >= w) tv2 = shrink(tv2, 0.86f);
+        }
+        animCar = larger(fc, tc);
+        animTv = larger(fv, tv2);
+        final float[] sc = rel(fc, animCar, !flip), ec = rel(tc, animCar, !flip), sv = rel(fv, animTv, false), ev = rel(tv2, animTv, false);
+        final View front = toPip || fromPip || !carIn ? tv : car;
+        front.bringToFront();
+        frame.bringToFront();
+        hint.bringToFront();
+        turnGlow.bringToFront();
+        splitLine.bringToFront();
+        if (cursor != null) cursor.bringToFront();
+        if (panel != null) panel.bringToFront();
+        tv.setLayerType(View.LAYER_TYPE_HARDWARE, null); // 動く間は描き直さず、絵として動かす
+        for (View v : new View[]{car, carLoader, tv}) { v.setPivotX(0); v.setPivotY(0); }
+        frame.moving = true;
+        moveAnim = ValueAnimator.ofFloat(0f, 1f);
+        moveAnim.setDuration(Motion.MS);
+        moveAnim.setInterpolator(Motion.EASE);
+        moveAnim.addUpdateListener(a -> {
+            float e = (float) a.getAnimatedValue();
+            put(car, sc, ec, e);
+            put(carLoader, sc, ec, e);
+            put(tv, sv, ev, e);
+        });
+        moveAnim.addListener(new android.animation.AnimatorListenerAdapter() {
+            boolean cancelled;
+            @Override public void onAnimationCancel(android.animation.Animator a) { cancelled = true; }
+            @Override public void onAnimationEnd(android.animation.Animator a) {
+                if (cancelled) return;
+                animCar = animTv = null;
+                for (View v : new View[]{car, carLoader, tv}) {
+                    v.setTranslationX(0); v.setTranslationY(0); v.setScaleX(1); v.setScaleY(1);
+                }
+                tv.setLayerType(View.LAYER_TYPE_NONE, null);
+                frame.moving = false;
+                frame.update();
+                requestLayout();
+            }
+        });
+        put(car, sc, ec, 0);
+        put(carLoader, sc, ec, 0);
+        put(tv, sv, ev, 0);
+        moveAnim.start();
+    }
+
+    /** 置き場所 base から見た r の変形 {移動x, 移動y, 倍率x, 倍率y}。uniform なら倍率は 1(移動だけ)。 */
+    private static float[] rel(int[] r, int[] base, boolean uniform) {
+        float bw = Math.max(1, base[2] - base[0]), bh = Math.max(1, base[3] - base[1]);
+        return new float[]{r[0] - base[0], r[1] - base[1], uniform ? 1 : (r[2] - r[0]) / bw, uniform ? 1 : (r[3] - r[1]) / bh};
+    }
+
+    private static void put(View v, float[] s, float[] e, float k) {
+        if (v == null) return;
+        v.setTranslationX(s[0] + (e[0] - s[0]) * k);
+        v.setTranslationY(s[1] + (e[1] - s[1]) * k);
+        v.setScaleX(Math.max(0.01f, s[2] + (e[2] - s[2]) * k));
+        v.setScaleY(Math.max(0.01f, s[3] + (e[3] - s[3]) * k));
+    }
+
+    private static int[] larger(int[] a, int[] b) {
+        long sa = (long) (a[2] - a[0]) * (a[3] - a[1]), sb = (long) (b[2] - b[0]) * (b[3] - b[1]);
+        return sa >= sb ? a : b;
+    }
+
+    /** 真ん中を中心に k 倍した位置。 */
+    private static int[] shrink(int[] r, float k) {
+        int w = r[2] - r[0], h = r[3] - r[1], dx = Math.round(w * (1 - k) / 2), dy = Math.round(h * (1 - k) / 2);
+        return new int[]{r[0] + dx, r[1] + dy, r[2] - dx, r[3] - dy};
+    }
+
+    /** シャッフルで入る側の出発点: 左へ 4 割ずれた奥(少し小さい)。 */
+    private static int[] shuffleIn(int[] to, int w) {
+        int[] r = shrink(to, 0.86f);
+        int dx = Math.round(w * 0.4f);
+        return new int[]{r[0] - dx, r[1], r[2] - dx, r[3]};
     }
 
     /**
@@ -158,7 +284,7 @@ final class SplitRoot extends ViewGroup {
         final View back = car, front = tv;
         swapAnim = ValueAnimator.ofFloat(0f, 1f);
         swapAnim.setDuration(SWAP_MS);
-        swapAnim.setInterpolator(new android.view.animation.DecelerateInterpolator(1.6f));
+        swapAnim.setInterpolator(Motion.EASE);
         swapAnim.addUpdateListener(a -> {
             float f = (float) a.getAnimatedValue();
             float arc = (float) Math.sin(Math.PI * f); // 真ん中で一番ふくらむ
@@ -199,9 +325,10 @@ final class SplitRoot extends ViewGroup {
     @Override protected void onMeasure(int wSpec, int hSpec) {
         setMeasuredDimension(MeasureSpec.getSize(wSpec), MeasureSpec.getSize(hSpec));
         int w = contentW(), h = contentH();
-        measureTo(car, carRect(w, h));
-        measureTo(carLoader, carRect(w, h));
-        measureTo(tv, tvRect(w, h));
+        int[] c = animCar != null ? animCar : carRect(w, h), v = animTv != null ? animTv : tvRect(w, h);
+        measureTo(car, c);
+        measureTo(carLoader, c);
+        measureTo(tv, v);
         measureTo(frame, new int[]{0, 0, w, h});
         measureTo(turnGlow, new int[]{0, 0, w, h});
         measureTo(splitLine, new int[]{0, 0, w, h});
@@ -225,6 +352,10 @@ final class SplitRoot extends ViewGroup {
     @Override protected void onLayout(boolean changed, int l, int t, int r, int b) {
         int w = contentW(), h = contentH();
         int[] c = carRect(w, h), v = tvRect(w, h);
+        lastCar = c;
+        lastTv = v;
+        if (animCar != null) c = animCar;
+        if (animTv != null) v = animTv;
         layoutTo(car, c);
         layoutTo(carLoader, c);
         layoutTo(tv, v);

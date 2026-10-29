@@ -459,8 +459,15 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     private void applyLayout() {
         if (curYt < 0) curYt = Store.splitYt(this);
         root.setSingle(Store.single(this));
+        root.setPip(mapEngaged, !Store.rightHand(this)); // 小窓は運転席と反対側
         root.apply(Store.swapped(this), Store.side(this), Store.panelHalf(this), curYt);
+        if (ytAnim == null || !ytAnim.isRunning()) fitCar(curYt);
         updateHint();
+    }
+
+    /** CarPlay の枠が落ち着く幅を伝え、iPhone に描く範囲を合わせてもらう(動く前に、行き先の幅で)。 */
+    private void fitCar(int yt) {
+        if (car != null) car.fitWidth(root.carWidth(yt));
     }
 
     /** CarPlay の接続状態(前回値)。変化した瞬間だけ、メインビューを色で知らせる。 */
@@ -488,9 +495,15 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         if (curYt < 0) curYt = Store.splitYt(this);
         if (ytAnim != null) ytAnim.cancel();
         if (curYt == target) { applyLayout(); return; }
-        ytAnim = android.animation.ValueAnimator.ofInt(curYt, target);
-        ytAnim.setDuration(300);
-        ytAnim.addUpdateListener(a -> { curYt = (int) a.getAnimatedValue(); applyLayout(); });
+        final int from = curYt, to = target;
+        fitCar(to);
+        ytAnim = android.animation.ValueAnimator.ofFloat(0f, 1f);
+        ytAnim.setDuration(Motion.MS);
+        ytAnim.setInterpolator(Motion.EASE); // 遅い→速い→遅い、少し行き過ぎて戻る
+        ytAnim.addUpdateListener(a -> {
+            curYt = SplitGeometry.clampYt(Math.round(from + (to - from) * (float) a.getAnimatedValue()));
+            applyLayout();
+        });
         ytAnim.start();
     }
 
@@ -547,7 +560,6 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
      */
     private int targetYt() {
         if (splitAdjusting) return splitVal;
-        if (mapEngaged) return Store.mapYt(this);
         if (navEngaged) return Store.navYt(this);
         if (arriveEngaged) return 100;
         return Store.splitYt(this);
@@ -557,7 +569,10 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     private final TurnPlan plan = new TurnPlan();
     private Route route;
     /** 曲がり角で地図を表示中 / そのために 1 画面の表示を地図へ切り替えた / 到着後の全画面 / 曲がり角の手前で音量を下げ中。 */
-    private boolean mapEngaged, mapFlipped, arriveEngaged, turnDucked;
+    private boolean mapEngaged, arriveEngaged, turnDucked;
+    /** この曲がり角では小窓をもう出した(曲がり角を過ぎるまで出し直さない)。 */
+    private boolean pipSpent;
+
     private final Runnable mapRelease = this::mapRelease;
 
     /** CarPlay から(メインスレッド)。CarPlay が止まったら null。 */
@@ -594,12 +609,10 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         updateHint();
         boolean want = plan.map && Store.mapFront(this);
         if (want) {
-            main.removeCallbacks(mapRelease);
-            if (!mapEngaged) engageMap();
-        } else if (mapEngaged) {
-            main.removeCallbacks(mapRelease);
-            if (route == null || !Store.mapFront(this)) mapRelease();
-            else main.postDelayed(mapRelease, Store.mapHoldMs(this)); // 曲がり終えて少し待ってから戻す
+            if (!mapEngaged && !pipSpent) engageMap();
+        } else {
+            pipSpent = false;
+            if (mapEngaged && (route == null || !Store.mapFront(this))) mapRelease();
         }
         boolean duck = plan.duck && Store.turnDuck(this);
         if (duck != turnDucked) { turnDucked = duck; applyDuck(); }
@@ -622,27 +635,25 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         return Store.distance(this, r.distanceToTurnM);
     }
 
-    /** 地図を表示する。2 画面なら地図を広げ、1 画面で YouTube を出していれば地図に切り替える。 */
+    /**
+     * 地図を表示する: CarPlay を画面いっぱいにし、YouTube は止めずに隅の小窓へ縮める(設定の「元に戻るまでの時間」で戻す)。
+     * 1 画面で CarPlay を出しているときは、もう地図が見えているので何もしない。
+     */
     private void engageMap() {
+        pipSpent = true;
+        if (Store.single(this) && active() == car) return;
         mapEngaged = true;
-        if (Store.single(this)) {
-            if (active() == tv) { mapFlipped = true; flipQuietly(); }
-        } else {
-            animateYt(targetYt());
-        }
-        DuoLog.log("曲がり角の案内: 地図を表示しました");
+        applyLayout();
+        main.removeCallbacks(mapRelease);
+        main.postDelayed(mapRelease, Math.max(1000, Store.mapHoldMs(this)));
+        DuoLog.log("曲がり角の案内: CarPlay を全画面にし、YouTube を小窓にしました");
     }
 
     private void mapRelease() {
         main.removeCallbacks(mapRelease);
         if (!mapEngaged) return;
         mapEngaged = false;
-        if (mapFlipped) {
-            mapFlipped = false;
-            if (Store.single(this) && active() == car) flipQuietly();
-        } else {
-            animateYt(targetYt());
-        }
+        applyLayout();
         DuoLog.log("曲がり角の案内: 元の表示に戻しました");
     }
 

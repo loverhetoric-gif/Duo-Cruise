@@ -92,6 +92,7 @@ final class Panes {
         }
         @Override public void scroll(float dx, float dy) { p.scroll(dx, dy); }
         @Override public void scrollEnd() { p.scrollEnd(); }
+        @Override public void fitWidth(int px) { p.fitWidth(px); }
         /** OTTO の Wi-Fi のパスワードを入力中のときだけ使う。 */
         @Override public void typeText(String text) { p.typeText(text); }
         @Override public void typeKey(int keyCode) { p.typeKey(keyCode); }
