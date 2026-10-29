@@ -1350,6 +1350,15 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
                     if (!Store.single(this) && Store.side(this) != side) { Store.setSide(this, side); }
                     toggleSingle();
                     break;
+                case "yt": // 分割比(YouTube の %)。選べる段(0・30〜70・100)にそろえる
+                    try {
+                        int v = Integer.parseInt(a[1]);
+                        int snap = v <= 15 ? 0 : v >= 85 ? 100 : Math.max(SplitGeometry.YT_MIN, Math.min(SplitGeometry.YT_MAX, Math.round(v / 5f) * 5));
+                        Store.setSplitYt(this, snap);
+                        animateYt(targetYt());
+                        DuoLog.log("分割比(Duo Slate): YouTube " + snap + "%");
+                    } catch (Exception ignored) {}
+                    break;
             }
             padLayoutState();
         });

@@ -26,6 +26,9 @@ struct LayoutMap: View {
     var touched: () -> Void
 
     @State private var dragX: CGFloat = 0
+    /** 境目をつかんで動かしている間の YouTube の割合(0〜100)。nil なら動かしていない。 */
+    @State private var dragYt: CGFloat?
+    @State private var grabbedEdge = false
 
     var body: some View {
         GeometryReader { geo in
@@ -35,15 +38,30 @@ struct LayoutMap: View {
                 ForEach(panes(w), id: \.name) { p in
                     pane(p, h: h)
                 }
+                if !layout.single, let bx = boundaryX(w) { divider(bx, h: h) }
             }
             .contentShape(Rectangle())
             .offset(x: dragX * 0.25)
             .gesture(
-                DragGesture(minimumDistance: 24)
-                    .onChanged { v in dragX = v.translation.width; touched() }
+                DragGesture(minimumDistance: 6)
+                    .onChanged { v in
+                        touched()
+                        // 境目の近く(±28pt)でつかんだら分割比、それ以外はウィンドウの切り替え
+                        if dragYt == nil && !grabbedEdge, !layout.single, let bx = boundaryX(w),
+                           abs(v.startLocation.x - bx) < 28 { grabbedEdge = true }
+                        if grabbedEdge {
+                            let x = min(max(0, v.location.x), w)
+                            dragYt = (layout.swapped ? x / w : 1 - x / w) * 100
+                        } else if abs(v.translation.width) > 18 {
+                            dragX = v.translation.width
+                        }
+                    }
                     .onEnded { v in
-                        if abs(v.translation.width) > w * 0.18 && !layout.single { haptic(); send("k sw") }
-                        withAnimation(.spring(response: 0.45, dampingFraction: 0.7)) { dragX = 0 }
+                        if grabbedEdge, let y = dragYt {
+                            haptic(); send("k yt \(Int(y.rounded()))")
+                        } else if abs(v.translation.width) > w * 0.18 && !layout.single { haptic(); send("k sw") }
+                        grabbedEdge = false
+                        withAnimation(.spring(response: 0.45, dampingFraction: 0.7)) { dragX = 0; dragYt = nil }
                     }
             )
             .simultaneousGesture(
@@ -65,13 +83,41 @@ struct LayoutMap: View {
 
     private struct Pane { let name: String; let x: CGFloat; let width: CGFloat; let target: Bool }
 
+    /** 今の(動かしている間はその)YouTube の割合。 */
+    private var ytNow: CGFloat { dragYt ?? CGFloat(min(100, max(0, layout.yt))) }
+
+    /** 左右の枠の境目の x(片方だけの全画面なら nil)。 */
+    private func boundaryX(_ w: CGFloat) -> CGFloat? {
+        let yt = ytNow / 100
+        if yt <= 0.01 || yt >= 0.99 { return nil }
+        return layout.swapped ? w * yt : w * (1 - yt)
+    }
+
+    /** 境目のつまみ: 細い光の線と、真ん中の小さな四角。動かしている間は割合を出す。 */
+    private func divider(_ x: CGFloat, h: CGFloat) -> some View {
+        let glow = c.flow.first ?? c.glow
+        return ZStack {
+            Rectangle().fill(glow.opacity(dragYt == nil ? 0.55 : 1)).frame(width: 2, height: h + 12)
+            Rectangle().fill(glow).frame(width: 8, height: 22)
+            if let y = dragYt {
+                Text("\(Int((100 - y).rounded()))  |  \(Int(y.rounded()))")
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(c.icon)
+                    .offset(y: -h / 2 - 16)
+            }
+        }
+        .frame(width: 44, height: h)
+        .offset(x: x - 22)
+        .allowsHitTesting(false)
+    }
+
     /// 今の並びの枠(画面の外に出ているものは描かない)。
     private func panes(_ w: CGFloat) -> [Pane] {
         if layout.single {
             let tv = layout.tvOn(layout.side)
             return [Pane(name: tv ? "tv" : "car", x: 0, width: w, target: true)]
         }
-        let yt = CGFloat(min(100, max(0, layout.yt))) / 100
+        let yt = ytNow / 100
         let tvW = w * yt, carW = w - tvW
         let tvX: CGFloat = layout.swapped ? 0 : carW
         let carX: CGFloat = layout.swapped ? tvW : 0

@@ -52,7 +52,7 @@ final class PadInput implements PadServer.Sink {
         void commanderRotate(int steps);
         /** MAZDA コマンダー: 倒す・押し込む(キーとして渡す。DPAD 上下左右・決定・戻る)。 */
         void commanderKey(int keyCode);
-        /** Duo Slate の画面の縮図から: "tg L|R"(ターゲット)・"sw"(ウィンドウの切り替え)・"sg L|R"(その側の 1 画面 ⇔ 2 画面)。 */
+        /** Duo Slate の画面の縮図から: "tg L|R"(ターゲット)・"sw"(ウィンドウの切り替え)・"sg L|R"(その側の 1 画面 ⇔ 2 画面)・"yt N"(分割比)。 */
         default void padLayout(String cmd) {}
     }
 
@@ -123,7 +123,7 @@ final class PadInput implements PadServer.Sink {
                     case "r": host.globalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_RECENTS); break;
                     case "m": host.openMenu(); break; // 設定メニューを開く
                     // ── 画面の縮図(Duo Slate) ──
-                    case "tg": case "sw": case "sg": host.padLayout(s.substring(2)); break;
+                    case "tg": case "sw": case "sg": case "yt": host.padLayout(s.substring(2)); break;
                     // ── MAZDA コマンダー ──
                     case "rot": if (a.length > 2) host.commanderRotate((int) f(a[2])); break; // 回す
                     case "c": host.commanderKey(android.view.KeyEvent.KEYCODE_DPAD_CENTER); break; // 押し込み=決定
