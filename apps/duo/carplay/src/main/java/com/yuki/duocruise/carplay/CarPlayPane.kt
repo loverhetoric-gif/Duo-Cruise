@@ -430,7 +430,7 @@ class CarPlayPane @JvmOverloads constructor(
             " 機器の番号=" + (if (prefs().getBoolean(KEY_HID_SPLIT, false)) "部品ごと" else "共通")
 
     private fun savedAreas(): List<Int> =
-        prefs().getString(KEY_AREAS, "").orEmpty().split(',').mapNotNull { it.trim().toIntOrNull() }
+        prefs().getString(KEY_AREAS, "").orEmpty().split(Regex("[,_\\s]+")).mapNotNull { it.trim().toIntOrNull() }
             .filter { it in 100..4096 }.distinct()
 
     private fun areasText(): String =
@@ -452,7 +452,7 @@ class CarPlayPane @JvmOverloads constructor(
     }
 
     /**
-     * 指示(試し): car-areas 1480,740 … 描く範囲の幅の一覧を決めて、つなぎ直す / car-areas off … 元に戻す /
+     * 指示(試し): car-areas 1480_740 … 描く範囲の幅の一覧を決めて、つなぎ直す / car-areas off … 元に戻す /
      * car-area N … N 番の範囲へ切り替える(auto で枠の幅に合わせる)。
      */
     fun setAreas(cmd: String): String {
@@ -467,7 +467,8 @@ class CarPlayPane @JvmOverloads constructor(
             showArea(i, "指示")
             return areasText()
         }
-        val list = if (arg == "off") "" else arg
+        // 指示シートは「,」を通さないので、「_」や空白の区切りも受ける
+        val list = if (arg == "off") "" else arg.split(Regex("[,_\\s]+")).filter { it.isNotEmpty() }.joinToString(",")
         prefs().edit().putString(KEY_AREAS, list).apply()
         record(DuoRecord.KIND_STATE, "CarPlay の描く範囲の一覧を「${list.ifEmpty { "切り替えなし" }}」にしました。つなぎ直します")
         if (isRunning) { stop(); start() }
