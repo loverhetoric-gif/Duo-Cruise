@@ -130,10 +130,10 @@ class CarPlayPane @JvmOverloads constructor(
         private const val KEY_HID_SPLIT = "hidSplit"
         private const val KEY_AREAS = "areas2"
         /**
-         * 描く範囲の既定: 画面全体(1画面・曲がり角の小窓)、半分、YouTube がちょうど 16:9(480 の高さで幅 853)に
-         * なるときの残り(627)。
+         * 描く範囲の既定: 画面全体(1画面・曲がり角の小窓)と半分。それより狭い範囲(627)を足すと、
+         * iPhone がつないだ直後に切った(2026-10-29 実機)。狭い枠には半分の範囲を縮めて映す。
          */
-        private const val DEFAULT_AREAS = "1480,740,627"
+        private const val DEFAULT_AREAS = "1480,740"
         /** つながってから、描く範囲の切り替えを送るまで待つ時間。 */
         private const val AREA_SETTLE_MS = 3000L
 
