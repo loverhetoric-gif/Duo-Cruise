@@ -97,6 +97,7 @@ final class PanelView extends ViewGroup {
         final Runnable run;      // 押したとき
         final boolean adj;       // 左右でその場で変えられる値か
         final Slider slider;     // スライダーならその中身(なければ null)
+        boolean hide;            // 行に出さない(「戻る」は左上の × とコマンダーの戻るで足りる)
         Item(Text label, Text value, Runnable run) { this(label, value, run, false, null); }
         Item(Text label, Text value, Runnable run, boolean adj) { this(label, value, run, adj, null); }
         Item(Text label, Runnable run, Slider slider) { this(label, () -> "", run, true, slider); }
@@ -107,15 +108,22 @@ final class PanelView extends ViewGroup {
 
     // 寸法(dp)。行は画面高に収まる範囲でできるだけ大きく。
     private static final float ROW_MAX = 72, ROW_GAP = 6, HEADER = 56, PAD = 18, LIST_MAX = 1120;
-    private static final int VALUE = 0xB3FFFFFF;     // 値の文字(白・70%)。青は使わない
-    private static final int LABEL_DIM = 0x8CFFFFFF;  // 非選択のラベル(白・55%)
-    /** 項目の列の幅と、スライダーの幅(dp)。1480×480 で、項目と詳細が画面の左 2/3 にまとまる。 */
-    private static final int LABEL_COL = 480, SLIDER_W = 620;
+    /**
+     * 配色。起動画面と同じく、OS のダーク表示なら黒地・白文字、ライト表示なら白地・黒文字。
+     * FG＝選んでいる文字、FG_DIM＝選んでいない項目、FG_VAL＝値、GLOW＝縁の光(夜は白、昼は白地で消えないよう青)。
+     */
+    private final boolean night;
+    private final int FG, FG_DIM, FG_VAL, GLOW;
 
     private final Host host;
     private final float dp;
-    private final TextView title, logText;
+    private final TextView title, logText, crumb;
     private final ListPane list;
+    /** 左上の ×(1 つ上へ。いちばん上では閉じる)と、右側の動く図。 */
+    private final CloseX close;
+    private final PanelArt art;
+    /** ページの見出し(道すじ「設定 › 表示」を作るため、出したものを覚えておく)。 */
+    private final java.util.Map<Integer, String> titles = new java.util.HashMap<>();
     private final RectF frameBox = new RectF();
     private final NeonGlow frameGlow = new NeonGlow();
     private final GlowLayer glowWide, glowMid;
@@ -134,10 +142,21 @@ final class PanelView extends ViewGroup {
         super(c);
         this.host = host;
         dp = c.getResources().getDisplayMetrics().density;
-        setBackgroundColor(0xE0000000); // 黒の透過(視認性のため濃いめ。後ろの映像はうっすら)
+        night = (c.getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK)
+                == android.content.res.Configuration.UI_MODE_NIGHT_YES;
+        FG = night ? 0xFFFFFFFF : 0xFF111317;
+        FG_DIM = night ? 0x8CFFFFFF : 0x8C111317;
+        FG_VAL = night ? 0xB3FFFFFF : 0xB3111317;
+        GLOW = night ? 0xFFFFFFFF : 0xFF3D6BFF;
+        // 地: 夜は黒、昼は白(後ろの映像はごくわずかに透ける程度。透けすぎると右側の図と重なって読みにくい)
+        setBackgroundColor(night ? 0xF7050506 : 0xF8F6F7F9);
         setClickable(true);             // 下の2画面へタッチを通さない
         setWillNotDraw(false);
-        title = text(26, Color.WHITE, true);
+        title = text(26, FG, true);
+        crumb = text(13, FG_DIM, false);
+        close = new CloseX(c);
+        close.setOnClickListener(v -> back());
+        art = new PanelArt(c);
         logText = text(14, Theme.TEXT, false);
         logText.setTypeface(Typeface.MONOSPACE);
         logText.setPadding(px(14), px(10), px(14), px(10));
@@ -147,7 +166,10 @@ final class PanelView extends ViewGroup {
         glowMid = new GlowLayer(c, 10, 11, 1, -1);   // 中のにじみ。blur 7pt → 11。逆方向にゆっくり
         addView(glowWide);
         addView(glowMid);
+        addView(art);
         addView(title);
+        addView(crumb);
+        addView(close);
         addView(logText);
         addView(list);
         show(MAIN);
@@ -178,8 +200,8 @@ final class PanelView extends ViewGroup {
         // 開いた瞬間に光がふわっと膨らみ(強く・深く)、すぐ落ち着く
         float burst = intro < 0.35f ? intro / 0.35f * 1.35f : 1.35f - 0.35f * (intro - 0.35f) / 0.65f;
         glowStrength = 0.30f * burst;                       // 普段は控えめ(0.30)。応答の光(+0.6)が立つ余地を残す。呼吸はさせない
-        glowWide.set(0.38f * glowStrength, 0xFFFFFFFF, phase);
-        glowMid.set(0.60f * glowStrength, 0xFFFFFFFF, phase);
+        glowWide.set(0.38f * glowStrength, GLOW, phase);
+        glowMid.set(0.60f * glowStrength, GLOW, phase);
         // 応答の光: コマンダーで選んだ行の縁に寄る(Duo Slate が指の近くを灯すのと同じ。半径 260dp、0.15 秒で灯り 0.6 秒で引く)
         float sk = 0.6f * touchGlow;
         glowWide.spot(touchX, touchY, 260 * dp, 0.38f * sk);
@@ -191,11 +213,11 @@ final class PanelView extends ViewGroup {
     @Override protected void dispatchDraw(Canvas cv) {
         super.dispatchDraw(cv);
         // 外側の細い線(1.6dp)。ぼかした二層の上に、くっきりと淡く
-        frameGlow.line(cv, frameBox, dp, Math.min(1f, 1.1f * glowStrength), 0xFFFFFFFF, 1, phase);
+        frameGlow.line(cv, frameBox, dp, Math.min(1f, 1.1f * glowStrength), GLOW, 1, phase);
         if (touchGlow > 0) {
             frameGlow.alpha(Math.min(1f, 1.1f * 0.6f * touchGlow));
             frameGlow.spot(touchX, touchY, 260 * dp);
-            frameGlow.ribbon(cv, frameBox, NeonGlow.LINE_DP * dp, 0xFFFFFFFF, 0, 0, null, null);
+            frameGlow.ribbon(cv, frameBox, NeonGlow.LINE_DP * dp, GLOW, 0, 0, null, null);
         }
     }
 
@@ -297,7 +319,6 @@ final class PanelView extends ViewGroup {
             items.add(new Item(() -> T(R.string.m_system), () -> GO, () -> show(SYS)));
             items.add(new Item(() -> host.carOn() ? T(R.string.m_car_stop) : T(R.string.m_car_start),
                     () -> host.carOn() ? T(R.string.v_connected) : T(R.string.v_stopped), host::toggleCar, true));
-            items.add(new Item(() -> T(R.string.m_close), () -> "", host::closePanel));
         } else if (p == DISPLAY) {
             title.setText(T(R.string.m_display));
             items.add(new Item(() -> T(R.string.d_target), host::sideText, host::switchSide, true));
@@ -379,6 +400,14 @@ final class PanelView extends ViewGroup {
             items.add(new Item(() -> T(R.string.log_older), () -> "", () -> { logPage++; refresh(); }));
             items.add(back(T(R.string.to_system)));
         }
+        items.removeIf(it -> it.hide);
+        titles.put(p, title.getText().toString());
+        StringBuilder path = new StringBuilder();
+        for (int q = p; q != MAIN; ) { q = parentPage(q); String t0 = titles.get(q); path.insert(0, (t0 == null ? "" : t0) + "  ›  "); }
+        crumb.setText(p == MAIN ? "Duo Cruise" : path.toString().trim());
+        close.setVisibility(VISIBLE);
+        art.setVisibility(p == LOG ? GONE : VISIBLE);
+        art.set(p, night, FG, GLOW, p == NEON_EDIT ? host.neonColor(neonWhich) | 0xFF000000 : p == R_LIGHT ? Store.neonTurn(getContext()) | 0xFF000000 : 0);
         rebuildRows();
         logText.setVisibility(p == LOG ? VISIBLE : GONE);
         refresh();
@@ -404,21 +433,33 @@ final class PanelView extends ViewGroup {
         }
     }
 
-    private View[] content() { return new View[]{ title, list, logText }; }
+    private View[] content() { return new View[]{ crumb, title, list, logText, art }; }
 
-    /** 階層の移動。dir>0 で奥へ(右から)、dir<0 で手前へ(左から)。 */
+    /**
+     * 階層の移動。奥へ(dir>0)は、新しいページが右の奥から手前へ出てくる(少し大きいところから縮んで止まる)。
+     * 手前へ(dir<0)は、左から少し小さいところから広がって戻る。緩急とバウンドは画面の切り替えと同じ(Motion)。
+     */
     private void transition(int dir) {
-        float dx = (dir >= 0 ? 1 : -1) * 56 * dp;
+        boolean deeper = dir >= 0;
+        float dx = (deeper ? 1 : -1) * 120 * dp;
         long d = 0;
         for (View v : content()) {
             v.animate().cancel();
+            v.setPivotX(0);
+            v.setPivotY(v.getHeight() / 2f);
             v.setTranslationX(dx);
             v.setTranslationY(0);
+            v.setScaleX(deeper ? 1.06f : 0.94f);
+            v.setScaleY(deeper ? 1.06f : 0.94f);
             v.setAlpha(0f);
-            v.animate().translationX(0).alpha(1f).setStartDelay(d).setDuration(280)
-                    .setInterpolator(new android.view.animation.DecelerateInterpolator(2f)).start();
-            d += 30; // 見出し→行の順に、わずかにずらして流れを作る
+            v.animate().translationX(0).scaleX(1f).scaleY(1f).alpha(1f).setStartDelay(d).setDuration(Motion.MS)
+                    .setInterpolator(Motion.EASE).start();
+            d += 35; // 道すじ→見出し→行→図の順に、わずかにずらして流れを作る
         }
+        // 奥へ入るときは、縁の光をふっと強めて「入った」ことを伝える
+        if (deeper) { intro = 0.2f; if (introAnim != null) introAnim.cancel();
+            introAnim = android.animation.ValueAnimator.ofFloat(0.2f, 1f); introAnim.setDuration(600);
+            introAnim.addUpdateListener(a -> { intro = (float) a.getAnimatedValue(); invalidate(); }); introAnim.start(); }
     }
 
     /** メニューに入る。 */
@@ -463,18 +504,18 @@ final class PanelView extends ViewGroup {
             r.setPadding(px(34), 0, px(30), 0);
 
             // 車載: 項目と詳細は離さない。項目の列は固定幅、詳細はそのすぐ右に左寄せで置く(視線が一度で届く)
-            TextView label = text(19, Theme.TEXT, true);
+            TextView label = text(19, FG, true);
             label.setGravity(Gravity.CENTER_VERTICAL);
             label.setEllipsize(android.text.TextUtils.TruncateAt.END); // 長い言語(独・仏など)で列からはみ出さない
-            r.addView(label, new LinearLayout.LayoutParams(px(LABEL_COL), LayoutParams.MATCH_PARENT));
+            r.addView(label, new LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 0.46f));
 
-            TextView value = text(14, VALUE, false);
+            TextView value = text(14, FG_VAL, false);
             value.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
             r.addView(value, new LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT));
 
             SliderBar bar = new SliderBar(getContext());
             bar.setVisibility(it.slider == null ? GONE : VISIBLE);
-            r.addView(bar, new LinearLayout.LayoutParams(px(SLIDER_W), LayoutParams.MATCH_PARENT));
+            r.addView(bar, new LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 0.54f));
 
             r.setOnClickListener(v -> { focus = idx; activate(idx); });
             r.setOnFocusChangeListener((v, has) -> {
@@ -492,7 +533,7 @@ final class PanelView extends ViewGroup {
         Row r = (Row) list.getChildAt(i);
         Item it = items.get(i);
         TextView label = (TextView) r.getChildAt(0);
-        label.setTextColor(on ? Color.WHITE : LABEL_DIM);   // 白のみ(選択=純白・非選択=薄い白)
+        label.setTextColor(on ? FG : FG_DIM);   // 選択=くっきり・非選択=薄く
         label.setTextSize(TypedValue.COMPLEX_UNIT_SP, on ? 30 : 19);  // 選択で拡大
         TextView value = (TextView) r.getChildAt(1);
         value.setTextSize(TypedValue.COMPLEX_UNIT_SP, on ? 24 : 18);
@@ -508,7 +549,7 @@ final class PanelView extends ViewGroup {
             String s = it.value.get();
             if (it.adj && on && !s.isEmpty()) value.setText("‹ " + s + " ›");
             else value.setText(s);
-            value.setTextColor(on ? Color.WHITE : VALUE);
+            value.setTextColor(on ? FG : FG_VAL);
             value.setVisibility(s.isEmpty() ? GONE : VISIBLE);
         }
     }
@@ -541,6 +582,7 @@ final class PanelView extends ViewGroup {
         list.getChildAt(focus).requestFocus();
         list.requestLayout();  // タッチ操作中はフォーカスが付かないこともあるので、必ず描き直す
         refresh();
+        list.glideTo(focus);
         answer(focus, 1f);
     }
 
@@ -647,7 +689,9 @@ final class PanelView extends ViewGroup {
 
     /** 「戻る」の行。押すと1つ上のページへ。label に戻り先を書いて導線にする。 */
     private Item back(String label) {
-        return new Item(() -> T(R.string.back), () -> label, this::back);
+        Item it = new Item(() -> T(R.string.back), () -> label, this::back);
+        it.hide = true;
+        return it;
     }
 
     // ───────── 曲がり角の案内のページ(Duo Cruise Unlimited Edition) ─────────
@@ -841,11 +885,19 @@ final class PanelView extends ViewGroup {
         int pad = px(PAD), head = px(HEADER);
         // 超横長を端まで使う(左右の余白は最小限だけ)
         int side = px(34);
-        int listW = w - side * 2;
         int left = side;
+        // 左に項目、右に動く図(記録のページだけは全幅)
+        int listW = page == LOG ? w - side * 2 : Math.round(w * 0.56f) - side;
         place(glowWide, 0, 0, w, h, measure);
         place(glowMid, 0, 0, w, h, measure);
-        place(title, left, pad, left + listW, pad + px(38), measure);
+        // 見出し: 左上に ×、その右に道すじ(小さく)と見出し
+        int cs = px(44);
+        place(close, left - px(10), pad - px(4), left - px(10) + cs, pad - px(4) + cs, measure);
+        int tx = left + px(44);
+        place(crumb, tx, pad - px(4), tx + listW, pad + px(12), measure);
+        place(title, tx, pad + px(18), tx + listW, pad + px(18) + px(36), measure);
+        int ax = Math.round(w * 0.60f);
+        place(art, ax, pad + head, w - side, h - pad, measure);
 
         int top = pad + head;
         int bottom = h - pad;
@@ -868,7 +920,39 @@ final class PanelView extends ViewGroup {
     private final class ListPane extends ViewGroup {
         private static final float FOCUS = 1.9f;  // 選択行は他の何倍の高さか
 
-        ListPane(Context c) { super(c); setClipChildren(false); setClipToPadding(false); }
+        ListPane(Context c) { super(c); setClipChildren(false); setClipToPadding(false); setWillNotDraw(false); }
+
+        // 選んでいる行を囲むネオンの四角。行を移ると、前の位置から緩急をつけて流れて移る
+        private final RectF boxFrom = new RectF(), box = new RectF(), boxTo = new RectF();
+        private float boxK = 1f;
+        private int boxRow = -1;
+        private android.animation.ValueAnimator boxAnim;
+
+        void glideTo(int row) {
+            if (row == boxRow) return;
+            boxFrom.set(boxRow < 0 ? boxTo : box);
+            boolean first = boxRow < 0;
+            boxRow = row;
+            if (boxAnim != null) boxAnim.cancel();
+            if (first) { boxK = 1f; invalidate(); return; }
+            boxK = 0f;
+            boxAnim = android.animation.ValueAnimator.ofFloat(0f, 1f);
+            boxAnim.setDuration(Motion.MS);
+            boxAnim.setInterpolator(Motion.EASE);
+            boxAnim.addUpdateListener(a -> { boxK = (float) a.getAnimatedValue(); invalidate(); });
+            boxAnim.start();
+        }
+
+        @Override protected void dispatchDraw(Canvas cv) {
+            super.dispatchDraw(cv);
+            if (boxRow < 0 || boxRow >= getChildCount()) return;
+            View r = getChildAt(boxRow);
+            boxTo.set(r.getLeft() + 10 * dp, r.getTop() + 2 * dp, r.getRight() - 6 * dp, r.getBottom() - 2 * dp);
+            if (boxFrom.isEmpty()) boxFrom.set(boxTo);
+            box.set(boxFrom.left + (boxTo.left - boxFrom.left) * boxK, boxFrom.top + (boxTo.top - boxFrom.top) * boxK,
+                    boxFrom.right + (boxTo.right - boxFrom.right) * boxK, boxFrom.bottom + (boxTo.bottom - boxFrom.bottom) * boxK);
+            Theme.neonEdge(cv, box, dp, 0, editing >= 0 ? 1f : 0.8f, GLOW);
+        }
 
         private int baseH(int n, int h) {
             if (n <= 0) return 0;
@@ -971,14 +1055,14 @@ final class PanelView extends ViewGroup {
             this.label = label; this.on = on; this.editing = editing;
             if (lastValue != Integer.MIN_VALUE && value != lastValue) flare();
             lastValue = value;
-            track.setColor(on ? 0x40FFFFFF : 0x26FFFFFF);
+            track.setColor(withA(FG, on ? 0x40 : 0x26));
             fill.setColor(withA(this.tint, on ? 255 : 190));
-            knob.setColor(0xFFFFFFFF);
-            num.setColor(on ? 0xFFFFFFFF : VALUE);
+            knob.setColor(night ? 0xFFFFFFFF : this.tint);
+            num.setColor(on ? FG : FG_VAL);
             num.setTextSize((on ? 34 : 24) * dp);
-            unit.setColor(on ? 0xCCFFFFFF : 0x80FFFFFF);
+            unit.setColor(withA(FG, on ? 0xCC : 0x80));
             unit.setTextSize((on ? 18 : 14) * dp);
-            chev.setColor(0xFFFFFFFF);
+            chev.setColor(FG);
             invalidate();
         }
 
@@ -1049,6 +1133,31 @@ final class PanelView extends ViewGroup {
             num.setTextAlign(Paint.Align.LEFT);
             cv.drawText(n, nx, base, num);
             cv.drawText(u, nx + num.measureText(n) + 3 * dp, base, unit);
+        }
+    }
+
+    /** 左上の ×。押すと 1 つ上へ(いちばん上では閉じる)。押している間は四角いネオンの縁が灯る。 */
+    private final class CloseX extends View {
+        private final Paint x = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final RectF hit = new RectF();
+
+        CloseX(Context c) {
+            super(c);
+            x.setStyle(Paint.Style.STROKE);
+            x.setStrokeWidth(2.2f * dp);
+            x.setStrokeCap(Paint.Cap.SQUARE);
+            setClickable(true);
+            setContentDescription(T(R.string.back));
+        }
+
+        @Override protected void drawableStateChanged() { super.drawableStateChanged(); invalidate(); }
+
+        @Override protected void onDraw(Canvas cv) {
+            float cx = getWidth() / 2f, cy = getHeight() / 2f, u = 8 * dp;
+            x.setColor(FG);
+            cv.drawLine(cx - u, cy - u, cx + u, cy + u, x);
+            cv.drawLine(cx + u, cy - u, cx - u, cy + u, x);
+            if (isPressed()) { hit.set(4 * dp, 4 * dp, getWidth() - 4 * dp, getHeight() - 4 * dp); Theme.neonEdge(cv, hit, dp, 0, 0.9f, GLOW); }
         }
     }
 }
