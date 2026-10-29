@@ -259,7 +259,8 @@ class CarPlayPane @JvmOverloads constructor(
                 onAudioActive = { audioType, active ->
                     main.post {
                         if (myGeneration == generation) {
-                            record(DuoRecord.KIND_STATE, "CarPlay の音: $audioType " + if (active) "開始" else "終了")
+                            record(DuoRecord.KIND_STATE, "CarPlay の音: $audioType " + (if (active) "開始" else "終了") +
+                                " (再生中のアプリ=${nowPlayingApp ?: "不明"})")
                             listener?.onAudio(audioType.lowercase(), active)
                         }
                     }
@@ -279,6 +280,7 @@ class CarPlayPane @JvmOverloads constructor(
                 pairings = pairings,
                 listener = sessionListener(myGeneration),
                 onRouteGuidance = { frame -> onRouteFrame(frame, myGeneration) },
+                onNowPlaying = { state -> onNowPlayingState(state, myGeneration) },
                 media = media,
                 reportStatus = { status -> if (myGeneration == generation) onControllerStatus(status) },
                 loadPairRecord = { AirPlayPersistence.loadLockdownRecord(app) },
@@ -662,6 +664,28 @@ class CarPlayPane @JvmOverloads constructor(
     private var lastRouteLog = ""
 
     /** iAP2 の受信スレッドから。積み重ねて、メインスレッドで持ち主へ渡す。 */
+    private var lastNowPlayingLog: String? = null
+
+    /** 今 CarPlay で再生しているアプリの名前(iPhone が知らせてきたもの)。分からなければ null。 */
+    @Volatile var nowPlayingApp: String? = null
+        private set
+
+    /**
+     * 再生中の情報。CarPlay で鳴っている音がどのアプリのものかを見分けるために、
+     * アプリの名前と再生状態が変わったときだけ記録する(曲名・動画名は記録しない)。
+     */
+    private fun onNowPlayingState(state: com.shilapi.xcertplay.iap2.message.Iap2NowPlayingState, myGeneration: Int) {
+        nowPlayingApp = state.appName
+        main.post {
+            if (myGeneration != generation) return@post
+            val key = "アプリ=${state.appName ?: "(名前なし)"} 状態=${state.status}"
+            if (key != lastNowPlayingLog) {
+                lastNowPlayingLog = key
+                record(DuoRecord.KIND_STATE, "CarPlay の再生中: $key")
+            }
+        }
+    }
+
     private fun onRouteFrame(frame: com.shilapi.xcertplay.iap2.wire.Iap2Frame, myGeneration: Int) {
         val now = route.update(frame) ?: return
         main.post {

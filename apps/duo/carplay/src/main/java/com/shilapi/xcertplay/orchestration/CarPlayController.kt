@@ -32,6 +32,7 @@ import com.shilapi.xcertplay.airplay.PairingStore
 import com.shilapi.xcertplay.iap2.message.Iap2HidMessages
 import com.shilapi.xcertplay.iap2.message.Iap2MediaRemoteCommand
 import com.shilapi.xcertplay.iap2.message.Iap2NowPlayingAccumulator
+import com.shilapi.xcertplay.iap2.message.Iap2NowPlayingState
 import com.shilapi.xcertplay.iap2.session.Iap2FileTransferReceiver
 import com.shilapi.xcertplay.iap2.session.Iap2Session
 import com.shilapi.xcertplay.iap2.wire.Iap2Frame
@@ -155,6 +156,8 @@ class CarPlayController(
     private val vehicleStatusProvider: com.shilapi.xcertplay.transport.VehicleStatusProvider? = null,
     /** Duo Cruise: ナビの案内(0x5201/0x5202)を受け取った。iAP2 の受信スレッドで呼ばれる。 */
     private val onRouteGuidance: (Iap2Frame) -> Unit = {},
+    /** Duo Cruise: 再生中の情報(アプリの名前・再生状態など)が変わった。iAP2 の受信スレッドで呼ばれる。 */
+    private val onNowPlaying: (Iap2NowPlayingState) -> Unit = {},
 ) : Closeable {
     init {
         require(!config.locationReportingEnabled || locationProvider != null) {
@@ -417,7 +420,9 @@ class CarPlayController(
         }
         if (frame.messageId != NOW_PLAYING_UPDATE) return
         try {
-            CarPlayMediaSessionBridge.publish(this, nowPlaying.update(frame))
+            val state = nowPlaying.update(frame)
+            CarPlayMediaSessionBridge.publish(this, state)
+            onNowPlaying(state)
         } catch (error: RuntimeException) {
             debugLog("Could not decode iAP2 NowPlayingUpdate", error)
         }
