@@ -13,6 +13,25 @@ final class SplitGeometry {
     // 0〜100%。0 で CarPlay だけ、100 で YouTube だけの全画面になる。
     static int clampYt(int pct) { return pct < 0 ? 0 : pct > 100 ? 100 : pct; }
 
+    /** 分割比で選べるのは 0(CarPlay だけ)・30〜70(5% きざみ)・100(YouTube だけ)。細すぎる幅は使えないので飛ばす。 */
+    static final int YT_MIN = 30, YT_MAX = 70;
+
+    /** 分割比を 1 段動かす(dir: +1 で YouTube を広く)。間の値からは、その向きの次の段へ。 */
+    static int stepYt(int pct, int dir) {
+        pct = clampYt(pct);
+        if (dir > 0) {
+            if (pct < YT_MIN) return YT_MIN;
+            if (pct >= YT_MAX) return 100;
+            return Math.min(YT_MAX, (pct / 5 + 1) * 5);
+        }
+        if (dir < 0) {
+            if (pct > YT_MAX) return YT_MAX;
+            if (pct <= YT_MIN) return 0;
+            return Math.max(YT_MIN, ((pct + 4) / 5 - 1) * 5);
+        }
+        return pct;
+    }
+
     /** 画面上の左半分(side=0)か右半分(side=1)。50:50。操作盤などで使う。 */
     static int[] half(int w, int h, int side) {
         int mid = w / 2;

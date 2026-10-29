@@ -131,7 +131,7 @@ final class Store {
     static int straightDist(Context c) { return p(c).getInt("rtStraightDist", 2000); }
     static void setStraightDist(Context c, int v) { p(c).edit().putInt("rtStraightDist", clampDist(v)).apply(); }
     /** 一本道のあいだの、YouTube の幅の割合(%)。 */
-    static int straightYt(Context c) { return SplitGeometry.clampYt(p(c).getInt("rtStraightYt", 80)); }
+    static int straightYt(Context c) { return SplitGeometry.clampYt(p(c).getInt("rtStraightYt", 70)); }
     static void setStraightYt(Context c, int v) { p(c).edit().putInt("rtStraightYt", SplitGeometry.clampYt(v)).apply(); }
 
     /** 曲がる方向を縁の光で知らせるか。 */

@@ -692,7 +692,7 @@ final class PanelView extends ViewGroup {
                 items.add(new Item(() -> T(R.string.rs_split), () -> {}, new Slider() {
                     public int value() { return Store.straightYt(c); }
                     public int max() { return 100; }
-                    public void nudge(int d) { Store.setStraightYt(c, value() + d * 5); changed(); }
+                    public void nudge(int d) { Store.setStraightYt(c, SplitGeometry.stepYt(value(), d)); changed(); }
                     public String text() { return value() + "%"; }
                     public int tint() { return Theme.NEON_WHITE; }
                 }));

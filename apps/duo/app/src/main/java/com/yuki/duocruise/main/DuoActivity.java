@@ -775,7 +775,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
 
     /** dir=+1 で境目を右へ、-1 で左へ。YouTube が右にあれば右へ動かすほど YouTube は狭くなる。 */
     private void splitStep(int dir) {
-        int v = SplitGeometry.clampYt(splitVal + (Store.swapped(this) ? 5 : -5) * dir);
+        int v = SplitGeometry.stepYt(splitVal, (Store.swapped(this) ? 1 : -1) * dir);
         main.removeCallbacks(splitIdle);
         main.postDelayed(splitIdle, SPLIT_IDLE_MS);
         if (v == splitVal) return;
@@ -842,11 +842,11 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     @Override public int splitYtPct() { return Store.splitYt(this); }
     @Override public int navYtPct() { return Store.navYt(this); }
     @Override public void adjustSplitYt(int dir) {
-        Store.setSplitYt(this, SplitGeometry.clampYt(Store.splitYt(this) + dir * 5));
+        Store.setSplitYt(this, SplitGeometry.stepYt(Store.splitYt(this), dir));
         animateYt(targetYt());
     }
     @Override public void adjustNavYt(int dir) {
-        Store.setNavYt(this, SplitGeometry.clampYt(Store.navYt(this) + dir * 5));
+        Store.setNavYt(this, SplitGeometry.stepYt(Store.navYt(this), dir));
         animateYt(targetYt());
     }
     @Override public void toggleAutoSplit() { Store.setAutoSplit(this, !Store.autoSplit(this)); updateNavSplit(); }
