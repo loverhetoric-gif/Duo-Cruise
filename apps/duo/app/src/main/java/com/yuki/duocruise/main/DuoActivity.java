@@ -1397,9 +1397,16 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     private void menuScroll(float dx, float dy) {
         float v = Math.abs(dy) >= Math.abs(dx) ? dy : dx; // 横になぞっても回せる(スライダーで自然)
         menuAcc += v;
-        float step = 28f;
-        while (menuAcc >= step) { menuAcc -= step; panel.rotate(1); }
-        while (menuAcc <= -step) { menuAcc += step; panel.rotate(-1); }
+        // 1行 ≒ 指で 3〜4mm。端では止める(ダイヤルと違い、回り込むと勢いで先頭へ飛んでしまう)
+        float step = 64f;
+        while (menuAcc >= step) { menuAcc -= step; panel.scrollStep(1); }
+        while (menuAcc <= -step) { menuAcc += step; panel.scrollStep(-1); }
+    }
+
+    @Override public boolean padPress() {
+        if (panel.getVisibility() != View.VISIBLE) return false;
+        commanderKey(KeyEvent.KEYCODE_DPAD_CENTER);
+        return true;
     }
 
     @Override public void touched(int side) {

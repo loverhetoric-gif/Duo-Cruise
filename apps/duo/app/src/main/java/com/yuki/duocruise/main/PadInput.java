@@ -54,6 +54,8 @@ final class PadInput implements PadServer.Sink {
         void commanderKey(int keyCode);
         /** Duo Slate の画面の縮図から: "tg L|R"(ターゲット)・"sw"(ウィンドウの切り替え)・"sg L|R"(その側の 1 画面 ⇔ 2 画面)・"yt N"(分割比)。 */
         default void padLayout(String cmd) {}
+        /** 2本指で選んだ後のタップ。メニュー表示中なら、選んでいる行を押して true を返す。 */
+        default boolean padPress() { return false; }
     }
 
     private final Host host;
@@ -103,7 +105,10 @@ final class PadInput implements PadServer.Sink {
         String[] a = s.split(" ");
         switch (a[0]) {
             case "m": move(f(a[1]), f(a[2])); break;
-            case "c": show(); send(MotionEvent.ACTION_DOWN); send(MotionEvent.ACTION_UP); break;
+            case "c":
+                // 2本指で選んだ直後(カーソルを動かす前)のタップは、カーソルの場所ではなく選んでいる行へ
+                if (scrolledSinceMove && host.padPress()) break;
+                show(); send(MotionEvent.ACTION_DOWN); send(MotionEvent.ACTION_UP); break;
             case "d": show(); if (!dragging) { dragging = true; send(MotionEvent.ACTION_DOWN); } break;
             case "u": if (dragging) { dragging = false; send(MotionEvent.ACTION_UP); } break;
             case "p": // iPhone の2本指 → スクロール(1本指のなぞり)にする
@@ -145,6 +150,7 @@ final class PadInput implements PadServer.Sink {
     private void move(float dx, float dy) {
         // 2本指スクロール中は、カーソルを動かさない(スクロールにカーソルが追従しないように)
         if (scrolling) return;
+        scrolledSinceMove = false;
         show();
         int[] wh = screen();
         x = clamp(x + dx, 0, wh[0] - 1);
@@ -156,6 +162,7 @@ final class PadInput implements PadServer.Sink {
 
     // ── スクロール: 指を置いて(カーソルの場所)、動かした分だけずらし、止まったら離す ──
     private boolean scrolling;
+    private boolean scrolledSinceMove;
     private float wx, wy;
     private long wheelDown;
     private final Runnable wheelEnd = this::endWheel;
@@ -164,6 +171,7 @@ final class PadInput implements PadServer.Sink {
     private void scrollStep(float dx, float dy) {
         if (dragging) return;
         if (!scrolling) { scrolling = true; host.scrollActive(true); }
+        scrolledSinceMove = true;
         host.scroll(dx, dy);
         main.removeCallbacks(wheelEnd);
         main.postDelayed(wheelEnd, 150);

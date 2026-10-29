@@ -635,6 +635,11 @@ final class PanelView extends ViewGroup {
         for (int i = 0; i < Math.abs(steps); i++) { if (editing >= 0) nudge(s); else move(s); }
     }
 
+    /** 2本指スクロールの1歩。行は端で止める(回り込まない)。調整中は値を増減。 */
+    void scrollStep(int s) {
+        if (editing >= 0) nudge(s); else if (focus + s >= 0 && focus + s < list.getChildCount()) focusRow(focus + s);
+    }
+
     private void move(int delta) {
         int n = list.getChildCount();
         if (n == 0) return;
