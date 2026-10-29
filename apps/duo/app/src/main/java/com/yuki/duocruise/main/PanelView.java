@@ -112,8 +112,8 @@ final class PanelView extends ViewGroup {
      * 配色。起動画面と同じく、OS のダーク表示なら黒地・白文字、ライト表示なら白地・黒文字。
      * FG＝選んでいる文字、FG_DIM＝選んでいない項目、FG_VAL＝値、GLOW＝縁の光(夜は白、昼は白地で消えないよう青)。
      */
-    private final boolean night;
-    private final int FG, FG_DIM, FG_VAL, GLOW;
+    private boolean night;
+    private int FG, FG_DIM, FG_VAL, GLOW;
 
     private final Host host;
     private final float dp;
@@ -142,14 +142,7 @@ final class PanelView extends ViewGroup {
         super(c);
         this.host = host;
         dp = c.getResources().getDisplayMetrics().density;
-        night = (c.getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK)
-                == android.content.res.Configuration.UI_MODE_NIGHT_YES;
-        FG = night ? 0xFFFFFFFF : 0xFF111317;
-        FG_DIM = night ? 0x8CFFFFFF : 0x8C111317;
-        FG_VAL = night ? 0xB3FFFFFF : 0xB3111317;
-        GLOW = night ? 0xFFFFFFFF : 0xFF3D6BFF;
-        // 地: 夜は黒、昼は白(後ろの映像はごくわずかに透ける程度。透けすぎると右側の図と重なって読みにくい)
-        setBackgroundColor(night ? 0xF7050506 : 0xF8F6F7F9);
+        readTheme();
         setClickable(true);             // 下の2画面へタッチを通さない
         setWillNotDraw(false);
         title = text(26, FG, true);
@@ -176,6 +169,24 @@ final class PanelView extends ViewGroup {
     }
 
     int page() { return page; }
+
+    /** 昼・夜の配色を OS の表示から決める。 */
+    private void readTheme() {
+        night = (getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK)
+                == android.content.res.Configuration.UI_MODE_NIGHT_YES;
+        FG = night ? 0xFFFFFFFF : 0xFF111317;
+        FG_DIM = night ? 0x8CFFFFFF : 0x8C111317;
+        FG_VAL = night ? 0xB3FFFFFF : 0xB3111317;
+        GLOW = night ? 0xFFFFFFFF : 0xFF3D6BFF;
+        // 地: 夜は黒、昼は白(後ろの映像はごくわずかに透ける程度。透けすぎると右側の図と重なって読みにくい)
+        setBackgroundColor(night ? 0xF7050506 : 0xF8F6F7F9);
+    }
+
+    /** 昼・夜の表示が切り替わったとき、作り直さずに配色だけ合わせ直す。 */
+    void applyTheme() {
+        readTheme();
+        if (title != null) { title.setTextColor(FG); crumb.setTextColor(FG_DIM); show(page); }
+    }
 
     private int px(float v) { return Math.round(v * dp); }
 

@@ -222,15 +222,36 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         if (any) DuoLog.log("CarPlay は操作盤の「CarPlay を開始」で始めます");
     }
 
+    /**
+     * 機器の上のステータスバーと、下の機器のホームのバーを隠す(Duo Cruise の画面には出さない)。
+     * 昼・夜の表示が切り替わると、機器がバーを出し直して Duo Cruise の上に残っていた(2026-10-29 実機)ので、そのときもやり直す。
+     */
+    private void hideBars() {
+        if (Build.VERSION.SDK_INT < 30) return;
+        WindowInsetsController c = getWindow().getInsetsController();
+        if (c == null) return;
+        c.hide(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
+        c.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+    }
+
+    @Override public void onConfigurationChanged(android.content.res.Configuration cfg) {
+        super.onConfigurationChanged(cfg);
+        hideBars();
+        if (root != null) { root.requestApplyInsets(); applyLayout(); }
+        if (panel != null) panel.applyTheme();
+    }
+
+    @Override public void onWindowFocusChanged(boolean has) {
+        super.onWindowFocusChanged(has);
+        if (has) hideBars();
+    }
+
     /** 高さは WindowInsets で求める。上のステータスバーは隠し、残りの余白(下の64など)は避ける。 */
     private void setupInsets() {
         if (Build.VERSION.SDK_INT >= 30) {
             getWindow().setDecorFitsSystemWindows(false);
             WindowInsetsController c = getWindow().getInsetsController();
-            if (c != null) {
-                c.hide(WindowInsets.Type.statusBars());
-                c.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
-            }
+            hideBars();
             root.setOnApplyWindowInsetsListener((v, in) -> {
                 Insets i = in.getInsets(WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
                 v.setPadding(i.left, i.top, i.right, i.bottom);
