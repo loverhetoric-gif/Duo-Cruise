@@ -251,12 +251,29 @@ final class UpdateEngine {
         return f;
     }
 
-    private static void install(Context c, File f, Item it) throws Exception {
+    /**
+     * このアプリが作ったまま残っているインストールのセッションを捨てる。
+     * 確認の画面で止まった・途中で落ちたセッションは閉じられずに残り、50 個たまると
+     * 「Too many active sessions」で何も入れられなくなる(2026-10-29 車で発生)。
+     */
+    static int abandonLeftovers(Context c) {
         PackageInstaller pi = c.getPackageManager().getPackageInstaller();
+        int n = 0;
+        for (PackageInstaller.SessionInfo si : pi.getMySessions()) {
+            try { pi.abandonSession(si.getSessionId()); n++; } catch (Exception ignored) {}
+        }
+        if (n > 0) UpdLog.add("残っていたインストールのセッションを " + n + " 個片付けました");
+        return n;
+    }
+
+    private static synchronized void install(Context c, File f, Item it) throws Exception {
+        PackageInstaller pi = c.getPackageManager().getPackageInstaller();
+        abandonLeftovers(c);
         PackageInstaller.SessionParams p = new PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL);
         p.setAppPackageName(it.pkg);
         if (Build.VERSION.SDK_INT >= 31) p.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED);
         int id = pi.createSession(p);
+        boolean committed = false;
         try (PackageInstaller.Session s = pi.openSession(id)) {
             try (InputStream in = new FileInputStream(f); OutputStream out = s.openWrite("base.apk", 0, f.length())) {
                 byte[] buf = new byte[65536]; int n;
@@ -267,6 +284,9 @@ final class UpdateEngine {
             Intent i = new Intent(c, InstallReceiver.class).setAction(ACTION).putExtra("label", it.label);
             PendingIntent pend = PendingIntent.getBroadcast(c, id, i, PendingIntent.FLAG_MUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
             s.commit(pend.getIntentSender());
+            committed = true;
+        } finally {
+            if (!committed) try { pi.abandonSession(id); } catch (Exception ignored) {}
         }
     }
 }
