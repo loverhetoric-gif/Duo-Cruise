@@ -29,7 +29,9 @@ final class KeyMap {
         SWITCH_SIDE(R.string.act_switch),
         SWAP(R.string.act_swap),
         PANEL(R.string.act_panel),
-        SINGLE(R.string.act_single);
+        SINGLE(R.string.act_single),
+        /** 分割比の調整: 入ったあとは回して境目を動かし、押し込みで決定・戻るで取り消し。 */
+        SPLIT(R.string.act_split);
         private final int labelId;
         Action(int id) { labelId = id; }
         /** 画面に出す名前(端末の言語)。 */
@@ -49,10 +51,23 @@ final class KeyMap {
      * ・戻るを2回 → 左右の入れ替え
      * ・押し込みを3回 → 操作盤(ホームの短押しでも。Duo Cruise が前面のときだけ。ユーザー補助で横取り)
      * ・戻るを3回 → 1画面と2画面の切り替え(1画面のときは操作中の側だけを出す)
+     * ・押し込みを4回 → 分割比の調整(2026-10-29 本人が選んだ。回して調整、押し込みで決定)
      * ・押し込み・戻るを1回 → いつもの「決定」「戻る」として操作中の側へ(回数を数えるため少し遅れて届く)
      * 操作盤の「ボタンの割り当て」で、押す回数(1〜4回)や長押しごとに変えられる。
      */
-    static final String DEFAULTS = "SWITCH_SIDE=23:2,187:S;SWAP=4:2;PANEL=23:3,3:S;SINGLE=4:3";
+    static final String DEFAULTS = "SWITCH_SIDE=23:2,187:S;SWAP=4:2;PANEL=23:3,3:S;SINGLE=4:3;SPLIT=23:4";
+
+    /**
+     * 後から足した動作の初期の割り当て。保存済みの割り当てに無く、そのボタン＋押し方が空いていれば足す
+     * (前の版から使っている人にも、新しい動作が届くように)。
+     */
+    void addMissingDefaults() {
+        KeyMap d = defaults();
+        for (Action a : Action.values()) {
+            if (!of(a).isEmpty()) continue;
+            for (Bind b : d.of(a)) if (find(b.code, b.gesture) == null) binds.add(new Bind(b.code, b.gesture, a));
+        }
+    }
 
     /** 長押しとみなす時間(ms)。 */
     static final long DEFAULT_LONG_MS = 600;

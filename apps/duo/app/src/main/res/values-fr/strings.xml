@@ -66,6 +66,8 @@
     <string name="pane_failed">Impossible d’ouvrir %1$s\n%2$s</string>
     <string name="act_switch">Changer de cible</string>
     <string name="act_swap">Changer de fenêtre</string>
+    <string name="act_split">Ajuster le partage</string>
+    <string name="sp_adjust_hint">Tourner : ajuster · Appuyer : valider · Retour : annuler</string>
     <string name="act_panel">Ouvrir ou fermer le menu</string>
     <string name="act_single">Écran unique ou partagé</string>
     <string name="k_unassigned">Non attribué</string>

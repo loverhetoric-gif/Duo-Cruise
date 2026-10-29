@@ -81,6 +81,8 @@ APP = {
 # コマンダーの割り当て
 "act_switch": ["Switch Target","ターゲットの切り替え","切换目标","切換目標","대상 전환","Ziel wechseln","Changer de cible","Cambiar objetivo","Cambia destinazione"],
 "act_swap": ["Switch Windows","ウィンドウの切り替え","切换窗口","切換視窗","창 전환","Fenster wechseln","Changer de fenêtre","Cambiar ventanas","Cambia finestre"],
+"act_split": ["Adjust Split","分割比の調整","调整分屏比例","調整分割比例","분할 비율 조정","Teilung anpassen","Ajuster le partage","Ajustar división","Regola divisione"],
+"sp_adjust_hint": ["Turn to adjust · Press to set · Back to cancel","回して調整・押し込みで決定・戻るで取り消し","旋转调整 · 按下确定 · 返回取消","旋轉調整・按下確定・返回取消","돌려서 조정 · 눌러서 확정 · 뒤로로 취소","Drehen: anpassen · Drücken: übernehmen · Zurück: abbrechen","Tourner : ajuster · Appuyer : valider · Retour : annuler","Gira: ajustar · Pulsa: aceptar · Atrás: cancelar","Ruota: regola · Premi: conferma · Indietro: annulla"],
 "act_panel": ["Open or Close Menu","メニューを開く・閉じる","打开或关闭菜单","開啟或關閉選單","메뉴 열기/닫기","Menü öffnen oder schließen","Ouvrir ou fermer le menu","Abrir o cerrar menú","Apri o chiudi menu"],
 "act_single": ["Single or Split View","1 画面と 2 画面の切り替え","单屏与双屏切换","單畫面與雙畫面切換","1화면/2화면 전환","Einzel- oder Doppelansicht","Écran unique ou partagé","Vista única o dividida","Vista singola o divisa"],
 "k_unassigned": ["Not Assigned","未割り当て","未分配","未分配","할당 안 됨","Nicht belegt","Non attribué","Sin asignar","Non assegnato"],

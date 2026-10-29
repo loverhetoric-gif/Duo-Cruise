@@ -31,6 +31,8 @@ final class SplitRoot extends ViewGroup {
     /** 曲がり角の案内と、曲がる方向の光(Duo Cruise Unlimited Edition)。 */
     private final TurnHintView hint;
     private final TurnGlow turnGlow;
+    /** 分割比の調整中だけ出す、境目の光と左右の割合。 */
+    private final SplitLine splitLine;
     View car, tv;
     /** タッチパッドのカーソル(いちばん上に置く)。 */
     View cursor;
@@ -55,6 +57,7 @@ final class SplitRoot extends ViewGroup {
         frame = new Frame(c);
         hint = new TurnHintView(c);
         turnGlow = new TurnGlow(c);
+        splitLine = new SplitLine(c);
     }
 
     void setPanes(View carView, View tvView, PanelView p) {
@@ -67,6 +70,7 @@ final class SplitRoot extends ViewGroup {
         addView(frame);
         addView(hint);
         addView(turnGlow);
+        addView(splitLine);
         addView(panel);
         if (cursor != null) { if (cursor.getParent() != null) ((ViewGroup) cursor.getParent()).removeView(cursor); addView(cursor); }
     }
@@ -85,6 +89,9 @@ final class SplitRoot extends ViewGroup {
     void turnHint(boolean show, int turn, Integer exitAngle, int drivingSide, String dist, String road) {
         hint.set(show, turn, exitAngle, drivingSide, dist, road);
     }
+
+    /** 分割比の調整中の表示。show=false で消す。left/right は境目の左右に出す文字。 */
+    void splitLine(boolean show, String left, String right) { splitLine.set(show, left, right); }
 
     /** 曲がる方向の縁を一瞬光らせる。side は "L"/"R"。 */
     void turnGlow(String side, int color, float strength) { turnGlow.glow(side, color, strength); }
@@ -188,6 +195,7 @@ final class SplitRoot extends ViewGroup {
         measureTo(tv, tvRect(w, h));
         measureTo(frame, new int[]{0, 0, w, h});
         measureTo(turnGlow, new int[]{0, 0, w, h});
+        measureTo(splitLine, new int[]{0, 0, w, h});
         hint.measure(MeasureSpec.makeMeasureSpec(Math.round(TurnHintView.W_DP * dp), MeasureSpec.EXACTLY),
                 MeasureSpec.makeMeasureSpec(Math.round(TurnHintView.H_DP * dp), MeasureSpec.EXACTLY));
         if (panel != null) measureTo(panel, SplitGeometry.panel(w, h, panelHalf && !single, side));
@@ -212,6 +220,8 @@ final class SplitRoot extends ViewGroup {
         layoutTo(tv, v);
         layoutTo(frame, new int[]{0, 0, w, h});
         layoutTo(turnGlow, new int[]{0, 0, w, h});
+        layoutTo(splitLine, new int[]{0, 0, w, h});
+        splitLine.invalidate();
         // 案内は YouTube の枠の右上。枠が画面の外(1画面で地図だけ)なら、画面の右上
         int[] at = v[0] >= w || v[2] <= 0 ? new int[]{0, 0, w, h} : v;
         int m = Math.round(16 * dp), hw = hint.getMeasuredWidth(), hh = hint.getMeasuredHeight();
@@ -244,6 +254,78 @@ final class SplitRoot extends ViewGroup {
     @Override public boolean onTouchEvent(MotionEvent e) {
         // メニュー表示中に横取りした「メニュー外」のタッチを飲み込む(後ろの画面を操作させない)
         return panel != null && panel.getVisibility() == VISIBLE;
+    }
+
+    /**
+     * 分割比の調整中の表示。左右の枠の境目に、縦に細い光の筋(芯 2dp・両側へ 28dp にじむ)を立て、
+     * 境目のすぐ左右に、それぞれの中身と割合を出す(黒の透過の四角い板に白い文字。角は丸めない)。
+     * 境目は枠の実際の位置から求めるので、分割比のアニメーションにそのまま付いていく。
+     */
+    private final class SplitLine extends View {
+        private final Paint glow = new Paint(Paint.ANTI_ALIAS_FLAG), core = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint plate = new Paint(), text = new Paint(Paint.ANTI_ALIAS_FLAG), hint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private String left = "", right = "";
+        private boolean shown;
+
+        SplitLine(Context c) {
+            super(c);
+            core.setColor(0xFFFFFFFF);
+            plate.setColor(0xB3000000);
+            text.setColor(0xFFFFFFFF);
+            text.setTextSize(20 * dp);
+            text.setFakeBoldText(true);
+            hint.setColor(0xB3FFFFFF);
+            hint.setTextSize(13 * dp);
+            setAlpha(0f);
+            setVisibility(GONE);
+        }
+
+        void set(boolean show, String l, String r) {
+            if (l != null) left = l;
+            if (r != null) right = r;
+            invalidate();
+            if (show == shown) return;
+            shown = show;
+            animate().cancel();
+            if (show) {
+                setVisibility(VISIBLE);
+                animate().alpha(1f).setDuration(200).start();
+            } else {
+                animate().alpha(0f).setDuration(300).withEndAction(() -> { if (!shown) setVisibility(GONE); }).start();
+            }
+        }
+
+        /** 境目の x(右側の枠の左端)。 */
+        private float boundary() {
+            View r = swapped ? car : tv;
+            if (r == null) return getWidth() / 2f;
+            return Math.max(0, Math.min(getWidth(), r.getLeft() + r.getTranslationX() - getPaddingLeft()));
+        }
+
+        @Override protected void onDraw(Canvas cv) {
+            int h = getHeight();
+            float x = boundary(), g = 28 * dp;
+            glow.setShader(new android.graphics.LinearGradient(x - g, 0, x + g, 0,
+                    // 芯の近くだけ明るく、外へ向かって速く・なめらかに消える(帯に見えないように)
+                    new int[]{0x00FFFFFF, 0x08FFFFFF, 0x24FFFFFF, 0x66FFFFFF, 0x24FFFFFF, 0x08FFFFFF, 0x00FFFFFF},
+                    new float[]{0f, 0.25f, 0.40f, 0.5f, 0.60f, 0.75f, 1f}, android.graphics.Shader.TileMode.CLAMP));
+            cv.drawRect(x - g, 0, x + g, h, glow);
+            cv.drawRect(x - 1 * dp, 0, x + 1 * dp, h, core);
+            // 左右の割合(境目の両側、上寄り)
+            float pad = 12 * dp, ph = 40 * dp, top = 18 * dp, gap = 10 * dp;
+            float lw = text.measureText(left) + pad * 2, rw = text.measureText(right) + pad * 2;
+            float base = top + ph / 2 + text.getTextSize() * 0.36f;
+            cv.drawRect(x - gap - lw, top, x - gap, top + ph, plate);
+            cv.drawText(left, x - gap - lw + pad, base, text);
+            cv.drawRect(x + gap, top, x + gap + rw, top + ph, plate);
+            cv.drawText(right, x + gap + pad, base, text);
+            // 操作の案内(下寄り・境目の中央)
+            String tip = Tx.s(R.string.sp_adjust_hint);
+            float tw = hint.measureText(tip) + pad * 2, tb = h - 18 * dp;
+            float tx = Math.max(0, Math.min(getWidth() - tw, x - tw / 2));
+            cv.drawRect(tx, tb - 30 * dp, tx + tw, tb, plate);
+            cv.drawText(tip, tx + pad, tb - 10 * dp, hint);
+        }
     }
 
     /**

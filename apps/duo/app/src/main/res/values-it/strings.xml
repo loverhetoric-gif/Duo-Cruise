@@ -66,6 +66,8 @@
     <string name="pane_failed">Impossibile aprire %1$s\n%2$s</string>
     <string name="act_switch">Cambia destinazione</string>
     <string name="act_swap">Cambia finestre</string>
+    <string name="act_split">Regola divisione</string>
+    <string name="sp_adjust_hint">Ruota: regola · Premi: conferma · Indietro: annulla</string>
     <string name="act_panel">Apri o chiudi menu</string>
     <string name="act_single">Vista singola o divisa</string>
     <string name="k_unassigned">Non assegnato</string>

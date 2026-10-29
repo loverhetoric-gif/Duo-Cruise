@@ -66,6 +66,8 @@
     <string name="pane_failed">No se pudo abrir %1$s\n%2$s</string>
     <string name="act_switch">Cambiar objetivo</string>
     <string name="act_swap">Cambiar ventanas</string>
+    <string name="act_split">Ajustar división</string>
+    <string name="sp_adjust_hint">Gira: ajustar · Pulsa: aceptar · Atrás: cancelar</string>
     <string name="act_panel">Abrir o cerrar menú</string>
     <string name="act_single">Vista única o dividida</string>
     <string name="k_unassigned">Sin asignar</string>

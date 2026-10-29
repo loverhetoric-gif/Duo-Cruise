@@ -18,7 +18,11 @@ final class Store {
     static void setSide(Context c, int v) { p(c).edit().putInt("side", v).apply(); }
 
     /** ボタンの割り当て(KeyMap の文字列)。未設定なら初期値。keymap4＝1画面の切り替えを足した初期値(それより前の保存は使わない)。 */
-    static KeyMap keyMap(Context c) { return KeyMap.parse(p(c).getString("keymap4", KeyMap.DEFAULTS)); }
+    static KeyMap keyMap(Context c) {
+        KeyMap m = KeyMap.parse(p(c).getString("keymap4", KeyMap.DEFAULTS));
+        m.addMissingDefaults();
+        return m;
+    }
     static void setKeyMap(Context c, KeyMap m) { p(c).edit().putString("keymap4", m.serialize()).apply(); }
 
     /** true のとき1画面(操作中の側だけを出す)。 */

@@ -66,6 +66,8 @@
     <string name="pane_failed">無法開啟 %1$s\n%2$s</string>
     <string name="act_switch">切換目標</string>
     <string name="act_swap">切換視窗</string>
+    <string name="act_split">調整分割比例</string>
+    <string name="sp_adjust_hint">旋轉調整・按下確定・返回取消</string>
     <string name="act_panel">開啟或關閉選單</string>
     <string name="act_single">單畫面與雙畫面切換</string>
     <string name="k_unassigned">未分配</string>

@@ -66,6 +66,8 @@
     <string name="pane_failed">%1$s을(를) 열 수 없습니다\n%2$s</string>
     <string name="act_switch">대상 전환</string>
     <string name="act_swap">창 전환</string>
+    <string name="act_split">분할 비율 조정</string>
+    <string name="sp_adjust_hint">돌려서 조정 · 눌러서 확정 · 뒤로로 취소</string>
     <string name="act_panel">메뉴 열기/닫기</string>
     <string name="act_single">1화면/2화면 전환</string>
     <string name="k_unassigned">할당 안 됨</string>

@@ -274,6 +274,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
             if (v == 0) v = -e.getAxisValue(MotionEvent.AXIS_VSCROLL);
             DuoLog.keys("回転 " + v);
             if (guiding()) { guide.rotate(v > 0 ? 1 : v < 0 ? -1 : 0); return true; }
+            if (splitAdjusting) { if (v != 0) splitStep(v > 0 ? 1 : -1); return true; }
             if (panel.getVisibility() == View.VISIBLE) {
                 panel.rotate(v > 0 ? 1 : v < 0 ? -1 : 0);
                 return true;
@@ -297,6 +298,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         KeyEvent ev = raw instanceof KeyEvent ? (KeyEvent) raw
                 : new KeyEvent(downTime, SystemClock.uptimeMillis(), action, code, 0);
         if (guiding()) { guide.onKey(ev); return; }
+        if (splitAdjusting) { splitKey(code, action); return; }
         if (panel.getVisibility() == View.VISIBLE) { panel.onKey(ev); return; }
         if (isMediaKey(code)) { mediaTarget().onKey(ev); return; }
         try { active().onKey(ev); }
@@ -322,12 +324,14 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
 
     @Override public void action(KeyMap.Action a) {
         if (guiding()) return; // 案内の間は、裏の画面を動かさない
+        if (splitAdjusting) { endSplitAdjust(true); return; } // 調整中に割り当ての押し方をしたら、決定として扱う
         DuoLog.log("ボタン操作: " + a.label());
         switch (a) {
             case SWITCH_SIDE: switchSide(); break;
             case SWAP: swap(); break;
             case PANEL: togglePanel(); break;
             case SINGLE: toggleSingle(); break;
+            case SPLIT: startSplitAdjust(); break;
         }
     }
 
@@ -507,6 +511,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
      * 曲がり角で地図を表示中(Unlimited Edition) → ナビ音声の間 → 到着後の全画面(Unlimited Edition) → 普段。
      */
     private int targetYt() {
+        if (splitAdjusting) return splitVal;
         if (mapEngaged) return Store.mapYt(this);
         if (navEngaged) return Store.navYt(this);
         if (arriveEngaged) return 100;
@@ -675,6 +680,86 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         } catch (NumberFormatException e) {
             return "使い方: route-test <曲がり方 0〜53> <距離 m> [same] / route-end";
         }
+    }
+
+    // ───────── 分割比の調整(メイン画面で、コマンダーを回して) ─────────
+    //   入る: 押し込み4回(ボタン割り当てで変えられる)。回す＝境目を 5% ずつ動かす(右へ回すと境目が右へ)
+    //   押し込み＝決定、戻る＝取り消し、4 秒回さなければ決定。調整中は境目だけを細く光らせ、左右の割合を出す
+    private boolean splitAdjusting;
+    private int splitVal, splitOrig;
+    private float splitAcc;
+    private static final long SPLIT_IDLE_MS = 4000;
+    private final Runnable splitIdle = () -> endSplitAdjust(true);
+
+    private void startSplitAdjust() {
+        if (guiding() || panel.getVisibility() == View.VISIBLE) return;
+        if (Store.single(this)) { DuoLog.log("分割比の調整: 1画面のときは使えません"); return; }
+        splitAdjusting = true;
+        splitOrig = Store.splitYt(this);
+        splitVal = splitOrig;
+        splitAcc = 0;
+        animateYt(splitVal);
+        showSplit();
+        main.removeCallbacks(splitIdle);
+        main.postDelayed(splitIdle, SPLIT_IDLE_MS);
+        DuoLog.log("分割比の調整を始めました(" + splitYtText() + ")");
+    }
+
+    /** dir=+1 で境目を右へ、-1 で左へ。YouTube が右にあれば右へ動かすほど YouTube は狭くなる。 */
+    private void splitStep(int dir) {
+        int v = SplitGeometry.clampYt(splitVal + (Store.swapped(this) ? 5 : -5) * dir);
+        main.removeCallbacks(splitIdle);
+        main.postDelayed(splitIdle, SPLIT_IDLE_MS);
+        if (v == splitVal) return;
+        splitVal = v;
+        animateYt(splitVal);
+        showSplit();
+    }
+
+    /** Duo Slate の二本指で横になぞった量を、1目盛りずつに直す。 */
+    private void splitScroll(float dx) {
+        splitAcc += dx;
+        float step = 28f;
+        while (splitAcc >= step) { splitAcc -= step; splitStep(1); }
+        while (splitAcc <= -step) { splitAcc += step; splitStep(-1); }
+    }
+
+    /** 調整中のキー。回す(上下左右・次/前)で動かし、押し込みで決定、戻るで取り消し。 */
+    private void splitKey(int code, int action) {
+        boolean down = action == android.view.KeyEvent.ACTION_DOWN;
+        switch (code) {
+            case android.view.KeyEvent.KEYCODE_DPAD_RIGHT: case android.view.KeyEvent.KEYCODE_DPAD_DOWN:
+            case android.view.KeyEvent.KEYCODE_TAB: case android.view.KeyEvent.KEYCODE_NAVIGATE_NEXT:
+                if (down) splitStep(1); break;
+            case android.view.KeyEvent.KEYCODE_DPAD_LEFT: case android.view.KeyEvent.KEYCODE_DPAD_UP:
+            case android.view.KeyEvent.KEYCODE_NAVIGATE_PREVIOUS:
+                if (down) splitStep(-1); break;
+            case android.view.KeyEvent.KEYCODE_DPAD_CENTER: case android.view.KeyEvent.KEYCODE_ENTER:
+            case android.view.KeyEvent.KEYCODE_NUMPAD_ENTER:
+                if (!down) endSplitAdjust(true); break;
+            case android.view.KeyEvent.KEYCODE_BACK: case android.view.KeyEvent.KEYCODE_ESCAPE:
+                if (!down) endSplitAdjust(false); break;
+            default: break;
+        }
+    }
+
+    private void endSplitAdjust(boolean keep) {
+        main.removeCallbacks(splitIdle);
+        if (!splitAdjusting) return;
+        splitAdjusting = false;
+        if (keep) Store.setSplitYt(this, splitVal);
+        root.splitLine(false, null, null);
+        animateYt(targetYt());
+        DuoLog.log("分割比の調整: " + (keep ? "決定 " + splitYtText() : "取り消し"));
+    }
+
+    /** 境目の両側に、左右それぞれの中身と割合を出す。 */
+    private void showSplit() {
+        int yt = splitVal, cp = 100 - yt;
+        boolean swapped = Store.swapped(this);
+        String left = swapped ? "YouTube " + yt + "%" : "CarPlay " + cp + "%";
+        String right = swapped ? "CarPlay " + cp + "%" : "YouTube " + yt + "%";
+        root.splitLine(true, left, right);
     }
 
     // ───────── 設定(メニューから) ─────────
@@ -964,6 +1049,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     /** MAZDA コマンダー: 回す。メニュー表示中は項目移動、それ以外は操作中の画面のスクロールに回す。 */
     @Override public void commanderRotate(int steps) {
         if (guiding()) guide.rotate(steps);
+        else if (splitAdjusting) { for (int i = 0; i < Math.abs(steps); i++) splitStep(steps > 0 ? 1 : -1); }
         else if (panel.getVisibility() == View.VISIBLE) panel.rotate(steps);
         else { try { active().scroll(0, steps * 40f); active().scrollEnd(); } catch (Throwable ignored) {} }
     }
@@ -979,6 +1065,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     @Override public void scroll(float dx, float dy) {
         // 上下は iPhone と同じ向き(指を上へ動かすと、先＝下の項目へ進む)。2026-10-29 本人: 上下が逆だった
         dy = -dy;
+        if (splitAdjusting) { splitScroll(dx); return; }
         if (panel.getVisibility() == View.VISIBLE) { menuScroll(dx, dy); return; }
         active().scroll(dx, dy);
     }

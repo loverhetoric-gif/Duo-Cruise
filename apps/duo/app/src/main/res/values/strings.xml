@@ -66,6 +66,8 @@
     <string name="pane_failed">Could not open %1$s\n%2$s</string>
     <string name="act_switch">Switch Target</string>
     <string name="act_swap">Switch Windows</string>
+    <string name="act_split">Adjust Split</string>
+    <string name="sp_adjust_hint">Turn to adjust · Press to set · Back to cancel</string>
     <string name="act_panel">Open or Close Menu</string>
     <string name="act_single">Single or Split View</string>
     <string name="k_unassigned">Not Assigned</string>
