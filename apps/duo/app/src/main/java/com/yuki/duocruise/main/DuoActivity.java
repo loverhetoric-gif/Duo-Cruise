@@ -977,6 +977,8 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
 
     /** 2本指スクロールは、操作中の画面本来の送り方(YouTube=矢印、CarPlay=ダイヤル)に渡す。メニュー表示中は裏へ渡さない。 */
     @Override public void scroll(float dx, float dy) {
+        // 上下は iPhone と同じ向き(指を上へ動かすと、先＝下の項目へ進む)。2026-10-29 本人: 上下が逆だった
+        dy = -dy;
         if (panel.getVisibility() == View.VISIBLE) { menuScroll(dx, dy); return; }
         active().scroll(dx, dy);
     }

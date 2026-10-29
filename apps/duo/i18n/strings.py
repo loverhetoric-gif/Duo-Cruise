@@ -79,8 +79,8 @@ APP = {
 "pane_failed": ["Could not open %1$s\n%2$s","%1$s を開けませんでした\n%2$s","无法打开 %1$s\n%2$s","無法開啟 %1$s\n%2$s","%1$s을(를) 열 수 없습니다\n%2$s","%1$s konnte nicht geöffnet werden\n%2$s","Impossible d’ouvrir %1$s\n%2$s","No se pudo abrir %1$s\n%2$s","Impossibile aprire %1$s\n%2$s"],
 
 # コマンダーの割り当て
-"act_switch": ["Switch Active Screen","操作する画面の切り替え","切换操作的屏幕","切換操作的畫面","조작할 화면 전환","Aktiven Bildschirm wechseln","Changer d’écran actif","Cambiar pantalla activa","Cambia schermo attivo"],
-"act_swap": ["Swap Screens","左右の入れ替え","左右互换","左右互換","좌우 바꾸기","Bildschirme tauschen","Inverser les écrans","Intercambiar pantallas","Scambia schermi"],
+"act_switch": ["Switch Target","ターゲットの切り替え","切换目标","切換目標","대상 전환","Ziel wechseln","Changer de cible","Cambiar objetivo","Cambia destinazione"],
+"act_swap": ["Switch Windows","ウィンドウの切り替え","切换窗口","切換視窗","창 전환","Fenster wechseln","Changer de fenêtre","Cambiar ventanas","Cambia finestre"],
 "act_panel": ["Open or Close Menu","メニューを開く・閉じる","打开或关闭菜单","開啟或關閉選單","메뉴 열기/닫기","Menü öffnen oder schließen","Ouvrir ou fermer le menu","Abrir o cerrar menú","Apri o chiudi menu"],
 "act_single": ["Single or Split View","1 画面と 2 画面の切り替え","单屏与双屏切换","單畫面與雙畫面切換","1화면/2화면 전환","Einzel- oder Doppelansicht","Écran unique ou partagé","Vista única o dividida","Vista singola o divisa"],
 "k_unassigned": ["Not Assigned","未割り当て","未分配","未分配","할당 안 됨","Nicht belegt","Non attribué","Sin asignar","Non assegnato"],

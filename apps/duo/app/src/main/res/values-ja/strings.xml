@@ -64,8 +64,8 @@
     <string name="side_right">右（%s）</string>
     <string name="not_found">見つかりません</string>
     <string name="pane_failed">%1$s を開けませんでした\n%2$s</string>
-    <string name="act_switch">操作する画面の切り替え</string>
-    <string name="act_swap">左右の入れ替え</string>
+    <string name="act_switch">ターゲットの切り替え</string>
+    <string name="act_swap">ウィンドウの切り替え</string>
     <string name="act_panel">メニューを開く・閉じる</string>
     <string name="act_single">1 画面と 2 画面の切り替え</string>
     <string name="k_unassigned">未割り当て</string>

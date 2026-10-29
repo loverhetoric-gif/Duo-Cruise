@@ -64,8 +64,8 @@
     <string name="side_right">Droite (%s)</string>
     <string name="not_found">Introuvable</string>
     <string name="pane_failed">Impossible d’ouvrir %1$s\n%2$s</string>
-    <string name="act_switch">Changer d’écran actif</string>
-    <string name="act_swap">Inverser les écrans</string>
+    <string name="act_switch">Changer de cible</string>
+    <string name="act_swap">Changer de fenêtre</string>
     <string name="act_panel">Ouvrir ou fermer le menu</string>
     <string name="act_single">Écran unique ou partagé</string>
     <string name="k_unassigned">Non attribué</string>

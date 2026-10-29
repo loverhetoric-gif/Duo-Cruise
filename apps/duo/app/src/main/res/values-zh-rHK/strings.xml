@@ -64,8 +64,8 @@
     <string name="side_right">右（%s）</string>
     <string name="not_found">找不到</string>
     <string name="pane_failed">無法開啟 %1$s\n%2$s</string>
-    <string name="act_switch">切換操作的畫面</string>
-    <string name="act_swap">左右互換</string>
+    <string name="act_switch">切換目標</string>
+    <string name="act_swap">切換視窗</string>
     <string name="act_panel">開啟或關閉選單</string>
     <string name="act_single">單畫面與雙畫面切換</string>
     <string name="k_unassigned">未分配</string>

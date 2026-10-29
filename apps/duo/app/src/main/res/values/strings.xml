@@ -64,8 +64,8 @@
     <string name="side_right">Right (%s)</string>
     <string name="not_found">Not Found</string>
     <string name="pane_failed">Could not open %1$s\n%2$s</string>
-    <string name="act_switch">Switch Active Screen</string>
-    <string name="act_swap">Swap Screens</string>
+    <string name="act_switch">Switch Target</string>
+    <string name="act_swap">Switch Windows</string>
     <string name="act_panel">Open or Close Menu</string>
     <string name="act_single">Single or Split View</string>
     <string name="k_unassigned">Not Assigned</string>

@@ -64,8 +64,8 @@
     <string name="side_right">Rechts (%s)</string>
     <string name="not_found">Nicht gefunden</string>
     <string name="pane_failed">%1$s konnte nicht geöffnet werden\n%2$s</string>
-    <string name="act_switch">Aktiven Bildschirm wechseln</string>
-    <string name="act_swap">Bildschirme tauschen</string>
+    <string name="act_switch">Ziel wechseln</string>
+    <string name="act_swap">Fenster wechseln</string>
     <string name="act_panel">Menü öffnen oder schließen</string>
     <string name="act_single">Einzel- oder Doppelansicht</string>
     <string name="k_unassigned">Nicht belegt</string>

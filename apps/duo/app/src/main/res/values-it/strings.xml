@@ -64,8 +64,8 @@
     <string name="side_right">Destra (%s)</string>
     <string name="not_found">Non trovata</string>
     <string name="pane_failed">Impossibile aprire %1$s\n%2$s</string>
-    <string name="act_switch">Cambia schermo attivo</string>
-    <string name="act_swap">Scambia schermi</string>
+    <string name="act_switch">Cambia destinazione</string>
+    <string name="act_swap">Cambia finestre</string>
     <string name="act_panel">Apri o chiudi menu</string>
     <string name="act_single">Vista singola o divisa</string>
     <string name="k_unassigned">Non assegnato</string>
