@@ -82,6 +82,7 @@ final class Panes {
         @Override public String command(String cmd) {
             if ("car-wifi-reset".equals(cmd)) return p.resetWifiPass();
             if ("car-maps".equals(cmd)) return p.requestMaps("遠くからの指示");
+            if (cmd.startsWith("car-knob") || cmd.startsWith("car-hidid")) return p.setKnobTest(cmd);
             if (cmd.startsWith("car-input")) {
                 try { return p.setPrimaryInput(Integer.parseInt(cmd.substring(9).trim())); }
                 catch (NumberFormatException e) { return p.setPrimaryInput(-1); }

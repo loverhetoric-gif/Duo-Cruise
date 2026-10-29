@@ -20,6 +20,7 @@ import com.shilapi.xcertplay.shared.R
 import com.shilapi.xcertplay.AirPlayPersistence
 import com.shilapi.xcertplay.airplay.AirPlayConfig
 import com.shilapi.xcertplay.airplay.AirPlayDisplayConfig
+import com.shilapi.xcertplay.airplay.AirPlayHid
 import com.shilapi.xcertplay.airplay.AirPlayKnobState
 import com.shilapi.xcertplay.airplay.AirPlaySession
 import com.shilapi.xcertplay.airplay.AirPlaySessionListener
@@ -121,6 +122,8 @@ class CarPlayPane @JvmOverloads constructor(
         private const val WIFI_PREFS = "carplay_wifi"
         private const val KEY_PASS = "pass"
         private const val KEY_PRIMARY_INPUT = "primaryInput"
+        private const val KEY_KNOB_BASIC = "knobBasic"
+        private const val KEY_HID_SPLIT = "hidSplit"
 
         private val running = AtomicInteger(0)
 
@@ -248,6 +251,9 @@ class CarPlayPane @JvmOverloads constructor(
         try {
             val microphone = app.checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
                 PackageManager.PERMISSION_GRANTED
+            // ダイヤルの試しの切り替えは、iPhone に伝える前(/info を作る前)に決める
+            AirPlayHid.knobBasic = prefs().getBoolean(KEY_KNOB_BASIC, false)
+            AirPlayHid.distinctIds = prefs().getBoolean(KEY_HID_SPLIT, false)
             val airPlayConfig = createAirPlayConfig(microphone)
             val renderer = AndroidMediaSink(
                 context = app,
@@ -290,7 +296,7 @@ class CarPlayPane @JvmOverloads constructor(
             )
             controller = next
             setStatus("開始しています")
-            record(DuoRecord.KIND_STATE, "CarPlay 開始 ${WIDTH}x$HEIGHT 無線 主な操作=${primaryInputName()} MFi=${MfiProbe.DEVICE_PATH} " +
+            record(DuoRecord.KIND_STATE, "CarPlay 開始 ${WIDTH}x$HEIGHT 無線 主な操作=${primaryInputName()} ${knobTestText()} MFi=${MfiProbe.DEVICE_PATH} " +
                 "MultiPlay の様子: " + network.multiPlayHints())
             next.start()
         } catch (error: Throwable) {
@@ -364,7 +370,26 @@ class CarPlayPane @JvmOverloads constructor(
      * MX-30 はダイヤルが主なので初期値 3。ダイヤルが効かない件(2026-10-29)を確かめるため、遠くから変えられる。
      * 次に CarPlay がつながったときから効く。
      */
-    private fun primaryInput(): Int = app.getSharedPreferences(WIFI_PREFS, Context.MODE_PRIVATE).getInt(KEY_PRIMARY_INPUT, 3)
+    private fun primaryInput(): Int = prefs().getInt(KEY_PRIMARY_INPUT, 3)
+
+    /** 指示 car-knob basic|full: ダイヤルの形。car-hidid split|same: 入力の部品の機器の番号。どちらもつなぎ直す。 */
+    fun setKnobTest(cmd: String): String {
+        val parts = cmd.trim().split(Regex("\\s+"))
+        val e = prefs().edit()
+        when {
+            parts[0] == "car-knob" && parts.getOrNull(1) in setOf("basic", "full") -> e.putBoolean(KEY_KNOB_BASIC, parts[1] == "basic")
+            parts[0] == "car-hidid" && parts.getOrNull(1) in setOf("split", "same") -> e.putBoolean(KEY_HID_SPLIT, parts[1] == "split")
+            else -> return "使い方: car-knob basic|full / car-hidid split|same"
+        }
+        e.apply()
+        record(DuoRecord.KIND_STATE, "CarPlay のダイヤルの試し: ${knobTestText()}。つなぎ直します")
+        if (isRunning) { stop(); start() }
+        return knobTestText() + "(つなぎ直します)"
+    }
+
+    private fun knobTestText(): String =
+        "ダイヤルの形=" + (if (prefs().getBoolean(KEY_KNOB_BASIC, false)) "簡単" else "元") +
+            " 機器の番号=" + (if (prefs().getBoolean(KEY_HID_SPLIT, false)) "部品ごと" else "共通")
 
     private fun primaryInputName(): String = when (primaryInput()) {
         0 -> "宣言しない"; 1 -> "タッチ画面"; 2 -> "タッチパッド"; 3 -> "ダイヤル"; else -> "?"
@@ -373,7 +398,7 @@ class CarPlayPane @JvmOverloads constructor(
     /** 指示 car-input 0〜3: 主な操作を変え、CarPlay をつなぎ直す。 */
     fun setPrimaryInput(value: Int): String {
         if (value !in 0..3) return "car-input は 0(宣言しない)・1(タッチ画面)・2(タッチパッド)・3(ダイヤル)"
-        app.getSharedPreferences(WIFI_PREFS, Context.MODE_PRIVATE).edit().putInt(KEY_PRIMARY_INPUT, value).apply()
+        prefs().edit().putInt(KEY_PRIMARY_INPUT, value).apply()
         record(DuoRecord.KIND_STATE, "CarPlay の主な操作を「${primaryInputName()}」にしました。つなぎ直します")
         if (isRunning) { stop(); start() }
         return "主な操作=${primaryInputName()}(つなぎ直します)"
@@ -463,10 +488,26 @@ class CarPlayPane @JvmOverloads constructor(
             CarPlayKeyMap.Action.ROTATE_LEFT -> if (down) knob("$name→左回し") { current.sendKnob(AirPlayKnobState(wheel = -CarPlayKeyMap.ROTATE_STEP)) }
             CarPlayKeyMap.Action.BACK -> if (first) knob("$name→戻る") { current.sendKnob(AirPlayKnobState(back = true)) }
             CarPlayKeyMap.Action.HOME -> if (first) knob("$name→ホーム") { current.sendKnob(AirPlayKnobState(home = true)) }
-            CarPlayKeyMap.Action.TILT_UP -> if (first) knob("$name→上へ倒す") { current.sendKnob(AirPlayKnobState(y = -CarPlayKeyMap.TILT_AMOUNT)) }
-            CarPlayKeyMap.Action.TILT_DOWN -> if (first) knob("$name→下へ倒す") { current.sendKnob(AirPlayKnobState(y = CarPlayKeyMap.TILT_AMOUNT)) }
-            CarPlayKeyMap.Action.TILT_LEFT -> if (first) knob("$name→左へ倒す") { current.sendKnob(AirPlayKnobState(x = -CarPlayKeyMap.TILT_AMOUNT)) }
-            CarPlayKeyMap.Action.TILT_RIGHT -> if (first) knob("$name→右へ倒す") { current.sendKnob(AirPlayKnobState(x = CarPlayKeyMap.TILT_AMOUNT)) }
+            CarPlayKeyMap.Action.TILT_UP -> if (first) {
+                // 簡単な形には倒すが無いので、回すとして送る
+                if (AirPlayHid.knobBasic) knob("$name→上へ倒す(回すで代用)") { current.sendKnob(AirPlayKnobState(wheel = -CarPlayKeyMap.ROTATE_STEP)) }
+                else knob("$name→上へ倒す") { current.sendKnob(AirPlayKnobState(y = -CarPlayKeyMap.TILT_AMOUNT)) }
+            }
+            CarPlayKeyMap.Action.TILT_DOWN -> if (first) {
+                // 簡単な形には倒すが無いので、回すとして送る
+                if (AirPlayHid.knobBasic) knob("$name→下へ倒す(回すで代用)") { current.sendKnob(AirPlayKnobState(wheel = CarPlayKeyMap.ROTATE_STEP)) }
+                else knob("$name→下へ倒す") { current.sendKnob(AirPlayKnobState(y = CarPlayKeyMap.TILT_AMOUNT)) }
+            }
+            CarPlayKeyMap.Action.TILT_LEFT -> if (first) {
+                // 簡単な形には倒すが無いので、回すとして送る
+                if (AirPlayHid.knobBasic) knob("$name→左へ倒す(回すで代用)") { current.sendKnob(AirPlayKnobState(wheel = -CarPlayKeyMap.ROTATE_STEP)) }
+                else knob("$name→左へ倒す") { current.sendKnob(AirPlayKnobState(x = -CarPlayKeyMap.TILT_AMOUNT)) }
+            }
+            CarPlayKeyMap.Action.TILT_RIGHT -> if (first) {
+                // 簡単な形には倒すが無いので、回すとして送る
+                if (AirPlayHid.knobBasic) knob("$name→右へ倒す(回すで代用)") { current.sendKnob(AirPlayKnobState(wheel = CarPlayKeyMap.ROTATE_STEP)) }
+                else knob("$name→右へ倒す") { current.sendKnob(AirPlayKnobState(x = CarPlayKeyMap.TILT_AMOUNT)) }
+            }
             // 番号は xcertplay の再生系 HID の並び(1 再生, 2 一時停止, 3 再生/一時停止, 4 次, 5 前)
             CarPlayKeyMap.Action.MEDIA_PLAY -> if (first) hid { current.sendMedia(1) }
             CarPlayKeyMap.Action.MEDIA_PAUSE -> if (first) hid { current.sendMedia(2) }
