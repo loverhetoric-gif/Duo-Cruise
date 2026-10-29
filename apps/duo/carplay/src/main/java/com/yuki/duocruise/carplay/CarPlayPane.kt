@@ -165,12 +165,14 @@ class CarPlayPane @JvmOverloads constructor(
     /** 指示で選んだ範囲。-1 なら枠の幅に合わせて自動で選ぶ。 */
     private var areaPinned = -1
     private fun streamWidth(): Int = areas.maxOrNull() ?: WIDTH
+    /** 流れてくる絵の高さ。描く範囲の一覧に「h480」のように書けば、その高さで頼む(試し)。 */
+    private var streamH = HEIGHT
 
     private val root = object : FrameLayout(context) {
         override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
             super.onMeasure(widthMeasureSpec, heightMeasureSpec)
             if (areas.isEmpty() || measuredHeight <= 0) return
-            val k = measuredHeight / HEIGHT.toFloat()
+            val k = measuredHeight / streamH.toFloat()
             video.measure(
                 MeasureSpec.makeMeasureSpec(Math.round(streamWidth() * k), MeasureSpec.EXACTLY),
                 MeasureSpec.makeMeasureSpec(measuredHeight, MeasureSpec.EXACTLY),
@@ -180,7 +182,7 @@ class CarPlayPane @JvmOverloads constructor(
         override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
             super.onLayout(changed, l, t, r, b)
             if (areas.isEmpty() || b - t <= 0) return
-            val k = (b - t) / HEIGHT.toFloat()
+            val k = (b - t) / streamH.toFloat()
             if (areaPinned < 0) fitArea(Math.round((r - l) / k))
             // 範囲が枠より狭ければ真ん中に置く(左右に少し黒)。広ければ左に寄せ、はみ出た右は見せない
             val shown = Math.round(areas[area] * k)
@@ -289,6 +291,7 @@ class CarPlayPane @JvmOverloads constructor(
             AirPlayHid.knobBasic = prefs().getBoolean(KEY_KNOB_BASIC, false)
             AirPlayHid.distinctIds = prefs().getBoolean(KEY_HID_SPLIT, false)
             areas = savedAreas()
+            streamH = if (areas.isEmpty()) HEIGHT else savedHeight()
             area = areas.indices.minByOrNull { Math.abs(areas[it] - WIDTH) } ?: 0
             areaPinned = -1
             root.requestLayout()
@@ -296,8 +299,8 @@ class CarPlayPane @JvmOverloads constructor(
             val renderer = AndroidMediaSink(
                 context = app,
                 videoWidth = streamWidth(),
-                videoHeight = HEIGHT,
-                videoSizes = mapOf(SCREEN_TYPE_MAIN to (streamWidth() to HEIGHT)),
+                videoHeight = streamH,
+                videoSizes = mapOf(SCREEN_TYPE_MAIN to (streamWidth() to streamH)),
                 onScreenStreamActiveChanged = { _, active ->
                     main.post { if (myGeneration == generation) setStreaming(active) }
                 },
@@ -334,7 +337,7 @@ class CarPlayPane @JvmOverloads constructor(
             )
             controller = next
             setStatus("開始しています")
-            record(DuoRecord.KIND_STATE, "CarPlay 開始 ${streamWidth()}x$HEIGHT ${areasText()} 無線 主な操作=${primaryInputName()} ${knobTestText()} MFi=${MfiProbe.DEVICE_PATH} " +
+            record(DuoRecord.KIND_STATE, "CarPlay 開始 ${streamWidth()}x$streamH ${areasText()} 無線 主な操作=${primaryInputName()} ${knobTestText()} MFi=${MfiProbe.DEVICE_PATH} " +
                 "MultiPlay の様子: " + network.multiPlayHints())
             next.start()
         } catch (error: Throwable) {
@@ -433,6 +436,10 @@ class CarPlayPane @JvmOverloads constructor(
         prefs().getString(KEY_AREAS, "").orEmpty().split(Regex("[,_\\s]+")).mapNotNull { it.trim().toIntOrNull() }
             .filter { it in 100..4096 }.distinct()
 
+    private fun savedHeight(): Int =
+        prefs().getString(KEY_AREAS, "").orEmpty().split(Regex("[,_\\s]+"))
+            .firstOrNull { it.startsWith("h") }?.drop(1)?.toIntOrNull()?.takeIf { it in 100..2048 } ?: HEIGHT
+
     private fun areasText(): String =
         if (areas.isEmpty()) "描く範囲=切り替えなし" else "描く範囲=${areas.joinToString(",")}(今=${areas[area]})"
 
@@ -447,7 +454,7 @@ class CarPlayPane @JvmOverloads constructor(
         if (index == area || index !in areas.indices) return
         area = index
         val sent = controller?.showViewArea(index) ?: false
-        record(DuoRecord.KIND_STATE, "CarPlay の描く範囲: ${areas[index]}×$HEIGHT へ($why)" + if (sent) "" else " — まだ送れません(つながる前か、iPhone が範囲の切り替えに未対応)")
+        record(DuoRecord.KIND_STATE, "CarPlay の描く範囲: ${areas[index]}×$streamH へ($why)" + if (sent) "" else " — まだ送れません(つながる前か、iPhone が範囲の切り替えに未対応)")
         main.post { root.requestLayout() }
     }
 
@@ -659,7 +666,7 @@ class CarPlayPane @JvmOverloads constructor(
     private fun onTouch(v: View, event: MotionEvent): Boolean {
         val c = controller ?: return false
         if (session == null) return false
-        val contacts = CarPlayTouchMapper.contacts(event, v.width, v.height, streamWidth(), HEIGHT)
+        val contacts = CarPlayTouchMapper.contacts(event, v.width, v.height, streamWidth(), streamH)
         if (contacts.isEmpty() && event.actionMasked == MotionEvent.ACTION_DOWN) return false
         c.sendTouch(contacts)
         return true
@@ -707,7 +714,7 @@ class CarPlayPane @JvmOverloads constructor(
     private fun createAirPlayConfig(microphone: Boolean): AirPlayConfig {
         val metrics = app.resources.displayMetrics
         val widthMm = Math.round(streamWidth() / metrics.xdpi * 25.4f).coerceAtLeast(1)
-        val heightMm = Math.round(HEIGHT / metrics.ydpi * 25.4f).coerceAtLeast(1)
+        val heightMm = Math.round(streamH / metrics.ydpi * 25.4f).coerceAtLeast(1)
         return AirPlayConfig(
             deviceName = "Duo Cruise",
             deviceId = "02:00:00:00:00:02",
@@ -715,12 +722,12 @@ class CarPlayPane @JvmOverloads constructor(
             sourceVersion = "950.7.1",
             main = AirPlayDisplayConfig(
                 widthPixels = streamWidth(),
-                heightPixels = HEIGHT,
+                heightPixels = streamH,
                 widthPhysicalMm = widthMm,
                 heightPhysicalMm = heightMm,
                 fps = FPS,
                 primaryInputDevice = primaryInput(),
-                viewAreas = areas.map { AirPlayViewArea(it, HEIGHT) },
+                viewAreas = areas.map { AirPlayViewArea(it, streamH) },
                 initialViewArea = area,
             ),
             // ハンドルの位置(設定。初期値は右ハンドル)
