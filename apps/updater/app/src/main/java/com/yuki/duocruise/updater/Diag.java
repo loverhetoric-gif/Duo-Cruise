@@ -49,8 +49,11 @@ final class Diag {
         });
     }
 
-    /** MultiPlay の CarPlay を受け持つ機器の部品(読むだけ)。 */
-    private static final String[] MULTIPLAY_PROCS = {"lylinkservice", "lyscrservice", "com.cartizan.mylink", "com.ap.play"};
+    /**
+     * MultiPlay の CarPlay を受け持つ機器の部品の記録の名前(tag)。アプリの中からは他のプログラムの番号(PID)が
+     * 見えないため、名前で絞る(2026-10-29 機器で確認: lylinkservice・com.ap.play は carlife などで出す)。
+     */
+    private static final String[] MULTIPLAY_TAGS = {"carlife", "lylinkservice", "jlylink", "iAP2Client", "iAP2", "lyscrservice"};
     /** 1 回に送る上限(記録シートの 10 行ぶん)。 */
     private static final int MULTIPLAY_LOG_MAX = 300_000;
 
@@ -60,19 +63,11 @@ final class Diag {
      * iPhone にどう伝えているか(hid_des など)を比べるため。読むには READ_LOGS が要る(adb で pm grant)。
      */
     private static String multiPlayLog() throws Exception {
-        StringBuilder out = new StringBuilder();
-        for (String name : MULTIPLAY_PROCS) {
-            String pids = run("pidof " + name).trim();
-            out.append("===== ").append(name).append(" pid=").append(pids.isEmpty() ? "(動いていない)" : pids).append('\n');
-            for (String pid : pids.split("\\s+")) {
-                if (!pid.matches("\\d+")) continue;
-                String log = run("logcat -d -b all -v time --pid=" + pid);
-                if (log.length() > MULTIPLAY_LOG_MAX / 2) log = "…(古い分は省略)\n" + log.substring(log.length() - MULTIPLAY_LOG_MAX / 2);
-                out.append(log);
-            }
-        }
-        if (out.length() > MULTIPLAY_LOG_MAX) return "…(古い分は省略)\n" + out.substring(out.length() - MULTIPLAY_LOG_MAX);
-        return out.toString();
+        StringBuilder cmd = new StringBuilder("logcat -d -b all -v threadtime -s");
+        for (String tag : MULTIPLAY_TAGS) cmd.append(' ').append(tag).append(":V");
+        String log = run(cmd.toString());
+        if (log.length() > MULTIPLAY_LOG_MAX) return "…(古い分は省略)\n" + log.substring(log.length() - MULTIPLAY_LOG_MAX);
+        return log.isEmpty() ? "(MultiPlay の記録はありません。READ_LOGS が無いか、記録が流れて消えた)" : log;
     }
 
     private static String run(String command) throws Exception {
