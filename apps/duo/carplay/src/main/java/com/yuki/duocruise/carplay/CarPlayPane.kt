@@ -165,29 +165,34 @@ class CarPlayPane @JvmOverloads constructor(
     /** 指示で選んだ範囲。-1 なら枠の幅に合わせて自動で選ぶ。 */
     private var areaPinned = -1
     private fun streamWidth(): Int = areas.maxOrNull() ?: WIDTH
-    /** 流れてくる絵の高さ。描く範囲の一覧に「h480」のように書けば、その高さで頼む(試し)。 */
+    /**
+     * 流れてくる絵の高さ(iPhone に伝える画面全体の高さ)と、描く範囲の高さ。一覧に「h480」で範囲の高さ、
+     * 「d555」で画面全体の高さを書ける(試し)。iPhone は横長すぎる画面を断るので、画面全体は受け付けられる形で
+     * 伝え、範囲を上から詰めて置き、範囲の高さを枠の高さに合わせて映す(下のはみ出しは見せない)。
+     */
     private var streamH = HEIGHT
+    private var areaH = HEIGHT
 
     private val root = object : FrameLayout(context) {
         override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
             super.onMeasure(widthMeasureSpec, heightMeasureSpec)
             if (areas.isEmpty() || measuredHeight <= 0) return
-            val k = measuredHeight / streamH.toFloat()
+            val k = measuredHeight / areaH.toFloat()
             video.measure(
                 MeasureSpec.makeMeasureSpec(Math.round(streamWidth() * k), MeasureSpec.EXACTLY),
-                MeasureSpec.makeMeasureSpec(measuredHeight, MeasureSpec.EXACTLY),
+                MeasureSpec.makeMeasureSpec(Math.round(streamH * k), MeasureSpec.EXACTLY),
             )
         }
 
         override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
             super.onLayout(changed, l, t, r, b)
             if (areas.isEmpty() || b - t <= 0) return
-            val k = (b - t) / streamH.toFloat()
+            val k = (b - t) / areaH.toFloat()
             if (areaPinned < 0) fitArea(Math.round((r - l) / k))
             // 範囲が枠より狭ければ真ん中に置く(左右に少し黒)。広ければ左に寄せ、はみ出た右は見せない
             val shown = Math.round(areas[area] * k)
             val left = maxOf(0, (r - l - shown) / 2)
-            video.layout(left, 0, left + video.measuredWidth, b - t)
+            video.layout(left, 0, left + video.measuredWidth, video.measuredHeight)
         }
     }
     private val video = SurfaceView(context)
@@ -291,7 +296,8 @@ class CarPlayPane @JvmOverloads constructor(
             AirPlayHid.knobBasic = prefs().getBoolean(KEY_KNOB_BASIC, false)
             AirPlayHid.distinctIds = prefs().getBoolean(KEY_HID_SPLIT, false)
             areas = savedAreas()
-            streamH = if (areas.isEmpty()) HEIGHT else savedHeight()
+            areaH = if (areas.isEmpty()) HEIGHT else savedHeight('h') ?: HEIGHT
+            streamH = if (areas.isEmpty()) HEIGHT else savedHeight('d') ?: areaH
             area = areas.indices.minByOrNull { Math.abs(areas[it] - WIDTH) } ?: 0
             areaPinned = -1
             root.requestLayout()
@@ -436,12 +442,12 @@ class CarPlayPane @JvmOverloads constructor(
         prefs().getString(KEY_AREAS, "").orEmpty().split(Regex("[,_\\s]+")).mapNotNull { it.trim().toIntOrNull() }
             .filter { it in 100..4096 }.distinct()
 
-    private fun savedHeight(): Int =
+    private fun savedHeight(tag: Char): Int? =
         prefs().getString(KEY_AREAS, "").orEmpty().split(Regex("[,_\\s]+"))
-            .firstOrNull { it.startsWith("h") }?.drop(1)?.toIntOrNull()?.takeIf { it in 100..2048 } ?: HEIGHT
+            .firstOrNull { it.startsWith(tag) }?.drop(1)?.toIntOrNull()?.takeIf { it in 100..2048 }
 
     private fun areasText(): String =
-        if (areas.isEmpty()) "描く範囲=切り替えなし" else "描く範囲=${areas.joinToString(",")}(今=${areas[area]})"
+        if (areas.isEmpty()) "描く範囲=切り替えなし" else "描く範囲=${areas.joinToString(",")}×$areaH(今=${areas[area]}、画面全体=${streamWidth()}×$streamH)"
 
     /** 枠に見える幅(流れてくる絵の画素)に合わせて、収まる一番広い範囲へ切り替える。 */
     private fun fitArea(visible: Int) {
@@ -727,7 +733,7 @@ class CarPlayPane @JvmOverloads constructor(
                 heightPhysicalMm = heightMm,
                 fps = FPS,
                 primaryInputDevice = primaryInput(),
-                viewAreas = areas.map { AirPlayViewArea(it, streamH) },
+                viewAreas = areas.map { AirPlayViewArea(it, areaH) },
                 initialViewArea = area,
             ),
             // ハンドルの位置(設定。初期値は右ハンドル)
