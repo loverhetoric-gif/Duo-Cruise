@@ -125,6 +125,13 @@
     <string name="dm_pip">轉彎時：地圖全螢幕，YouTube 小視窗</string>
     <string name="dm_arrive">抵達後：YouTube 全螢幕</string>
     <string name="dm_menu">設定選單</string>
+    <string name="d_drive">駕駛時自動切換</string>
+    <string name="dr_stop">停車時放大 YouTube</string>
+    <string name="dr_stop_split">停車時 YouTube 寬度</string>
+    <string name="dr_park">駐車時 YouTube 全螢幕</string>
+    <string name="dr_park_time">視為駐車的時間</string>
+    <string name="dr_day">白天霓虹更醒目</string>
+    <string name="dr_alert">用燈光提示 Y!Car Navi 警告</string>
     <string name="r_straight">長直路時放大 YouTube</string>
     <string name="rs_on">放大 YouTube</string>
     <string name="rs_dist">下一個轉彎超過此距離時</string>

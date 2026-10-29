@@ -21,6 +21,7 @@ final class Theme {
     static final int NEON_NAV = 0xFF4F8CFF;    // 青
     /** 注意・切断など。 */
     static final int NEON_ALERT = 0xFFFF6B6B;  // コーラル
+    static final int NEON_DAY = 0xFF1F7BFF;    // 昼の白の代わり(はっきりした青)
 
     /** 設定で選べるネオンの色と、その名前。 */
     static final int[] NEON_PALETTE = { NEON_WHITE, NEON_NAV, NEON_LINK, 0xFF7CE36A, 0xFFFFC24F, NEON_ALERT, 0xFFB07BFF, 0xFFFF7BC2 };

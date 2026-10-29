@@ -125,6 +125,13 @@
     <string name="dm_pip">En el giro: mapa completo, YouTube en ventana pequeña</string>
     <string name="dm_arrive">Al llegar: YouTube a pantalla completa</string>
     <string name="dm_menu">Menú de ajustes</string>
+    <string name="d_drive">Durante la conducción</string>
+    <string name="dr_stop">YouTube más grande al detenerse</string>
+    <string name="dr_stop_split">Ancho de YouTube detenido</string>
+    <string name="dr_park">YouTube a pantalla completa al aparcar</string>
+    <string name="dr_park_time">Considerar aparcado tras</string>
+    <string name="dr_day">Neón más intenso de día</string>
+    <string name="dr_alert">Avisos de Y!Car Navi con luz</string>
     <string name="r_straight">YouTube más grande en tramos largos</string>
     <string name="rs_on">Ampliar YouTube</string>
     <string name="rs_dist">Si el próximo giro está a más de</string>

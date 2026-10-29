@@ -125,6 +125,13 @@
     <string name="dm_pip">Au virage : carte plein écran, YouTube en petit</string>
     <string name="dm_arrive">À l’arrivée : YouTube en plein écran</string>
     <string name="dm_menu">Menu des réglages</string>
+    <string name="d_drive">Pendant la conduite</string>
+    <string name="dr_stop">YouTube plus grand à l’arrêt</string>
+    <string name="dr_stop_split">Largeur de YouTube à l’arrêt</string>
+    <string name="dr_park">YouTube plein écran une fois garé</string>
+    <string name="dr_park_time">Considéré garé après</string>
+    <string name="dr_day">Néon plus marqué le jour</string>
+    <string name="dr_alert">Alertes Y!Car Navi par la lumière</string>
     <string name="r_straight">YouTube plus grand en ligne droite</string>
     <string name="rs_on">Agrandir YouTube</string>
     <string name="rs_dist">Si le prochain virage est au-delà de</string>

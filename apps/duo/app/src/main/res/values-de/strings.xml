@@ -125,6 +125,13 @@
     <string name="dm_pip">An der Abbiegung: Karte voll, YouTube klein</string>
     <string name="dm_arrive">Bei Ankunft: YouTube im Vollbild</string>
     <string name="dm_menu">Einstellungsmenü</string>
+    <string name="d_drive">Beim Fahren</string>
+    <string name="dr_stop">YouTube größer im Stand</string>
+    <string name="dr_stop_split">YouTube-Breite im Stand</string>
+    <string name="dr_park">YouTube im Vollbild beim Parken</string>
+    <string name="dr_park_time">Als geparkt nach</string>
+    <string name="dr_day">Kräftigeres Neon am Tag</string>
+    <string name="dr_alert">Y!Car-Navi-Warnungen per Licht</string>
     <string name="r_straight">YouTube größer auf langen Strecken</string>
     <string name="rs_on">YouTube vergrößern</string>
     <string name="rs_dist">Wenn nächste Abbiegung weiter als</string>

@@ -125,6 +125,13 @@
     <string name="dm_pip">회전 시: 지도 전체 화면, YouTube 작은 창</string>
     <string name="dm_arrive">도착 시: YouTube 전체 화면</string>
     <string name="dm_menu">설정 메뉴</string>
+    <string name="d_drive">운전 중 자동 전환</string>
+    <string name="dr_stop">정지하면 YouTube 크게</string>
+    <string name="dr_stop_split">정지 시 YouTube 너비</string>
+    <string name="dr_park">주차하면 YouTube 전체 화면</string>
+    <string name="dr_park_time">주차로 보는 시간</string>
+    <string name="dr_day">낮에는 네온을 선명하게</string>
+    <string name="dr_alert">Y!카내비 경고를 빛으로 알림</string>
     <string name="r_straight">긴 직진 구간에서 YouTube 크게</string>
     <string name="rs_on">YouTube 크게</string>
     <string name="rs_dist">다음 회전이 이보다 멀 때</string>

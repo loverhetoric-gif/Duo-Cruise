@@ -132,6 +132,15 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         askPermissions();
         // CarPlay は開いたら自動で始め、失敗・切断したら見張りがつなぎ直す
         startCar("開いたので自動で");
+        drive = new DriveWatch(this, new DriveWatch.Listener() {
+            @Override public void driveState(int s) {
+                driveState = s;
+                DuoLog.log("運転の見張り: " + (s == DriveWatch.PARKED ? "駐車" : s == DriveWatch.STOPPED ? "停止" : "走行"));
+                if (!Store.single(this0())) animateYt(targetYt());
+            }
+            @Override public void daylight(boolean d) { isDay = d; DuoLog.log("運転の見張り: " + (d ? "昼" : "夜") + "になりました"); }
+        });
+        drive.start();
         instant = new InstantUpdate(this);
         instant.start();
         main.postDelayed(carWatch, CAR_WATCH_MS);
@@ -184,6 +193,9 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         java.util.List<String> missing = new java.util.ArrayList<>();
         for (String p : Panes.carPermissions())
             if (checkSelfPermission(p) != android.content.pm.PackageManager.PERMISSION_GRANTED) missing.add(p);
+        // 運転の見張り(止まった・駐車)に使う位置
+        if (checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) != android.content.pm.PackageManager.PERMISSION_GRANTED)
+            missing.add(android.Manifest.permission.ACCESS_FINE_LOCATION);
         if (missing.isEmpty()) return;
         DuoLog.log("権限の許可画面を出します: " + missing);
         requestPermissions(missing.toArray(new String[0]), REQ_PERMS);
@@ -194,6 +206,10 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         super.onRequestPermissionsResult(code, perms, results);
         if (code != REQ_PERMS) return;
         main.removeCallbacks(permWatch);
+        if (drive != null && checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            drive.stop();
+            drive.start();
+        }
         StringBuilder b = new StringBuilder();
         boolean any = false;
         for (int i = 0; i < perms.length && i < results.length; i++) {
@@ -271,6 +287,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         DuoLog.listener = null;
         main.removeCallbacksAndMessages(null);
         if (instant != null) instant.stop();
+        if (drive != null) drive.stop();
 
         try { car.destroy(); } catch (Throwable t) { DuoLog.error("CarPlay の終了で失敗: " + DuoLog.why(t)); }
         try { tv.destroy(); } catch (Throwable t) { DuoLog.error("YouTube の終了で失敗: " + DuoLog.why(t)); }
@@ -454,7 +471,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         Store.setSide(this, side);
         relayout();
         focusActive();
-        root.glow(Store.neonTarget(this), Store.neonLevel(this, 0) / 100f); // ターゲット切替: 設定の色・強さで一瞬
+        root.glow(dayColor(Store.neonTarget(this)), dayLevel(Store.neonLevel(this, 0) / 100f)); // ターゲット切替: 設定の色・強さで一瞬
         DuoLog.log("操作する側: " + sideText());
     }
 
@@ -486,7 +503,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         if (conn == lastConn) return;
         lastConn = conn;
         int which = conn ? 1 : 2;
-        root.glow(Store.neon(this, which), Store.neonLevel(this, which) / 100f); // 完了 / 不良(切断)。色・強さは設定可
+        root.glow(dayColor(Store.neon(this, which)), dayLevel(Store.neonLevel(this, which) / 100f)); // 完了 / 不良(切断)。色・強さは設定可
     }
 
     // ネオンの色・強さ(設定から RGB・強さを個別に変更)。which: 0=ターゲット切替 / 1=接続完了 / 2=接続不良。
@@ -569,6 +586,8 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         if (splitAdjusting) return splitVal;
         if (demoYt >= 0) return demoYt;
         if (navEngaged) return Store.navYt(this);
+        if (driveState == DriveWatch.PARKED && Store.parkOn(this)) return 100;
+        if (driveState >= DriveWatch.STOPPED && Store.stopOn(this)) return Store.stopYt(this);
         if (straightEngaged) return Store.straightYt(this);
         if (arriveEngaged) return 100;
         return Store.splitYt(this);
@@ -609,7 +628,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         updateStraight();
         if (plan.light != null && Store.turnLight(this)) {
             int c = Store.neon(this, 3), lv = Store.neonLevel(this, 3);
-            root.turnGlow(plan.light, c, lv / 100f);
+            root.turnGlow(plan.light, dayColor(c), dayLevel(lv / 100f));
             if (padServer != null) padServer.turn(plan.light, c, lv);
             DuoLog.log("曲がり角の案内: " + ("L".equals(plan.light) ? "左" : "右") + "の縁を光らせました(あと " + r.distanceToTurnM + " m)");
         }
@@ -753,6 +772,45 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         } catch (NumberFormatException e) {
             return "使い方: route-test <曲がり方 0〜53> <距離 m> [same] / route-end";
         }
+    }
+
+    // ───────── 運転中の自動の切り替え(止まった・駐車・昼のネオン・Y!カーナビの警告) ─────────
+    private DriveWatch drive;
+    private int driveState = DriveWatch.MOVING;
+    private boolean isDay, alertDucked;
+    private final Runnable alertUnduck = () -> { alertDucked = false; applyDuck(); };
+    private DuoActivity this0() { return this; }
+
+    /** 昼はネオンを濃く: 白っぽい色ははっきりした青に替える(明るい画面に白い光は溶けて見えない)。 */
+    private int dayColor(int c) {
+        if (!isDay || !Store.dayNeon(this)) return c;
+        float[] hsv = new float[3];
+        android.graphics.Color.colorToHSV(c, hsv);
+        if (hsv[1] < 0.25f) return Theme.NEON_DAY;
+        hsv[1] = Math.min(1f, hsv[1] * 1.3f);
+        hsv[2] = Math.min(1f, hsv[2]) * 0.9f;
+        return android.graphics.Color.HSVToColor(hsv);
+    }
+
+    /** 昼は光を強く(設定の強さの 1.6 倍、最低 0.85)。 */
+    private float dayLevel(float s) {
+        if (!isDay || !Store.dayNeon(this)) return s;
+        return Math.min(1f, Math.max(0.85f, s * 1.6f));
+    }
+
+    /** Y!カーナビの警告(NaviAlertListener から、どのスレッドからでも)。縁を警告の色で光らせ、YouTube の音を少し下げる。 */
+    static void naviAlert(String text) {
+        DuoActivity a = live;
+        if (a == null) return;
+        a.main.post(() -> {
+            if (!Store.naviAlert(a)) return;
+            a.root.glow(a.dayColor(Store.neonAlert(a)), a.dayLevel(Math.max(0.7f, Store.neonLevel(a, 2) / 100f)));
+            a.alertDucked = true;
+            a.applyDuck();
+            a.main.removeCallbacks(a.alertUnduck);
+            a.main.postDelayed(a.alertUnduck, 5000);
+            DuoLog.log("Y!カーナビの警告を光で知らせました: " + text);
+        });
     }
 
     // ───────── デモ(人に見せる・挙動の確かめ) ─────────
@@ -1343,6 +1401,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
             else if (!t.equals("media")) level = Math.min(level, DUCK_NAV);
         }
         if (turnDucked) level = Math.min(level, Store.duckLevel(this) / 100f); // 曲がり角の手前(Unlimited Edition)
+        if (alertDucked) level = Math.min(level, Store.duckLevel(this) / 100f); // Y!カーナビの警告
         tv.duck(level);
         tv.hold(call); // 電話・Siri の間は一時停止。終わったら、止める前に再生していれば再開
     }

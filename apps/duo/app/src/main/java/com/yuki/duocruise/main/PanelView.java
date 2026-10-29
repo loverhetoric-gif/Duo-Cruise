@@ -82,6 +82,8 @@ final class PanelView extends ViewGroup {
     static final int VEHICLE = 15, WIFI = 16;
     /** 一本道で YouTube を大きく(曲がり角の案内の下)。 */
     static final int R_STRAIGHT = 17;
+    /** 運転中の自動の切り替え(表示の下)。 */
+    static final int DRIVE = 18;
     /** 曲がる方向の光の色(ネオンの色編集ページを使い回す番号。Store.neon の which と同じ)。 */
     private static final int NEON_TURN = 3;
     private static final String GO = "›"; // 下の階層へ進む導線
@@ -302,6 +304,7 @@ final class PanelView extends ViewGroup {
             items.add(new Item(() -> T(R.string.d_layout), host::layoutText, host::swap, true));
             items.add(new Item(() -> T(R.string.d_split), () -> GO, () -> show(SPLIT)));
             if (BuildConfig.UNLIMITED) items.add(new Item(() -> T(R.string.d_route), () -> GO, () -> show(ROUTE)));
+            items.add(new Item(() -> T(R.string.d_drive), () -> GO, () -> show(DRIVE)));
             items.add(back(T(R.string.to_menu)));
         } else if (p == CONTROLS) {
             title.setText(T(R.string.m_controls));
@@ -629,7 +632,7 @@ final class PanelView extends ViewGroup {
             case KEYS: case NEON: return CONTROLS;
             case LOG: return SYS;
             case NEON_EDIT: return neonWhich == NEON_TURN ? R_LIGHT : NEON;
-            case ROUTE: return DISPLAY;
+            case ROUTE: case DRIVE: return DISPLAY;
             case R_HINT: case R_MAP: case R_LIGHT: case R_AUDIO: case R_ARRIVE: case R_STRAIGHT: return ROUTE;
             case VEHICLE: return SYS;
             case WIFI: return VEHICLE;
@@ -686,6 +689,30 @@ final class PanelView extends ViewGroup {
                 items.add(new Item(() -> T(R.string.rm_hold), () -> T(R.string.seconds, Store.mapHoldMs(c) / 1000),
                         () -> { long v = Store.mapHoldMs(c) / 1000 + 1; if (v > 10) v = 1; Store.setMapHoldMs(c, v * 1000); changed(); }, true));
                 items.add(back(T(R.string.to_route)));
+                break;
+            case DRIVE:
+                title.setText(T(R.string.d_drive));
+                items.add(new Item(() -> T(R.string.dr_stop), () -> onOff(Store.stopOn(c)),
+                        () -> { Store.setStopOn(c, !Store.stopOn(c)); changed(); }, true));
+                items.add(new Item(() -> T(R.string.dr_stop_split), () -> {}, new Slider() {
+                    public int value() { return Store.stopYt(c); }
+                    public int max() { return 100; }
+                    public void nudge(int d) { Store.setStopYt(c, SplitGeometry.stepYt(value(), d)); changed(); }
+                    public String text() { return value() + "%"; }
+                    public int tint() { return Theme.NEON_WHITE; }
+                }));
+                items.add(new Item(() -> T(R.string.dr_park), () -> onOff(Store.parkOn(c)),
+                        () -> { Store.setParkOn(c, !Store.parkOn(c)); changed(); }, true));
+                items.add(new Item(() -> T(R.string.dr_park_time), () -> T(R.string.seconds, Store.parkMs(c) / 1000), () -> {
+                    long[] v = {30_000, 60_000, 120_000, 300_000};
+                    int i = 0; while (i < v.length && v[i] != Store.parkMs(c)) i++;
+                    Store.setParkMs(c, v[(i + 1) % v.length]); changed();
+                }, true));
+                items.add(new Item(() -> T(R.string.dr_day), () -> onOff(Store.dayNeon(c)),
+                        () -> { Store.setDayNeon(c, !Store.dayNeon(c)); changed(); }, true));
+                items.add(new Item(() -> T(R.string.dr_alert), () -> onOff(Store.naviAlert(c)),
+                        () -> { Store.setNaviAlert(c, !Store.naviAlert(c)); changed(); }, true));
+                items.add(back(T(R.string.to_display)));
                 break;
             case R_STRAIGHT:
                 title.setText(T(R.string.r_straight));

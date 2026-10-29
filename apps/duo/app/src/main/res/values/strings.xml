@@ -125,6 +125,13 @@
     <string name="dm_pip">At the turn: full-screen map, YouTube in a small window</string>
     <string name="dm_arrive">On arrival: YouTube full screen</string>
     <string name="dm_menu">Settings Menu</string>
+    <string name="d_drive">While Driving</string>
+    <string name="dr_stop">Enlarge YouTube When Stopped</string>
+    <string name="dr_stop_split">YouTube Width When Stopped</string>
+    <string name="dr_park">Full-Screen YouTube When Parked</string>
+    <string name="dr_park_time">Treat as Parked After</string>
+    <string name="dr_day">Stronger Neon in Daytime</string>
+    <string name="dr_alert">Y!Car Navi Alerts by Light</string>
     <string name="r_straight">Bigger YouTube on Long Stretches</string>
     <string name="rs_on">Enlarge YouTube</string>
     <string name="rs_dist">When Next Turn Is Beyond</string>

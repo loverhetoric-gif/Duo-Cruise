@@ -125,6 +125,13 @@
     <string name="dm_pip">曲がり角では地図を全画面に、YouTube を小窓に</string>
     <string name="dm_arrive">到着したら YouTube を全画面に</string>
     <string name="dm_menu">設定メニュー</string>
+    <string name="d_drive">運転中の自動の切り替え</string>
+    <string name="dr_stop">止まったら YouTube を大きく</string>
+    <string name="dr_stop_split">止まったときの YouTube の幅</string>
+    <string name="dr_park">駐車したら YouTube を全画面</string>
+    <string name="dr_park_time">駐車とみなす時間</string>
+    <string name="dr_day">昼はネオンをはっきり</string>
+    <string name="dr_alert">Y!カーナビの警告を光で知らせる</string>
     <string name="r_straight">一本道で YouTube を大きく</string>
     <string name="rs_on">YouTube を大きくする</string>
     <string name="rs_dist">次の曲がり角がこれより遠いとき</string>

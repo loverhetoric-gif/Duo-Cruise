@@ -3,6 +3,9 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- 運転の見張り(止まった・駐車)と、日の出・日の入り -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <!-- TV 版 YouTube(D の tv/DialServer): iPhone から自動で見つけてもらう(DIAL/SSDP) -->
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
@@ -50,6 +53,15 @@
                 <action android:name="android.accessibilityservice.AccessibilityService" />
             </intent-filter>
             <meta-data android:name="android.accessibilityservice" android:resource="@xml/pane_service" />
+        </service>
+        <!-- Y!カーナビの知らせ(通知へのアクセスの許可が要る) -->
+        <service
+            android:name=".NaviAlertListener"
+            android:exported="true"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
         </service>
         <!-- 記録シートの「指示」の受け口(送れるのは同じ署名の更新アプリだけ) -->
         <receiver

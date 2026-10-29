@@ -124,6 +124,24 @@ final class Store {
     static long mapHoldMs(Context c) { return p(c).getLong("rtMapHold", 3000); }
     static void setMapHoldMs(Context c, long v) { p(c).edit().putLong("rtMapHold", Math.max(0, v)).apply(); }
 
+    // ───────── 運転中の自動の切り替え ─────────
+    /** 止まったら(信号待ち・渋滞)YouTube を大きくするか。 */
+    static boolean stopOn(Context c) { return p(c).getBoolean("drStop", true); }
+    static void setStopOn(Context c, boolean v) { p(c).edit().putBoolean("drStop", v).apply(); }
+    static int stopYt(Context c) { return SplitGeometry.clampYt(p(c).getInt("drStopYt", 70)); }
+    static void setStopYt(Context c, int v) { p(c).edit().putInt("drStopYt", SplitGeometry.clampYt(v)).apply(); }
+    /** 駐車したら YouTube を全画面にするか。駐車とみなす止まっている時間(ms)。 */
+    static boolean parkOn(Context c) { return p(c).getBoolean("drPark", true); }
+    static void setParkOn(Context c, boolean v) { p(c).edit().putBoolean("drPark", v).apply(); }
+    static long parkMs(Context c) { return p(c).getLong("drParkMs", 120_000); }
+    static void setParkMs(Context c, long v) { p(c).edit().putLong("drParkMs", v).apply(); }
+    /** 昼(日の出〜日の入り)はネオンを濃く・強くするか。 */
+    static boolean dayNeon(Context c) { return p(c).getBoolean("drDay", true); }
+    static void setDayNeon(Context c, boolean v) { p(c).edit().putBoolean("drDay", v).apply(); }
+    /** Y!カーナビの警告を縁の光(と YouTube の音を下げる)で知らせるか。 */
+    static boolean naviAlert(Context c) { return p(c).getBoolean("drAlert", true); }
+    static void setNaviAlert(Context c, boolean v) { p(c).edit().putBoolean("drAlert", v).apply(); }
+
     /** 一本道(次の曲がり角が遠い)のあいだ、YouTube を大きくするか。 */
     static boolean straightOn(Context c) { return p(c).getBoolean("rtStraight", false); }
     static void setStraightOn(Context c, boolean v) { p(c).edit().putBoolean("rtStraight", v).apply(); }
