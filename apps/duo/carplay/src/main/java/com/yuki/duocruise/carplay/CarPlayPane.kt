@@ -24,6 +24,7 @@ import com.shilapi.xcertplay.airplay.AirPlayHid
 import com.shilapi.xcertplay.airplay.AirPlayKnobState
 import com.shilapi.xcertplay.airplay.AirPlaySession
 import com.shilapi.xcertplay.airplay.AirPlaySessionListener
+import com.shilapi.xcertplay.airplay.AirPlayViewArea
 import com.shilapi.xcertplay.airplay.CarPlayMediaEngine
 import com.shilapi.xcertplay.media.AndroidMediaSink
 import com.shilapi.xcertplay.media.CarPlayTouchMapper
@@ -124,6 +125,7 @@ class CarPlayPane @JvmOverloads constructor(
         private const val KEY_PRIMARY_INPUT = "primaryInput"
         private const val KEY_KNOB_BASIC = "knobBasic"
         private const val KEY_HID_SPLIT = "hidSplit"
+        private const val KEY_AREAS = "areas"
 
         private val running = AtomicInteger(0)
 
@@ -153,7 +155,39 @@ class CarPlayPane @JvmOverloads constructor(
     private val hidExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private val network = CarPlayNetworkCheck(app)
 
-    private val root = FrameLayout(context)
+    /**
+     * 描く範囲(試し中)。空なら元のまま(iPhone に [WIDTH]×[HEIGHT] で頼む)。
+     * 幅の一覧があれば、iPhone には一番広い幅(画面全体)で頼み、つないだまま描く範囲をこの幅のどれかへ切り替える。
+     * 範囲はどれも左上が原点。映像の面は縦横比を保ったまま流れてくる絵の大きさで置き、枠からはみ出た所は見せない。
+     */
+    private var areas: List<Int> = emptyList()
+    private var area = 0
+    /** 指示で選んだ範囲。-1 なら枠の幅に合わせて自動で選ぶ。 */
+    private var areaPinned = -1
+    private fun streamWidth(): Int = areas.maxOrNull() ?: WIDTH
+
+    private val root = object : FrameLayout(context) {
+        override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+            super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+            if (areas.isEmpty() || measuredHeight <= 0) return
+            val k = measuredHeight / HEIGHT.toFloat()
+            video.measure(
+                MeasureSpec.makeMeasureSpec(Math.round(streamWidth() * k), MeasureSpec.EXACTLY),
+                MeasureSpec.makeMeasureSpec(measuredHeight, MeasureSpec.EXACTLY),
+            )
+        }
+
+        override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
+            super.onLayout(changed, l, t, r, b)
+            if (areas.isEmpty() || b - t <= 0) return
+            val k = (b - t) / HEIGHT.toFloat()
+            if (areaPinned < 0) fitArea(Math.round((r - l) / k))
+            // 範囲が枠より狭ければ真ん中に置く(左右に少し黒)。広ければ左に寄せ、はみ出た右は見せない
+            val shown = Math.round(areas[area] * k)
+            val left = maxOf(0, (r - l - shown) / 2)
+            video.layout(left, 0, left + video.measuredWidth, b - t)
+        }
+    }
     private val video = SurfaceView(context)
     private val label = TextView(context)
 
@@ -254,12 +288,16 @@ class CarPlayPane @JvmOverloads constructor(
             // ダイヤルの試しの切り替えは、iPhone に伝える前(/info を作る前)に決める
             AirPlayHid.knobBasic = prefs().getBoolean(KEY_KNOB_BASIC, false)
             AirPlayHid.distinctIds = prefs().getBoolean(KEY_HID_SPLIT, false)
+            areas = savedAreas()
+            area = areas.indices.minByOrNull { Math.abs(areas[it] - WIDTH) } ?: 0
+            areaPinned = -1
+            root.requestLayout()
             val airPlayConfig = createAirPlayConfig(microphone)
             val renderer = AndroidMediaSink(
                 context = app,
-                videoWidth = WIDTH,
+                videoWidth = streamWidth(),
                 videoHeight = HEIGHT,
-                videoSizes = mapOf(SCREEN_TYPE_MAIN to (WIDTH to HEIGHT)),
+                videoSizes = mapOf(SCREEN_TYPE_MAIN to (streamWidth() to HEIGHT)),
                 onScreenStreamActiveChanged = { _, active ->
                     main.post { if (myGeneration == generation) setStreaming(active) }
                 },
@@ -296,7 +334,7 @@ class CarPlayPane @JvmOverloads constructor(
             )
             controller = next
             setStatus("開始しています")
-            record(DuoRecord.KIND_STATE, "CarPlay 開始 ${WIDTH}x$HEIGHT 無線 主な操作=${primaryInputName()} ${knobTestText()} MFi=${MfiProbe.DEVICE_PATH} " +
+            record(DuoRecord.KIND_STATE, "CarPlay 開始 ${streamWidth()}x$HEIGHT ${areasText()} 無線 主な操作=${primaryInputName()} ${knobTestText()} MFi=${MfiProbe.DEVICE_PATH} " +
                 "MultiPlay の様子: " + network.multiPlayHints())
             next.start()
         } catch (error: Throwable) {
@@ -390,6 +428,51 @@ class CarPlayPane @JvmOverloads constructor(
     private fun knobTestText(): String =
         "ダイヤルの形=" + (if (prefs().getBoolean(KEY_KNOB_BASIC, false)) "簡単" else "元") +
             " 機器の番号=" + (if (prefs().getBoolean(KEY_HID_SPLIT, false)) "部品ごと" else "共通")
+
+    private fun savedAreas(): List<Int> =
+        prefs().getString(KEY_AREAS, "").orEmpty().split(',').mapNotNull { it.trim().toIntOrNull() }
+            .filter { it in 100..4096 }.distinct()
+
+    private fun areasText(): String =
+        if (areas.isEmpty()) "描く範囲=切り替えなし" else "描く範囲=${areas.joinToString(",")}(今=${areas[area]})"
+
+    /** 枠に見える幅(流れてくる絵の画素)に合わせて、収まる一番広い範囲へ切り替える。 */
+    private fun fitArea(visible: Int) {
+        val fit = areas.indices.filter { areas[it] <= visible + 2 }.maxByOrNull { areas[it] }
+            ?: areas.indices.minByOrNull { areas[it] } ?: return
+        showArea(fit, "枠の幅 $visible")
+    }
+
+    private fun showArea(index: Int, why: String) {
+        if (index == area || index !in areas.indices) return
+        area = index
+        val sent = controller?.showViewArea(index) ?: false
+        record(DuoRecord.KIND_STATE, "CarPlay の描く範囲: ${areas[index]}×$HEIGHT へ($why)" + if (sent) "" else " — まだ送れません(つながる前か、iPhone が範囲の切り替えに未対応)")
+        main.post { root.requestLayout() }
+    }
+
+    /**
+     * 指示(試し): car-areas 1480,740 … 描く範囲の幅の一覧を決めて、つなぎ直す / car-areas off … 元に戻す /
+     * car-area N … N 番の範囲へ切り替える(auto で枠の幅に合わせる)。
+     */
+    fun setAreas(cmd: String): String {
+        val parts = cmd.trim().split(Regex("\\s+"), limit = 2)
+        val arg = parts.getOrNull(1)?.trim().orEmpty()
+        if (parts[0] == "car-area") {
+            if (areas.isEmpty()) return "描く範囲の切り替えはオフです(car-areas で幅の一覧を決めてください)"
+            if (arg == "auto") { areaPinned = -1; root.requestLayout(); return "枠の幅に合わせます。" + areasText() }
+            val i = arg.toIntOrNull() ?: return "使い方: car-area 0〜${areas.size - 1} / car-area auto"
+            if (i !in areas.indices) return "使い方: car-area 0〜${areas.size - 1} / car-area auto"
+            areaPinned = i
+            showArea(i, "指示")
+            return areasText()
+        }
+        val list = if (arg == "off") "" else arg
+        prefs().edit().putString(KEY_AREAS, list).apply()
+        record(DuoRecord.KIND_STATE, "CarPlay の描く範囲の一覧を「${list.ifEmpty { "切り替えなし" }}」にしました。つなぎ直します")
+        if (isRunning) { stop(); start() }
+        return "描く範囲=${list.ifEmpty { "切り替えなし" }}(つなぎ直します)"
+    }
 
     private fun primaryInputName(): String = when (primaryInput()) {
         0 -> "宣言しない"; 1 -> "タッチ画面"; 2 -> "タッチパッド"; 3 -> "ダイヤル"; else -> "?"
@@ -575,7 +658,7 @@ class CarPlayPane @JvmOverloads constructor(
     private fun onTouch(v: View, event: MotionEvent): Boolean {
         val c = controller ?: return false
         if (session == null) return false
-        val contacts = CarPlayTouchMapper.contacts(event, v.width, v.height, WIDTH, HEIGHT)
+        val contacts = CarPlayTouchMapper.contacts(event, v.width, v.height, streamWidth(), HEIGHT)
         if (contacts.isEmpty() && event.actionMasked == MotionEvent.ACTION_DOWN) return false
         c.sendTouch(contacts)
         return true
@@ -622,7 +705,7 @@ class CarPlayPane @JvmOverloads constructor(
 
     private fun createAirPlayConfig(microphone: Boolean): AirPlayConfig {
         val metrics = app.resources.displayMetrics
-        val widthMm = Math.round(WIDTH / metrics.xdpi * 25.4f).coerceAtLeast(1)
+        val widthMm = Math.round(streamWidth() / metrics.xdpi * 25.4f).coerceAtLeast(1)
         val heightMm = Math.round(HEIGHT / metrics.ydpi * 25.4f).coerceAtLeast(1)
         return AirPlayConfig(
             deviceName = "Duo Cruise",
@@ -630,12 +713,14 @@ class CarPlayPane @JvmOverloads constructor(
             btMac = "02:00:00:00:00:01",
             sourceVersion = "950.7.1",
             main = AirPlayDisplayConfig(
-                widthPixels = WIDTH,
+                widthPixels = streamWidth(),
                 heightPixels = HEIGHT,
                 widthPhysicalMm = widthMm,
                 heightPhysicalMm = heightMm,
                 fps = FPS,
                 primaryInputDevice = primaryInput(),
+                viewAreas = areas.map { AirPlayViewArea(it, HEIGHT) },
+                initialViewArea = area,
             ),
             // ハンドルの位置(設定。初期値は右ハンドル)
             rightHandDrive = rightHandDrive,
@@ -654,7 +739,10 @@ class CarPlayPane @JvmOverloads constructor(
                 if (myGeneration != generation) return@post
                 this@CarPlayPane.session = session
                 setStatus("CarPlay 表示中")
-                record(DuoRecord.KIND_STATE, "CarPlay の映像がつながった")
+                record(DuoRecord.KIND_STATE, "CarPlay の映像がつながった " + areasText() +
+                    if (areas.isEmpty()) "" else " iPhone が範囲の切り替えを受けるか=" + session.acceptsViewAreas())
+                // つながる前に枠の幅で選んだ範囲を、改めて伝える
+                if (areas.isNotEmpty()) controller?.showViewArea(area)
             }
         }
 
