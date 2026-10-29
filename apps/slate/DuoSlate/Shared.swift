@@ -56,6 +56,30 @@ enum Screen {
 /// ・普段: アイコンは光の色で、周りにうっすら光がにじむ(夜)。昼は濃いめの灰で読みやすく
 /// ・押した瞬間: 光が強まり、少し沈む。離すとゆっくり戻る
 /// タッチパッドの面の色(昼・夜それぞれ 3 つ)。最初の 1 つが元の色。
+/// カーソルの感度と加速を、つないだ Duo Cruise の画面(px)と、今のパッドの大きさ(pt)から決める。
+/// 快適の基準は 2 つ:
+/// 1. ゆっくり動かすと細かく合わせられる。指先の細かさは一定なので、1480×480 で合わせた
+///    1pt＝1.6px を基準に、画面の対角の px 数の √ で少しだけ増減する(大きな画面ほど少し速く)。
+/// 2. 速く払うと、パッドの幅(高さ)の半分で画面の端から端まで届く。縦と横の厳しい方に合わせる。
+///    iPhone を縦・横に向けるとパッドの形が変わるので、そのたびに計算し直す。
+/// pad が nil(Mac。macOS が加速を済ませている)なら、感度だけ。
+enum CursorTune {
+    static let slowBase = 1.6
+    /// 加速が最大になる指の速さ(pt/ms)と、その時の伸び(PadSurface の式と同じ)。
+    static let fastSpeed = 2.5, fastK = 1.4
+
+    static func auto(_ screen: CGSize, pad: CGSize? = nil) -> (sensitivity: Double, acceleration: Double) {
+        let f = hypot(Double(screen.width), Double(screen.height)) / hypot(1480.0, 480.0)
+        let sens = min(3, max(0.3, f.squareRoot()))
+        guard let pad, pad.width > 50, pad.height > 50 else { return (round1(sens), 1) }
+        let reach = max(Double(screen.width) / (Double(pad.width) * 0.5),
+                        Double(screen.height) / (Double(pad.height) * 0.5))   // 速く払った時に要る 1pt あたりの px
+        let accel = (reach / (slowBase * sens) - 1) / (fastSpeed * fastK)
+        return (round1(sens), round1(min(3, max(0, accel))))
+    }
+    private static func round1(_ v: Double) -> Double { (v * 10).rounded() / 10 }
+}
+
 enum PadTone: String, CaseIterable, Identifiable {
     case white, paper, mist      // 昼
     case black, sumi, slate      // 夜

@@ -44,6 +44,7 @@ private struct AboutMenuItem: View {
 struct MacPadScreen: View {
     @ObservedObject var link: PadLink
     @AppStorage("sensitivity") private var sensitivity = 1.0
+    @AppStorage("autoSpeed") private var autoSpeed = true
     @AppStorage("theme") private var theme = 0
     @Environment(\.colorScheme) private var scheme
     @State private var captured = false
@@ -66,7 +67,7 @@ struct MacPadScreen: View {
     var body: some View {
         ZStack {
             c.surface
-            CaptureArea(captured: $captured, sensitivity: sensitivity) { link.send($0) }
+            CaptureArea(captured: $captured, sensitivity: autoSpeed ? CursorTune.auto(link.screen).sensitivity : sensitivity) { link.send($0) }
             Lights(c: c, night: night, connected: connected, target: link.target,
                    touch: nil, touchGlow: 0, notice: notice)
                 .allowsHitTesting(false)
@@ -113,8 +114,15 @@ struct MacPadScreen: View {
         }
         .popover(isPresented: $settings) {
             VStack(alignment: .leading, spacing: 10) {
-                Text("感度 \(String(format: "%.1f", sensitivity))")
-                Slider(value: $sensitivity, in: 0.3...3, step: 0.1).frame(width: 220)
+                Toggle("画面に合わせて自動で調整", isOn: $autoSpeed)
+                let auto = CursorTune.auto(link.screen).sensitivity
+                Text("感度 \(String(format: "%.1f", autoSpeed ? auto : sensitivity))")
+                Slider(value: autoSpeed ? .constant(auto) : $sensitivity, in: 0.3...3, step: 0.1).frame(width: 220)
+                    .disabled(autoSpeed)
+                if autoSpeed {
+                    Text("画面の解像度 \(Int(link.screen.width))×\(Int(link.screen.height)) に合わせています")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 Picker("ダークモード", selection: $theme) { Text("オン").tag(2); Text("オフ").tag(1); Text("デバイスの設定").tag(0) }
                     .pickerStyle(.segmented)
                 Button("再接続") { link.restart() }

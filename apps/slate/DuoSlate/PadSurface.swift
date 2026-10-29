@@ -19,6 +19,9 @@ final class PadSurface: UIView {
     var acceleration: Double = 1.0
     /// OTTO の画面の幅(px)。2本指の動きの大きさを合わせるのに使う。
     var screenWidth: Double = 1480
+    var screenHeight: Double = 480
+    /// 画面とパッドの大きさに合わせて自動で決める(CursorTune)。縦・横に向けても、その時の形で決め直す。
+    var autoTune = true
 
     private let tapMaxTime: TimeInterval = 0.25
     private let tapSlop: CGFloat = 8       // これより小さい揺れはタップのまま
@@ -40,7 +43,11 @@ final class PadSurface: UIView {
     required init?(coder: NSCoder) { fatalError() }
 
     /// iPhone の 1pt を OTTO の何 px にするか(加速前)。
-    private var base: Double { 1.6 * sensitivity }
+    private var tune: (sensitivity: Double, acceleration: Double) {
+        autoTune ? CursorTune.auto(CGSize(width: screenWidth, height: screenHeight), pad: bounds.size)
+                 : (sensitivity, acceleration)
+    }
+    private var base: Double { CursorTune.slowBase * tune.sensitivity }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         let all = event?.allTouches?.filter { $0.phase != .ended && $0.phase != .cancelled } ?? Array(touches)
@@ -84,7 +91,8 @@ final class PadSurface: UIView {
             let ddx = Double(p.x - lp.x), ddy = Double(p.y - lp.y)
             let dt = max(s.timestamp - lt, 0.001) * 1000           // ms
             let speed = hypot(ddx, ddy) / dt                         // pt/ms
-            let gain = base * (1 + acceleration * min(speed, 2.5) * 1.4)
+            let t = tune
+            let gain = CursorTune.slowBase * t.sensitivity * (1 + t.acceleration * min(speed, CursorTune.fastSpeed) * CursorTune.fastK)
             dx += ddx * gain; dy += ddy * gain
         }
         if dx != 0 || dy != 0 { send(String(format: "m %.2f %.2f", dx, dy)) }

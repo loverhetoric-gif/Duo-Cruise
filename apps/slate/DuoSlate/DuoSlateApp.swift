@@ -29,6 +29,7 @@ struct PadScreen: View {
     @ObservedObject var link: PadLink
     @AppStorage("sensitivity") private var sensitivity = 1.0
     @AppStorage("acceleration") private var acceleration = 1.0
+    @AppStorage("autoSpeed") private var autoSpeed = true
     @AppStorage("theme") private var theme = 0
     /// 面の色とネオンの配色(昼・夜それぞれ)。設定で選ぶ。
     @AppStorage("dayTone") private var dayTone = PadTone.white.rawValue
@@ -81,7 +82,7 @@ struct PadScreen: View {
     private func content(_ ins: EdgeInsets) -> some View {
         ZStack {
             c.surface
-            Surface(sensitivity: sensitivity, acceleration: acceleration, screenWidth: link.screen.width,
+            Surface(sensitivity: sensitivity, acceleration: acceleration, screen: link.screen, autoTune: autoSpeed,
                     send: { link.send($0) }, onTouch: touched)
             Lights(c: c, night: night, connected: connected, target: link.target,
                    touch: touch, touchGlow: touchGlow, notice: notice, level: neonLevel)
@@ -202,14 +203,16 @@ struct PadScreen: View {
 
 /// UIKit のタッチパッド面を SwiftUI に置く。
 struct Surface: UIViewRepresentable {
-    var sensitivity: Double, acceleration: Double, screenWidth: Double
+    var sensitivity: Double, acceleration: Double, screen: CGSize, autoTune: Bool
     var send: (String) -> Void
     var onTouch: (CGPoint?) -> Void
     func makeUIView(context: Context) -> PadSurface { PadSurface(frame: .zero) }
     func updateUIView(_ v: PadSurface, context: Context) {
         v.sensitivity = sensitivity
         v.acceleration = acceleration
-        v.screenWidth = screenWidth
+        v.screenWidth = screen.width
+        v.screenHeight = screen.height
+        v.autoTune = autoTune
         v.send = send
         v.onTouch = onTouch
     }
@@ -260,6 +263,11 @@ struct SettingsSheet: View {
     @EnvironmentObject var link: PadLink
     @Binding var sensitivity: Double
     @Binding var acceleration: Double
+    @AppStorage("autoSpeed") private var autoSpeed = true
+    /// 今の向きのパッドの大きさ(画面全体で近似)。設定に出す自動の値のため。
+    private var padSize: CGSize {
+        (UIApplication.shared.connectedScenes.first as? UIWindowScene)?.screen.bounds.size ?? .zero
+    }
     @Binding var theme: Int
     @Binding var dayTone: String
     @Binding var nightTone: String
@@ -272,15 +280,21 @@ struct SettingsSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("動きの速さ") {
+                Section {
+                    Toggle("画面に合わせて自動で調整", isOn: $autoSpeed)
+                    let tune = CursorTune.auto(link.screen, pad: padSize)
                     VStack(alignment: .leading) {
-                        Text("感度 \(String(format: "%.1f", sensitivity))")
-                        Slider(value: $sensitivity, in: 0.3...3, step: 0.1)
+                        Text("感度 \(String(format: "%.1f", autoSpeed ? tune.sensitivity : sensitivity))")
+                        Slider(value: autoSpeed ? .constant(tune.sensitivity) : $sensitivity, in: 0.3...3, step: 0.1)
                     }
+                    .disabled(autoSpeed)
                     VStack(alignment: .leading) {
-                        Text("加速 \(String(format: "%.1f", acceleration))(0＝加速なし)")
-                        Slider(value: $acceleration, in: 0...3, step: 0.1)
+                        Text("加速 \(String(format: "%.1f", autoSpeed ? tune.acceleration : acceleration))(0＝加速なし)")
+                        Slider(value: autoSpeed ? .constant(tune.acceleration) : $acceleration, in: 0...3, step: 0.1)
                     }
+                    .disabled(autoSpeed)
+                } header: { Text("動きの速さ") } footer: {
+                    if autoSpeed { Text("画面の解像度 \(Int(link.screen.width))×\(Int(link.screen.height)) と、iPhone の向きに合わせています") }
                 }
                 Section("ダークモード") {
                     Picker("ダークモード", selection: $theme) {
