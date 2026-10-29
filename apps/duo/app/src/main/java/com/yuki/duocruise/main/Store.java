@@ -17,13 +17,16 @@ final class Store {
     static int side(Context c) { return p(c).getInt("side", SplitGeometry.SIDE_LEFT); }
     static void setSide(Context c, int v) { p(c).edit().putInt("side", v).apply(); }
 
-    /** ボタンの割り当て(KeyMap の文字列)。未設定なら初期値。keymap4＝1画面の切り替えを足した初期値(それより前の保存は使わない)。 */
+    /**
+     * ボタンの割り当て(KeyMap の文字列)。未設定なら初期値。
+     * keymap5＝ナビボタンを使う 2026-10-29 の初期値(それより前の保存 keymap4 は使わない)。
+     */
     static KeyMap keyMap(Context c) {
-        KeyMap m = KeyMap.parse(p(c).getString("keymap4", KeyMap.DEFAULTS));
+        KeyMap m = KeyMap.parse(p(c).getString("keymap5", KeyMap.DEFAULTS));
         m.addMissingDefaults();
         return m;
     }
-    static void setKeyMap(Context c, KeyMap m) { p(c).edit().putString("keymap4", m.serialize()).apply(); }
+    static void setKeyMap(Context c, KeyMap m) { p(c).edit().putString("keymap5", m.serialize()).apply(); }
 
     /** true のとき1画面(操作中の側だけを出す)。 */
     /** 起動音を鳴らすか(初期値: 鳴らす)。 */

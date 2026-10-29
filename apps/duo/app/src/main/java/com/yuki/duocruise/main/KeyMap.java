@@ -13,7 +13,7 @@ import java.util.List;
  */
 final class KeyMap {
     // android.view.KeyEvent の番号
-    static final int HOME = 3, BACK = 4, DPAD_UP = 19, DPAD_DOWN = 20, DPAD_LEFT = 21, DPAD_RIGHT = 22,
+    static final int HOME = 3, BACK = 4, COMMA = 55, DPAD_UP = 19, DPAD_DOWN = 20, DPAD_LEFT = 21, DPAD_RIGHT = 22,
             DPAD_CENTER = 23, TAB = 61, ENTER = 66, MENU = 82, SEARCH = 84, APP_SWITCH = 187,
             ASSIST = 219, VOICE_ASSIST = 231, NAVIGATE_PREVIOUS = 260, NAVIGATE_NEXT = 261;
 
@@ -24,14 +24,14 @@ final class KeyMap {
     static final int SHORT = 0, LONG = 1, DOUBLE = 2, TRIPLE = 3;
     static final int MAX_TAPS = 4;
 
-    /** 割り当てられる動作。 */
+    /** 割り当てられる動作(この順で「ボタンの割り当て」に並ぶ)。 */
     enum Action {
         SWITCH_SIDE(R.string.act_switch),
         SWAP(R.string.act_swap),
-        PANEL(R.string.act_panel),
         SINGLE(R.string.act_single),
         /** 分割比の調整: 入ったあとは回して境目を動かし、押し込みで決定・戻るで取り消し。 */
-        SPLIT(R.string.act_split);
+        SPLIT(R.string.act_split),
+        PANEL(R.string.act_panel);
         private final int labelId;
         Action(int id) { labelId = id; }
         /** 画面に出す名前(端末の言語)。 */
@@ -46,16 +46,18 @@ final class KeyMap {
     }
 
     /**
-     * 初期値(2026-10-27 車での実測による。コマンダーからはホームも長押しも届かない)。
-     * ・コマンダーの押し込み(決定)を2回 → 操作側の切り替え(タスクキーの短押しでも)
-     * ・戻るを2回 → 左右の入れ替え
-     * ・押し込みを3回 → 操作盤(ホームの短押しでも。Duo Cruise が前面のときだけ。ユーザー補助で横取り)
-     * ・戻るを3回 → 1画面と2画面の切り替え(1画面のときは操作中の側だけを出す)
-     * ・押し込みを4回 → 分割比の調整(2026-10-29 本人が選んだ。回して調整、押し込みで決定)
+     * 初期値(2026-10-29 車での実測のあと本人が決めた)。
+     * コマンダーの押し込みの 3 回以上は押しにくい。ホームとタスク(♪)は、ホームアプリにしても機器が先に取るため届かない。
+     * MX-30 のナビボタン(紙飛行機)は COMMA で届き、本来の働きが無いので 1 回押しから使える。
+     * ・ナビボタンを1回 → ターゲットの切り替え(操作する側)
+     * ・押し込みを2回 → ウィンドウの切り替え(左右の入れ替え)
+     * ・戻るを2回 → 1画面と2画面の切り替え(1画面のときは操作中の側だけを出す)
+     * ・ナビボタンを2回 → 分割比の調整(回して調整、押し込みで決定)
+     * ・押し込みを3回 → メニューを開く・閉じる
      * ・押し込み・戻るを1回 → いつもの「決定」「戻る」として操作中の側へ(回数を数えるため少し遅れて届く)
      * 操作盤の「ボタンの割り当て」で、押す回数(1〜4回)や長押しごとに変えられる。
      */
-    static final String DEFAULTS = "SWITCH_SIDE=23:2,187:S;SWAP=4:2;PANEL=23:3,3:S;SINGLE=4:3;SPLIT=23:4";
+    static final String DEFAULTS = "SWITCH_SIDE=55:S;SWAP=23:2;SINGLE=4:2;SPLIT=55:2;PANEL=23:3";
 
     /**
      * 後から足した動作の初期の割り当て。保存済みの割り当てに無く、そのボタン＋押し方が空いていれば足す
@@ -128,6 +130,24 @@ final class KeyMap {
         binds.add(new Bind(code, gesture, a));
     }
 
+    /**
+     * 「ボタンの割り当て」の登録。1つの動作に1つの押し方だけ。重複させない:
+     * 同じ押し方を別の動作が持っていたら、その動作には、こちらが今まで使っていた押し方を渡す(入れ替え)。
+     * こちらに今までの押し方が無ければ、相手は未割り当てになる。戻り値は入れ替えた相手(無ければ null)。
+     */
+    Action assign(Action a, int code, int gesture) {
+        Action other = find(code, gesture);
+        if (other == a) return null;
+        List<Bind> mine = of(a);
+        clear(a);
+        if (other != null) {
+            clear(other);
+            for (Bind b : mine) binds.add(new Bind(b.code, b.gesture, other));
+        }
+        binds.add(new Bind(code, gesture, a));
+        return other;
+    }
+
     void clear(Action a) {
         for (int i = binds.size() - 1; i >= 0; i--) if (binds.get(i).action == a) binds.remove(i);
     }
@@ -172,6 +192,7 @@ final class KeyMap {
         switch (code) {
             case HOME: return Tx.s(R.string.key_home);
             case BACK: return Tx.s(R.string.key_back);
+            case COMMA: return Tx.s(R.string.key_nav);
             case DPAD_UP: return Tx.s(R.string.key_up);
             case DPAD_DOWN: return Tx.s(R.string.key_down);
             case DPAD_LEFT: return Tx.s(R.string.key_left);

@@ -76,6 +76,7 @@
     <string name="g_n">" (×%d)"</string>
     <string name="key_home">Home</string>
     <string name="key_back">Indietro</string>
+    <string name="key_nav">Navigazione</string>
     <string name="key_up">Su</string>
     <string name="key_down">Giù</string>
     <string name="key_left">Sinistra</string>
@@ -98,10 +99,11 @@
     <string name="g3_t">Usare il Commander</string>
     <string name="g3_r1">Ruota o inclina\tScegli una voce</string>
     <string name="g3_r2">Premi\tConferma</string>
-    <string name="g3_r3">Premi due volte\tCambia schermo attivo</string>
-    <string name="g3_r4">Premi tre volte\tApri il menu</string>
-    <string name="g3_r5">Indietro due volte\tScambia sinistra e destra</string>
-    <string name="g3_r6">Indietro tre volte\tVista singola o divisa</string>
+    <string name="g3_r3">Tasto navigazione\tCambia schermo attivo</string>
+    <string name="g3_r4">Premi due volte\tScambia sinistra e destra</string>
+    <string name="g3_r5">Indietro due volte\tVista singola o divisa</string>
+    <string name="g3_r6">Tasto navigazione due volte\tRegola divisione</string>
+    <string name="g3_r7">Premi tre volte\tApri il menu</string>
     <string name="g4_t">Riprodurre YouTube dall’iPhone</string>
     <string name="g4_b">Apri un video su YouTube dall’iPhone, tocca il pulsante Trasmetti\ne scegli “Duo Cruise” per riprodurlo su questo schermo.</string>
     <string name="g_next">Premi per continuare</string>

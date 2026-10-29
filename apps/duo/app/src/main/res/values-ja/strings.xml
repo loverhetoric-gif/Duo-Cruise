@@ -76,6 +76,7 @@
     <string name="g_n">（%d 回）</string>
     <string name="key_home">ホーム</string>
     <string name="key_back">戻る</string>
+    <string name="key_nav">ナビ</string>
     <string name="key_up">上</string>
     <string name="key_down">下</string>
     <string name="key_left">左</string>
@@ -98,10 +99,11 @@
     <string name="g3_t">コマンダーで操作する</string>
     <string name="g3_r1">回す・倒す\t項目を選ぶ</string>
     <string name="g3_r2">押す\t決定する</string>
-    <string name="g3_r3">2 回押す\t操作する画面を切り替える</string>
-    <string name="g3_r4">3 回押す\tメニューを開く</string>
-    <string name="g3_r5">戻るを 2 回\t左右の画面を入れ替える</string>
-    <string name="g3_r6">戻るを 3 回\t1 画面と 2 画面を切り替える</string>
+    <string name="g3_r3">ナビボタン\t操作する画面を切り替える</string>
+    <string name="g3_r4">2 回押す\t左右の画面を入れ替える</string>
+    <string name="g3_r5">戻るを 2 回\t1 画面と 2 画面を切り替える</string>
+    <string name="g3_r6">ナビボタンを 2 回\t分割比を調整する</string>
+    <string name="g3_r7">3 回押す\tメニューを開く</string>
     <string name="g4_t">iPhone から YouTube を再生する</string>
     <string name="g4_b">iPhone の YouTube で動画を開き、キャストボタンから\n「Duo Cruise」を選ぶと、この画面で再生が始まります。</string>
     <string name="g_next">押して次へ</string>

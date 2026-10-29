@@ -76,6 +76,7 @@
     <string name="g_n">" (%d회)"</string>
     <string name="key_home">홈</string>
     <string name="key_back">뒤로</string>
+    <string name="key_nav">내비</string>
     <string name="key_up">위</string>
     <string name="key_down">아래</string>
     <string name="key_left">왼쪽</string>
@@ -98,10 +99,11 @@
     <string name="g3_t">커맨더로 조작하기</string>
     <string name="g3_r1">돌리기·기울이기\t항목 선택</string>
     <string name="g3_r2">누르기\t결정</string>
-    <string name="g3_r3">두 번 누르기\t조작할 화면 전환</string>
-    <string name="g3_r4">세 번 누르기\t메뉴 열기</string>
-    <string name="g3_r5">뒤로 두 번\t좌우 화면 바꾸기</string>
-    <string name="g3_r6">뒤로 세 번\t1화면/2화면 전환</string>
+    <string name="g3_r3">내비 버튼\t조작할 화면 전환</string>
+    <string name="g3_r4">두 번 누르기\t좌우 화면 바꾸기</string>
+    <string name="g3_r5">뒤로 두 번\t1화면/2화면 전환</string>
+    <string name="g3_r6">내비 버튼 두 번\t분할 비율 조정</string>
+    <string name="g3_r7">세 번 누르기\t메뉴 열기</string>
     <string name="g4_t">iPhone에서 YouTube 재생하기</string>
     <string name="g4_b">iPhone의 YouTube에서 동영상을 열고 전송 버튼에서\n‘Duo Cruise’를 선택하면 이 화면에서 재생됩니다.</string>
     <string name="g_next">눌러서 다음으로</string>

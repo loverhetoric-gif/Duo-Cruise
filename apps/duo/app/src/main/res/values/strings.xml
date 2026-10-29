@@ -76,6 +76,7 @@
     <string name="g_n">" (×%d)"</string>
     <string name="key_home">Home</string>
     <string name="key_back">Back</string>
+    <string name="key_nav">Navigation</string>
     <string name="key_up">Up</string>
     <string name="key_down">Down</string>
     <string name="key_left">Left</string>
@@ -98,10 +99,11 @@
     <string name="g3_t">Using the Commander</string>
     <string name="g3_r1">Turn or tilt\tChoose an item</string>
     <string name="g3_r2">Press\tConfirm</string>
-    <string name="g3_r3">Press twice\tSwitch the active screen</string>
-    <string name="g3_r4">Press three times\tOpen the menu</string>
-    <string name="g3_r5">Back twice\tSwap left and right</string>
-    <string name="g3_r6">Back three times\tSingle or split view</string>
+    <string name="g3_r3">Navigation button\tSwitch the active screen</string>
+    <string name="g3_r4">Press twice\tSwap left and right</string>
+    <string name="g3_r5">Back twice\tSingle or split view</string>
+    <string name="g3_r6">Navigation button twice\tAdjust the split</string>
+    <string name="g3_r7">Press three times\tOpen the menu</string>
     <string name="g4_t">Play YouTube from your iPhone</string>
     <string name="g4_b">Open a video in YouTube on your iPhone, tap the Cast button,\nand choose “Duo Cruise” to play it on this screen.</string>
     <string name="g_next">Press to continue</string>

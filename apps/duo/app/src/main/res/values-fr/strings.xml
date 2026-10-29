@@ -76,6 +76,7 @@
     <string name="g_n">" (×%d)"</string>
     <string name="key_home">Accueil</string>
     <string name="key_back">Retour</string>
+    <string name="key_nav">Navigation</string>
     <string name="key_up">Haut</string>
     <string name="key_down">Bas</string>
     <string name="key_left">Gauche</string>
@@ -98,10 +99,11 @@
     <string name="g3_t">Utiliser le Commander</string>
     <string name="g3_r1">Tourner ou incliner\tChoisir un élément</string>
     <string name="g3_r2">Appuyer\tValider</string>
-    <string name="g3_r3">Appuyer deux fois\tChanger d’écran actif</string>
-    <string name="g3_r4">Appuyer trois fois\tOuvrir le menu</string>
-    <string name="g3_r5">Retour deux fois\tInverser gauche et droite</string>
-    <string name="g3_r6">Retour trois fois\tÉcran unique ou partagé</string>
+    <string name="g3_r3">Bouton Navigation\tChanger d’écran actif</string>
+    <string name="g3_r4">Appuyer deux fois\tInverser gauche et droite</string>
+    <string name="g3_r5">Retour deux fois\tÉcran unique ou partagé</string>
+    <string name="g3_r6">Bouton Navigation deux fois\tAjuster le partage</string>
+    <string name="g3_r7">Appuyer trois fois\tOuvrir le menu</string>
     <string name="g4_t">Lire YouTube depuis l’iPhone</string>
     <string name="g4_b">Ouvrez une vidéo dans YouTube sur l’iPhone, touchez le bouton Caster\net choisissez « Duo Cruise » pour la lire sur cet écran.</string>
     <string name="g_next">Appuyez pour continuer</string>

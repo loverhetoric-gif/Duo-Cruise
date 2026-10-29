@@ -383,10 +383,12 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
             if (panel.getVisibility() == View.VISIBLE) panel.refresh();
             return;
         }
-        keyMap.set(a, code, gesture, true);
+        KeyMap.Action other = keyMap.assign(a, code, gesture);
         Store.setKeyMap(this, keyMap);
         router.setMap(keyMap);
-        DuoLog.log("割り当て: " + a.label() + " = " + keyMap.describe(a) + "(" + keyMap.serialize() + ")");
+        DuoLog.log("割り当て: " + a.label() + " = " + keyMap.describe(a)
+                + (other == null ? "" : "。重ならないよう「" + other.label() + "」は " + keyMap.describe(other) + " に入れ替え")
+                + "(" + keyMap.serialize() + ")");
         if (panel.getVisibility() == View.VISIBLE) panel.refresh();
     }
 

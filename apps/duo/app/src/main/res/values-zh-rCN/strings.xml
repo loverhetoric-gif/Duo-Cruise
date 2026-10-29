@@ -76,6 +76,7 @@
     <string name="g_n">（%d 次）</string>
     <string name="key_home">主页</string>
     <string name="key_back">返回</string>
+    <string name="key_nav">导航</string>
     <string name="key_up">上</string>
     <string name="key_down">下</string>
     <string name="key_left">左</string>
@@ -98,10 +99,11 @@
     <string name="g3_t">使用旋钮操作</string>
     <string name="g3_r1">旋转或拨动\t选择项目</string>
     <string name="g3_r2">按下\t确定</string>
-    <string name="g3_r3">按两次\t切换操作的屏幕</string>
-    <string name="g3_r4">按三次\t打开菜单</string>
-    <string name="g3_r5">返回键按两次\t左右互换</string>
-    <string name="g3_r6">返回键按三次\t单屏与双屏切换</string>
+    <string name="g3_r3">导航键\t切换操作的屏幕</string>
+    <string name="g3_r4">按两次\t左右互换</string>
+    <string name="g3_r5">返回键按两次\t单屏与双屏切换</string>
+    <string name="g3_r6">导航键按两次\t调整分屏比例</string>
+    <string name="g3_r7">按三次\t打开菜单</string>
     <string name="g4_t">从 iPhone 播放 YouTube</string>
     <string name="g4_b">在 iPhone 的 YouTube 中打开视频，轻点投放按钮，\n选择“Duo Cruise”，即可在此屏幕上播放。</string>
     <string name="g_next">按下继续</string>
