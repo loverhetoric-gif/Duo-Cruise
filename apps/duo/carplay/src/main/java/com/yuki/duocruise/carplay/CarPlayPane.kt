@@ -134,6 +134,8 @@ class CarPlayPane @JvmOverloads constructor(
          * なるときの残り(627)。
          */
         private const val DEFAULT_AREAS = "1480,740,627"
+        /** つながってから、描く範囲の切り替えを送るまで待つ時間。 */
+        private const val AREA_SETTLE_MS = 3000L
 
         private val running = AtomicInteger(0)
 
@@ -468,9 +470,17 @@ class CarPlayPane @JvmOverloads constructor(
     private fun showArea(index: Int, why: String) {
         if (index == area || index !in areas.indices) return
         area = index
-        val sent = controller?.showViewArea(index) ?: false
-        record(DuoRecord.KIND_STATE, "CarPlay の描く範囲: ${areas[index]}×$streamH へ($why)" + if (sent) "" else " — まだ送れません(つながる前か、iPhone が範囲の切り替えに未対応)")
+        record(DuoRecord.KIND_STATE, "CarPlay の描く範囲: ${areas[index]}×$areaH へ($why)")
+        // つながってすぐなら、落ち着くのを待ってから送る(sessionListener が送る)
+        if (session != null && android.os.SystemClock.uptimeMillis() - sessionAt >= AREA_SETTLE_MS) sendArea()
         main.post { root.requestLayout() }
+    }
+
+    private var sessionAt = 0L
+
+    private fun sendArea() {
+        val sent = controller?.showViewArea(area) ?: false
+        if (!sent) record(DuoRecord.KIND_STATE, "CarPlay の描く範囲 ${areas.getOrNull(area)} を送れません(つながる前か、iPhone が範囲の切り替えに未対応)")
     }
 
     /**
@@ -765,8 +775,10 @@ class CarPlayPane @JvmOverloads constructor(
                 setStatus("CarPlay 表示中")
                 record(DuoRecord.KIND_STATE, "CarPlay の映像がつながった " + areasText() +
                     if (areas.isEmpty()) "" else " iPhone が範囲の切り替えを受けるか=" + session.acceptsViewAreas())
-                // つながる前に枠の幅で選んだ範囲を、改めて伝える
-                if (areas.isNotEmpty()) controller?.showViewArea(area)
+                // つながった直後に範囲の切り替えを送ると、iPhone が通信を切る(2026-10-29 実機)。
+                // 少し待ってから、つながる前に枠の幅で選んだ範囲を伝える
+                sessionAt = android.os.SystemClock.uptimeMillis()
+                if (areas.isNotEmpty()) main.postDelayed({ if (myGeneration == generation) sendArea() }, AREA_SETTLE_MS)
             }
         }
 
