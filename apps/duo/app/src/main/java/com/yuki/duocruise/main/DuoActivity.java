@@ -1206,7 +1206,9 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
             case "car-stop": if (carOn) stopCar(); return "CarPlay は止まっています";
             case "car-wifi-reset": case "car-maps": { String r = car.command(cmd); return r == null ? "CarPlay の部品がありません" : r; }
             case "route-end": return routeTest(cmd);
-            default: return cmd.startsWith("route-test") ? routeTest(cmd) : null;
+            default:
+                if (cmd.startsWith("car-input")) { String r = car.command(cmd); return r == null ? "CarPlay の部品がありません" : r; }
+                return cmd.startsWith("route-test") ? routeTest(cmd) : null;
         }
     }
 }

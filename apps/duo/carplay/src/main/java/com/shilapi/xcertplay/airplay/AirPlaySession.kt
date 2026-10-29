@@ -169,9 +169,11 @@ class AirPlaySession(
         return sent
     }
 
-    fun sendKnob(state: AirPlayKnobState, momentary: Boolean = true) {
-        sendHidReport(AirPlayHid.KNOB_HID_UID, AirPlayHid.knobReport(state))
+    /** @return 送れたら true(受け付けられたかではない) */
+    fun sendKnob(state: AirPlayKnobState, momentary: Boolean = true): Boolean {
+        val sent = sendHidReport(AirPlayHid.KNOB_HID_UID, AirPlayHid.knobReport(state))
         if (momentary) sendHidReport(AirPlayHid.KNOB_HID_UID, AirPlayHid.knobReport(AirPlayKnobState()))
+        return sent
     }
 
     fun sendKnobSelect(down: Boolean) =

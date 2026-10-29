@@ -120,6 +120,7 @@ class CarPlayPane @JvmOverloads constructor(
         private const val KEY_SSID = "ssid"
         private const val WIFI_PREFS = "carplay_wifi"
         private const val KEY_PASS = "pass"
+        private const val KEY_PRIMARY_INPUT = "primaryInput"
 
         private val running = AtomicInteger(0)
 
@@ -289,7 +290,7 @@ class CarPlayPane @JvmOverloads constructor(
             )
             controller = next
             setStatus("開始しています")
-            record(DuoRecord.KIND_STATE, "CarPlay 開始 ${WIDTH}x$HEIGHT 無線 MFi=${MfiProbe.DEVICE_PATH} " +
+            record(DuoRecord.KIND_STATE, "CarPlay 開始 ${WIDTH}x$HEIGHT 無線 主な操作=${primaryInputName()} MFi=${MfiProbe.DEVICE_PATH} " +
                 "MultiPlay の様子: " + network.multiPlayHints())
             next.start()
         } catch (error: Throwable) {
@@ -358,6 +359,26 @@ class CarPlayPane @JvmOverloads constructor(
     }
 
     /** 指示 car-wifi-reset: 保存したパスワードを消し、入力を待つ(パスワードを変えたとき)。 */
+    /**
+     * iPhone に伝える「主な操作」(0 宣言しない / 1 タッチ画面 / 2 タッチパッド / 3 ダイヤル。Apple の受信機の部品の定義)。
+     * MX-30 はダイヤルが主なので初期値 3。ダイヤルが効かない件(2026-10-29)を確かめるため、遠くから変えられる。
+     * 次に CarPlay がつながったときから効く。
+     */
+    private fun primaryInput(): Int = app.getSharedPreferences(WIFI_PREFS, Context.MODE_PRIVATE).getInt(KEY_PRIMARY_INPUT, 3)
+
+    private fun primaryInputName(): String = when (primaryInput()) {
+        0 -> "宣言しない"; 1 -> "タッチ画面"; 2 -> "タッチパッド"; 3 -> "ダイヤル"; else -> "?"
+    }
+
+    /** 指示 car-input 0〜3: 主な操作を変え、CarPlay をつなぎ直す。 */
+    fun setPrimaryInput(value: Int): String {
+        if (value !in 0..3) return "car-input は 0(宣言しない)・1(タッチ画面)・2(タッチパッド)・3(ダイヤル)"
+        app.getSharedPreferences(WIFI_PREFS, Context.MODE_PRIVATE).edit().putInt(KEY_PRIMARY_INPUT, value).apply()
+        record(DuoRecord.KIND_STATE, "CarPlay の主な操作を「${primaryInputName()}」にしました。つなぎ直します")
+        if (isRunning) { stop(); start() }
+        return "主な操作=${primaryInputName()}(つなぎ直します)"
+    }
+
     fun resetWifiPass(): String {
         stop()
         prefs().edit().remove(KEY_PASS).apply()
@@ -431,20 +452,21 @@ class CarPlayPane @JvmOverloads constructor(
         val current = session ?: return false
         val down = event.action == KeyEvent.ACTION_DOWN
         val first = down && event.repeatCount == 0
+        val name = KeyEvent.keyCodeToString(event.keyCode).removePrefix("KEYCODE_")
         when (action) {
             CarPlayKeyMap.Action.SELECT -> {
                 if (event.action == KeyEvent.ACTION_UP || first) {
-                    hid { current.sendKnobSelect(down) }
+                    knob("$name→決定" + if (down) "(押)" else "(離)") { current.sendKnobSelect(down) }
                 }
             }
-            CarPlayKeyMap.Action.ROTATE_RIGHT -> if (down) hid { current.sendKnob(AirPlayKnobState(wheel = CarPlayKeyMap.ROTATE_STEP)) }
-            CarPlayKeyMap.Action.ROTATE_LEFT -> if (down) hid { current.sendKnob(AirPlayKnobState(wheel = -CarPlayKeyMap.ROTATE_STEP)) }
-            CarPlayKeyMap.Action.BACK -> if (first) hid { current.sendKnob(AirPlayKnobState(back = true)) }
-            CarPlayKeyMap.Action.HOME -> if (first) hid { current.sendKnob(AirPlayKnobState(home = true)) }
-            CarPlayKeyMap.Action.TILT_UP -> if (first) hid { current.sendKnob(AirPlayKnobState(y = -CarPlayKeyMap.TILT_AMOUNT)) }
-            CarPlayKeyMap.Action.TILT_DOWN -> if (first) hid { current.sendKnob(AirPlayKnobState(y = CarPlayKeyMap.TILT_AMOUNT)) }
-            CarPlayKeyMap.Action.TILT_LEFT -> if (first) hid { current.sendKnob(AirPlayKnobState(x = -CarPlayKeyMap.TILT_AMOUNT)) }
-            CarPlayKeyMap.Action.TILT_RIGHT -> if (first) hid { current.sendKnob(AirPlayKnobState(x = CarPlayKeyMap.TILT_AMOUNT)) }
+            CarPlayKeyMap.Action.ROTATE_RIGHT -> if (down) knob("$name→右回し") { current.sendKnob(AirPlayKnobState(wheel = CarPlayKeyMap.ROTATE_STEP)) }
+            CarPlayKeyMap.Action.ROTATE_LEFT -> if (down) knob("$name→左回し") { current.sendKnob(AirPlayKnobState(wheel = -CarPlayKeyMap.ROTATE_STEP)) }
+            CarPlayKeyMap.Action.BACK -> if (first) knob("$name→戻る") { current.sendKnob(AirPlayKnobState(back = true)) }
+            CarPlayKeyMap.Action.HOME -> if (first) knob("$name→ホーム") { current.sendKnob(AirPlayKnobState(home = true)) }
+            CarPlayKeyMap.Action.TILT_UP -> if (first) knob("$name→上へ倒す") { current.sendKnob(AirPlayKnobState(y = -CarPlayKeyMap.TILT_AMOUNT)) }
+            CarPlayKeyMap.Action.TILT_DOWN -> if (first) knob("$name→下へ倒す") { current.sendKnob(AirPlayKnobState(y = CarPlayKeyMap.TILT_AMOUNT)) }
+            CarPlayKeyMap.Action.TILT_LEFT -> if (first) knob("$name→左へ倒す") { current.sendKnob(AirPlayKnobState(x = -CarPlayKeyMap.TILT_AMOUNT)) }
+            CarPlayKeyMap.Action.TILT_RIGHT -> if (first) knob("$name→右へ倒す") { current.sendKnob(AirPlayKnobState(x = CarPlayKeyMap.TILT_AMOUNT)) }
             // 番号は xcertplay の再生系 HID の並び(1 再生, 2 一時停止, 3 再生/一時停止, 4 次, 5 前)
             CarPlayKeyMap.Action.MEDIA_PLAY -> if (first) hid { current.sendMedia(1) }
             CarPlayKeyMap.Action.MEDIA_PAUSE -> if (first) hid { current.sendMedia(2) }
@@ -453,6 +475,31 @@ class CarPlayPane @JvmOverloads constructor(
             CarPlayKeyMap.Action.MEDIA_PREVIOUS -> if (first) hid { current.sendMedia(5) }
         }
         return true
+    }
+
+    /** ダイヤルの信号の記録。3 秒ぶんまとめて 1 通にする(効かない原因を確かめるため。2026-10-29)。 */
+    private val knobLog = StringBuilder()
+    private var knobLogPosted = false
+
+    /** ダイヤルの信号を送り、送れたかを記録する。 */
+    private fun knob(what: String, send: () -> Boolean) {
+        hid {
+            val ok = send()
+            main.post {
+                if (knobLog.isNotEmpty()) knobLog.append(" | ")
+                knobLog.append(what).append(if (ok) "" else "(送れず)")
+                if (!knobLogPosted) {
+                    knobLogPosted = true
+                    main.postDelayed({
+                        knobLogPosted = false
+                        if (knobLog.isNotEmpty()) {
+                            record(DuoRecord.KIND_STATE, "CarPlay へダイヤル(主な操作=${primaryInputName()}): $knobLog")
+                            knobLog.setLength(0)
+                        }
+                    }, 3000)
+                }
+            }
+        }
     }
 
     /** ダイヤルの回転がキーでなく「スクロール」として届く機種のための受け口(任意)。 */
@@ -547,6 +594,7 @@ class CarPlayPane @JvmOverloads constructor(
                 widthPhysicalMm = widthMm,
                 heightPhysicalMm = heightMm,
                 fps = FPS,
+                primaryInputDevice = primaryInput(),
             ),
             // ハンドルの位置(設定。初期値は右ハンドル)
             rightHandDrive = rightHandDrive,
