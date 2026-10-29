@@ -113,6 +113,10 @@
     <string name="r_map">自動顯示地圖</string>
     <string name="r_light">方向燈光</string>
     <string name="r_audio">自動調整音量</string>
+    <string name="r_straight">長直路時放大 YouTube</string>
+    <string name="rs_on">放大 YouTube</string>
+    <string name="rs_dist">下一個轉彎超過此距離時</string>
+    <string name="rs_split">YouTube 寬度比例</string>
     <string name="r_arrive">抵達時</string>
     <string name="rh_show">顯示</string>
     <string name="v_hint_off">不顯示</string>

@@ -113,6 +113,10 @@
     <string name="r_map">Mapa automático</string>
     <string name="r_light">Luz de dirección</string>
     <string name="r_audio">Volumen automático</string>
+    <string name="r_straight">YouTube más grande en tramos largos</string>
+    <string name="rs_on">Ampliar YouTube</string>
+    <string name="rs_dist">Si el próximo giro está a más de</string>
+    <string name="rs_split">Ancho de YouTube</string>
     <string name="r_arrive">Al llegar</string>
     <string name="rh_show">Mostrar</string>
     <string name="v_hint_off">No mostrar</string>

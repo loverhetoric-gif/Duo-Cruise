@@ -113,6 +113,10 @@
     <string name="r_map">지도 자동 표시</string>
     <string name="r_light">방향 조명</string>
     <string name="r_audio">음량 자동 조절</string>
+    <string name="r_straight">긴 직진 구간에서 YouTube 크게</string>
+    <string name="rs_on">YouTube 크게</string>
+    <string name="rs_dist">다음 회전이 이보다 멀 때</string>
+    <string name="rs_split">YouTube 너비 비율</string>
     <string name="r_arrive">도착 시 동작</string>
     <string name="rh_show">표시</string>
     <string name="v_hint_off">표시 안 함</string>

@@ -113,6 +113,10 @@
     <string name="r_map">Show Map Automatically</string>
     <string name="r_light">Direction Light</string>
     <string name="r_audio">Automatic Volume</string>
+    <string name="r_straight">Bigger YouTube on Long Stretches</string>
+    <string name="rs_on">Enlarge YouTube</string>
+    <string name="rs_dist">When Next Turn Is Beyond</string>
+    <string name="rs_split">YouTube Width</string>
     <string name="r_arrive">On Arrival</string>
     <string name="rh_show">Show</string>
     <string name="v_hint_off">Off</string>

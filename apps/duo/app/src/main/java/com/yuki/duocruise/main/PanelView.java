@@ -78,6 +78,8 @@ final class PanelView extends ViewGroup {
     static final int ROUTE = 9, R_HINT = 10, R_MAP = 11, R_LIGHT = 12, R_AUDIO = 13, R_ARRIVE = 14;
     /** 車の設定(ハンドルの位置・距離の単位・CarPlay 用の Wi-Fi)。 */
     static final int VEHICLE = 15, WIFI = 16;
+    /** 一本道で YouTube を大きく(曲がり角の案内の下)。 */
+    static final int R_STRAIGHT = 17;
     /** 曲がる方向の光の色(ネオンの色編集ページを使い回す番号。Store.neon の which と同じ)。 */
     private static final int NEON_TURN = 3;
     private static final String GO = "›"; // 下の階層へ進む導線
@@ -391,7 +393,7 @@ final class PanelView extends ViewGroup {
             case MAIN: return 0;
             case DISPLAY: case CONTROLS: case SYS: return 1;
             case NEON_EDIT: return neonWhich == NEON_TURN ? 4 : 3;
-            case R_HINT: case R_MAP: case R_LIGHT: case R_AUDIO: case R_ARRIVE: case WIFI: return 3;
+            case R_HINT: case R_MAP: case R_LIGHT: case R_AUDIO: case R_ARRIVE: case R_STRAIGHT: case WIFI: return 3;
             default: return 2;
         }
     }
@@ -625,7 +627,7 @@ final class PanelView extends ViewGroup {
             case LOG: return SYS;
             case NEON_EDIT: return neonWhich == NEON_TURN ? R_LIGHT : NEON;
             case ROUTE: return DISPLAY;
-            case R_HINT: case R_MAP: case R_LIGHT: case R_AUDIO: case R_ARRIVE: return ROUTE;
+            case R_HINT: case R_MAP: case R_LIGHT: case R_AUDIO: case R_ARRIVE: case R_STRAIGHT: return ROUTE;
             case VEHICLE: return SYS;
             case WIFI: return VEHICLE;
             default: return MAIN;
@@ -660,6 +662,7 @@ final class PanelView extends ViewGroup {
                 title.setText(T(R.string.d_route));
                 items.add(new Item(() -> T(R.string.r_hint), this::hintModeText, () -> show(R_HINT)));
                 items.add(new Item(() -> T(R.string.r_map), () -> onOff(Store.mapFront(c)), () -> show(R_MAP)));
+                items.add(new Item(() -> T(R.string.r_straight), () -> onOff(Store.straightOn(c)), () -> show(R_STRAIGHT)));
                 items.add(new Item(() -> T(R.string.r_light), () -> onOff(Store.turnLight(c)), () -> show(R_LIGHT)));
                 items.add(new Item(() -> T(R.string.r_audio), () -> onOff(Store.turnDuck(c)), () -> show(R_AUDIO)));
                 items.add(new Item(() -> T(R.string.r_arrive), () -> onOff(Store.arriveFull(c)), () -> show(R_ARRIVE)));
@@ -679,6 +682,20 @@ final class PanelView extends ViewGroup {
                 items.add(new Item(() -> T(R.string.rm_dist), () -> {}, distSlider(() -> Store.mapDist(c), v -> Store.setMapDist(c, v))));
                 items.add(new Item(() -> T(R.string.rm_hold), () -> T(R.string.seconds, Store.mapHoldMs(c) / 1000),
                         () -> { long v = Store.mapHoldMs(c) / 1000 + 1; if (v > 10) v = 1; Store.setMapHoldMs(c, v * 1000); changed(); }, true));
+                items.add(back(T(R.string.to_route)));
+                break;
+            case R_STRAIGHT:
+                title.setText(T(R.string.r_straight));
+                items.add(new Item(() -> T(R.string.rs_on), () -> onOff(Store.straightOn(c)),
+                        () -> { Store.setStraightOn(c, !Store.straightOn(c)); changed(); }, true));
+                items.add(new Item(() -> T(R.string.rs_dist), () -> {}, distSlider(() -> Store.straightDist(c), v -> Store.setStraightDist(c, v))));
+                items.add(new Item(() -> T(R.string.rs_split), () -> {}, new Slider() {
+                    public int value() { return Store.straightYt(c); }
+                    public int max() { return 100; }
+                    public void nudge(int d) { Store.setStraightYt(c, value() + d * 5); changed(); }
+                    public String text() { return value() + "%"; }
+                    public int tint() { return Theme.NEON_WHITE; }
+                }));
                 items.add(back(T(R.string.to_route)));
                 break;
             case R_LIGHT:

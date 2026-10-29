@@ -113,6 +113,10 @@
     <string name="r_map">Karte automatisch zeigen</string>
     <string name="r_light">Richtungslicht</string>
     <string name="r_audio">Automatische Lautstärke</string>
+    <string name="r_straight">YouTube größer auf langen Strecken</string>
+    <string name="rs_on">YouTube vergrößern</string>
+    <string name="rs_dist">Wenn nächste Abbiegung weiter als</string>
+    <string name="rs_split">YouTube-Breite</string>
     <string name="r_arrive">Bei Ankunft</string>
     <string name="rh_show">Anzeigen</string>
     <string name="v_hint_off">Aus</string>

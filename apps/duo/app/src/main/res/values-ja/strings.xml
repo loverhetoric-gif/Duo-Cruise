@@ -113,6 +113,10 @@
     <string name="r_map">地図の自動表示</string>
     <string name="r_light">方向の光</string>
     <string name="r_audio">音量の自動調整</string>
+    <string name="r_straight">一本道で YouTube を大きく</string>
+    <string name="rs_on">YouTube を大きくする</string>
+    <string name="rs_dist">次の曲がり角がこれより遠いとき</string>
+    <string name="rs_split">YouTube の幅の割合</string>
     <string name="r_arrive">到着時の動作</string>
     <string name="rh_show">表示</string>
     <string name="v_hint_off">表示しない</string>

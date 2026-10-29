@@ -564,6 +564,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     private int targetYt() {
         if (splitAdjusting) return splitVal;
         if (navEngaged) return Store.navYt(this);
+        if (straightEngaged) return Store.straightYt(this);
         if (arriveEngaged) return 100;
         return Store.splitYt(this);
     }
@@ -573,6 +574,8 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     private Route route;
     /** 曲がり角で地図を表示中 / そのために 1 画面の表示を地図へ切り替えた / 到着後の全画面 / 曲がり角の手前で音量を下げ中。 */
     private boolean mapEngaged, arriveEngaged, turnDucked;
+    /** 一本道(次の曲がり角が遠い)なので YouTube を大きくしている。 */
+    private boolean straightEngaged;
     /** この曲がり角では小窓をもう出した(曲がり角を過ぎるまで出し直さない)。 */
     private boolean pipSpent;
 
@@ -598,6 +601,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         // 新しいルートが始まったら、到着後の全画面をやめる
         if (r != null && r.getGuiding() && !wasGuiding && arriveEngaged) { arriveEngaged = false; animateYt(targetYt()); }
         applyRoute();
+        updateStraight();
         if (plan.light != null && Store.turnLight(this)) {
             int c = Store.neon(this, 3), lv = Store.neonLevel(this, 3);
             root.turnGlow(plan.light, c, lv / 100f);
@@ -676,7 +680,22 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         focusActive();
     }
 
-    @Override public void routeSettingsChanged() { applyRoute(); }
+    @Override public void routeSettingsChanged() { applyRoute(); updateStraight(); }
+
+    /**
+     * 一本道: 案内中で、次の曲がり角が設定の距離より遠ければ YouTube を大きくする(2 画面のときだけ)。
+     * 戻すのは 300m 近づいてから(境目で行ったり来たりしないように)。
+     */
+    private void updateStraight() {
+        Route r = route;
+        int d = Store.straightDist(this);
+        boolean want = r != null && r.getGuiding() && !r.getArrived() && Store.straightOn(this) && !Store.single(this)
+                && r.distanceToTurnM >= 0 && r.distanceToTurnM >= (straightEngaged ? Math.max(Store.DIST_MIN, d - 300) : d);
+        if (want == straightEngaged) return;
+        straightEngaged = want;
+        animateYt(targetYt());
+        DuoLog.log("一本道: " + (want ? "YouTube を大きくしました(次の曲がり角まで " + r.distanceToTurnM + " m)" : "元の比率に戻しました"));
+    }
 
     // ───────── 車の設定(メニュー › システム) ─────────
 

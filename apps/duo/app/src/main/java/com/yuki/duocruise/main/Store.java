@@ -124,6 +124,16 @@ final class Store {
     static long mapHoldMs(Context c) { return p(c).getLong("rtMapHold", 3000); }
     static void setMapHoldMs(Context c, long v) { p(c).edit().putLong("rtMapHold", Math.max(0, v)).apply(); }
 
+    /** 一本道(次の曲がり角が遠い)のあいだ、YouTube を大きくするか。 */
+    static boolean straightOn(Context c) { return p(c).getBoolean("rtStraight", false); }
+    static void setStraightOn(Context c, boolean v) { p(c).edit().putBoolean("rtStraight", v).apply(); }
+    /** 次の曲がり角がこの距離より遠ければ一本道とみなす。 */
+    static int straightDist(Context c) { return p(c).getInt("rtStraightDist", 2000); }
+    static void setStraightDist(Context c, int v) { p(c).edit().putInt("rtStraightDist", clampDist(v)).apply(); }
+    /** 一本道のあいだの、YouTube の幅の割合(%)。 */
+    static int straightYt(Context c) { return SplitGeometry.clampYt(p(c).getInt("rtStraightYt", 80)); }
+    static void setStraightYt(Context c, int v) { p(c).edit().putInt("rtStraightYt", SplitGeometry.clampYt(v)).apply(); }
+
     /** 曲がる方向を縁の光で知らせるか。 */
     static boolean turnLight(Context c) { return p(c).getBoolean("rtLight", true); }
     static void setTurnLight(Context c, boolean v) { p(c).edit().putBoolean("rtLight", v).apply(); }

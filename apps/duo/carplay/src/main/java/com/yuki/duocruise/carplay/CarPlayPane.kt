@@ -314,8 +314,11 @@ class CarPlayPane @JvmOverloads constructor(
             areas = savedAreas()
             areaH = if (areas.isEmpty()) HEIGHT else savedHeight('h') ?: HEIGHT
             streamH = if (areas.isEmpty()) HEIGHT else savedHeight('d') ?: areaH
-            val paneW = if (root.width > 0) root.width else WIDTH
-            area = areas.indices.minByOrNull { Math.abs(areas[it] - paneW) } ?: 0
+            // 最初の範囲は必ず 740(横長すぎる範囲で始めると iPhone が「解像度に対応していません」と断る。
+            // つないだ後の切り替えなら 1480 も受ける。2026-10-29 実機)。枠の幅に合わせるのは、つないで 3 秒後
+            area = areas.indices.minByOrNull { Math.abs(areas[it] - WIDTH) } ?: 0
+            val paneW = root.width
+            if (paneW > 0) pendingFit = paneW
             areaPinned = -1
             root.requestLayout()
             val airPlayConfig = createAirPlayConfig(microphone)
@@ -514,6 +517,8 @@ class CarPlayPane @JvmOverloads constructor(
     }
 
     private var sessionAt = 0L
+    /** つなぎ始めたときの枠の幅。つないで落ち着いてから、この幅の範囲へ切り替える。 */
+    private var pendingFit = 0
 
     private fun sendArea() {
         val sent = controller?.showViewArea(area) ?: false
@@ -891,7 +896,14 @@ class CarPlayPane @JvmOverloads constructor(
                 // つながった直後に範囲の切り替えを送ると、iPhone が通信を切る(2026-10-29 実機)。
                 // 少し待ってから、つながる前に枠の幅で選んだ範囲を伝える
                 sessionAt = android.os.SystemClock.uptimeMillis()
-                if (areas.isNotEmpty()) main.postDelayed({ if (myGeneration == generation) sendArea() }, AREA_SETTLE_MS)
+                if (areas.isNotEmpty()) main.postDelayed({
+                    if (myGeneration != generation) return@postDelayed
+                    val w = pendingFit
+                    pendingFit = 0
+                    val before = area
+                    if (w > 0 && areaPinned < 0) fitArea(w)
+                    if (area == before) sendArea()
+                }, AREA_SETTLE_MS)
             }
         }
 
