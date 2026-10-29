@@ -262,17 +262,16 @@ struct Lights: View {
     let touch: CGPoint?
     let touchGlow: Double
     let notice: Notice?
-    static let inset: CGFloat = 4
-
     var body: some View {
         GeometryReader { geo in
             let size = geo.size
-            let shape = RoundedRectangle(cornerRadius: max(Screen.cornerRadius - Self.inset, 20), style: .continuous)
+            // 縁の線は引かない。光の帯はディスプレイの端そのもの(画面と同じ角の丸み)に沿わせ、端から内側へ発光させる
+            // (帯の外側半分は画面の外に出るので、いちばん明るい所が画面の端にくる)
+            let shape = RoundedRectangle(cornerRadius: Screen.cornerRadius, style: .continuous)
             TimelineView(.animation) { ctx in
                 let t = ctx.date.timeIntervalSinceReferenceDate
                 let dim = night ? 0.75 : 1.0
                 ZStack {
-                    shape.stroke(c.edge, lineWidth: 1)
                     if connected {
                         // 普段: 白い光。操作している側の半分を強く
                         band(shape, c.flow, spin: t * 8, strength: 0.55 * dim)
@@ -308,7 +307,6 @@ struct Lights: View {
                         }
                     }
                 }
-                .padding(Self.inset)
             }
         }
         .ignoresSafeArea()
