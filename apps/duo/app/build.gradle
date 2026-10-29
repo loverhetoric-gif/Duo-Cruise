@@ -16,6 +16,8 @@ android {
         versionCode = vcode
         versionName = "0.1." + vcode
         buildConfigField 'boolean', 'UNLIMITED', (edition == 'unlimited').toString()
+        // リアルタイムの更新の合図の口(ntfy.sh)。CI の秘密 DUO_PUSH_TOPIC から入る。手元のビルドでは空(使わない)
+        buildConfigField 'String', 'PUSH_TOPIC', '"' + (System.getenv('DUO_PUSH_TOPIC') ?: '') + '"'
     }
     buildFeatures { buildConfig = true }
     compileOptions {

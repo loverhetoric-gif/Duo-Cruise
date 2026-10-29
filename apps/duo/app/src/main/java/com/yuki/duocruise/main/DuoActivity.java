@@ -71,6 +71,8 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     private PaneService service;
     private String sizes = "-", insets = "-";
     private GuideView guide;
+    /** 新しい版ができた合図を待ち、更新アプリに今すぐ確認を頼む。 */
+    private InstantUpdate instant;
     private final Runnable learnTimeout = () -> {
         if (learnAction != null) { DuoLog.log("割り当ての登録: 時間切れで取りやめ"); cancelLearn(); }
     };
@@ -130,6 +132,8 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         askPermissions();
         // CarPlay は開いたら自動で始め、失敗・切断したら見張りがつなぎ直す
         startCar("開いたので自動で");
+        instant = new InstantUpdate(this);
+        instant.start();
         main.postDelayed(carWatch, CAR_WATCH_MS);
         // タッチパッドは、アプリごとにモードを切り替えるルーターに通す
         // (Duo Cruise 前面＝この窓を操作、それ以外＝ユーザー補助で全体を操作)
@@ -261,6 +265,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         if (live == this) live = null;
         DuoLog.listener = null;
         main.removeCallbacksAndMessages(null);
+        if (instant != null) instant.stop();
 
         try { car.destroy(); } catch (Throwable t) { DuoLog.error("CarPlay の終了で失敗: " + DuoLog.why(t)); }
         try { tv.destroy(); } catch (Throwable t) { DuoLog.error("YouTube の終了で失敗: " + DuoLog.why(t)); }

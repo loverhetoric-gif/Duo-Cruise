@@ -47,6 +47,15 @@
                 <action android:name="com.yuki.duocruise.updater.LOG" />
             </intent-filter>
         </receiver>
+        <!-- 今すぐ確認(新しい版ができた合図を受けた Duo Cruise から。送れるのは同じ署名のアプリだけ) -->
+        <receiver
+            android:name=".CheckReceiver"
+            android:exported="true"
+            android:permission="com.yuki.duocruise.permission.LOG">
+            <intent-filter>
+                <action android:name="com.yuki.duocruise.updater.CHECK" />
+            </intent-filter>
+        </receiver>
         <receiver android:name=".BootReceiver" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />

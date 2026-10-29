@@ -79,6 +79,8 @@ jobs:
       - name: Duo Cruise 本体 を作る(apps/duo があるときだけ)
         if: env.HAS_DUO == '1'
         working-directory: apps/duo
+        env:
+          DUO_PUSH_TOPIC: ${{ secrets.DUO_PUSH_TOPIC }}
         run: |
           echo "sdk.dir=$ANDROID_HOME" > local.properties
           if [ -f gradlew ]; then
@@ -169,6 +171,15 @@ jobs:
             --title "test PR#$PR_NUMBER build $GITHUB_RUN_NUMBER" \
             --notes "PR #$PR_NUMBER のテスト版。commit: $HEAD_SHA。「テスト版を受け取る」がオンの端末だけが入れます。" \
             --prerelease --latest=false
+
+      # リアルタイムの更新: 公開できたら、車の Duo Cruise が待っている口(ntfy.sh)へ「check」を送る。
+      # 受けた Duo Cruise が更新アプリに今すぐ確認を頼む(中身は check の一言だけ。入るのは署名済みの版だけ)
+      - name: 車の機器に新しい版を知らせる
+        if: success()
+        env:
+          TOPIC: ${{ secrets.DUO_PUSH_TOPIC }}
+        run: |
+          if [ -n "$TOPIC" ]; then curl -fsS -d check "https://ntfy.sh/$TOPIC" >/dev/null && echo "知らせました"; else echo "DUO_PUSH_TOPIC が無いので知らせません"; fi
 
       # 成功でも失敗でも必ず動く。本人(リポジトリの持ち主)を @ で呼ぶので、GitHub の通知とメールが届く
       - name: 終わったことを知らせる
