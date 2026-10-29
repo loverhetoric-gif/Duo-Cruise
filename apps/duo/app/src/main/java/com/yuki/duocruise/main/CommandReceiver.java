@@ -15,7 +15,7 @@ import java.util.List;
  * 送れるのは同じ署名のアプリだけ(マニフェストで com.yuki.duocruise.permission.LOG を要求)。結果は kind=result で返す。
  *
  * 指示(先頭の「com.yuki.duocruise.main:」は有っても無くてもよい):
- *   state / log / keys / swap / side / panel / keys-reset / car-stop / car-wifi-reset
+ *   state / log / keys / swap / side / panel / keys-reset / car-stop / car-wifi-reset / car-maps
  *   tv-…       … D の TvPane.command() へ渡す
  *   mfi-probe  … 受けない(チップに触れる指示は遠くからは実行しない)
  */
@@ -55,7 +55,7 @@ public class CommandReceiver extends BroadcastReceiver {
                 if (a == null) r = cmd.equals("state") ? "画面は閉じています(" + (Store.swapped(c) ? "入れ替え中" : "通常の配置") + ")" : "画面が開いていないため「" + cmd + "」はできません";
                 else {
                     r = a.command(cmd);
-                    if (r == null) r = "知らない指示です。使えるもの: state / log / keys / swap / side / panel / keys-reset / car-stop / car-wifi-reset / tv-…";
+                    if (r == null) r = "知らない指示です。使えるもの: state / log / keys / swap / side / panel / keys-reset / car-stop / car-wifi-reset / car-maps / tv-…";
                 }
                 DuoLog.result(cmd + ": " + r);
             } catch (Throwable t) {

@@ -579,6 +579,19 @@ class CarPlayPane @JvmOverloads constructor(
             }
         }
 
+        /** iPhone から来た命令(画面の持ち主の切り替えなど)。地図を開く頼みの効き目を見るため記録する(同じ種類は 10 秒に 1 回)。 */
+        override fun onCommand(session: AirPlaySession, type: String, params: Map<String, Any?>) {
+            val now = android.os.SystemClock.elapsedRealtime()
+            val last = commandSeen[type]
+            if (last != null && now - last < 10_000) return
+            commandSeen[type] = now
+            val detail = params.entries.joinToString(" ") { (k, v) ->
+                val s = v.toString()
+                "$k=" + if (s.length > 160) s.take(160) + "…" else s
+            }
+            main.post { if (myGeneration == generation) record(DuoRecord.KIND_STATE, "iPhone からの命令: $type $detail") }
+        }
+
         override fun onTransportError(message: String) {
             main.post { if (myGeneration == generation) record(DuoRecord.KIND_ERROR, "CarPlay 通信の失敗: $message") }
         }
@@ -696,12 +709,51 @@ class CarPlayPane @JvmOverloads constructor(
                 lastRouteLog = key
                 record(DuoRecord.KIND_STATE, "ナビの案内: $now")
             }
+            // 案内が始まったら(つながった時点で案内中のときも)、CarPlay に地図を開くよう 1 回だけ頼む
+            if (now.guiding && !guidingSeen) {
+                guidingSeen = true
+                requestMaps("ナビの案内が始まった")
+            } else if (!now.guiding && !now.arrived) {
+                guidingSeen = false
+            }
             listener?.onRoute(now)
         }
     }
 
+    /** iPhone からの命令の種類ごとの、最後に記録した時刻(記録の連発を防ぐ)。 */
+    private val commandSeen = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
+    /** 今の案内について、地図を開くよう頼み済みか。 */
+    private var guidingSeen = false
+
+    /**
+     * CarPlay に地図(マップ)の画面を開くよう iPhone に頼む(AirPlay の命令 requestUI、URL は maps:)。
+     * CarPlay にどの画面を出すかは iPhone が決める。この命令を iPhone が受け付けるかは確かめ中(2026-10-29)。
+     * 送れたかどうかだけ記録する(画面が変わったかは、こちらからは分からない)。
+     * @return 送れたら true(受け付けられたかではない)
+     */
+    fun requestMaps(why: String): String {
+        val s = session
+        if (s == null) {
+            record(DuoRecord.KIND_STATE, "地図を開く頼み($why): CarPlay がつながっていないので送りません")
+            return "CarPlay がつながっていません"
+        }
+        hidExecutor.execute {
+            val ok = try {
+                s.sendCommand(linkedMapOf("type" to "requestUI", "params" to linkedMapOf<String, Any?>("url" to "maps:")))
+            } catch (e: Exception) {
+                false
+            }
+            main.post {
+                record(DuoRecord.KIND_STATE, "地図を開くよう iPhone に頼みました($why): " + if (ok) "送信済み" else "送れません")
+            }
+        }
+        return "地図を開くよう iPhone に頼みます"
+    }
+
     private fun clearRoute() {
         route.reset()
+        guidingSeen = false
         lastRouteLog = ""
         listener?.onRoute(null)
     }

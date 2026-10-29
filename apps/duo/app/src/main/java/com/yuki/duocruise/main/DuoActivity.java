@@ -1204,7 +1204,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
             case "keys-reset": resetKeys(); return "割り当てを初期値に戻しました: " + keyMap.serialize();
             // 遠くからは「止める」だけ。始めるのは OTTO の画面の操作盤からだけ
             case "car-stop": if (carOn) stopCar(); return "CarPlay は止まっています";
-            case "car-wifi-reset": { String r = car.command(cmd); return r == null ? "CarPlay の部品がありません" : r; }
+            case "car-wifi-reset": case "car-maps": { String r = car.command(cmd); return r == null ? "CarPlay の部品がありません" : r; }
             case "route-end": return routeTest(cmd);
             default: return cmd.startsWith("route-test") ? routeTest(cmd) : null;
         }

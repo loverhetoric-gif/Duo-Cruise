@@ -80,7 +80,9 @@ final class Panes {
         @Override public boolean onGenericMotion(MotionEvent e) { return p.onGenericMotion(e); }
         @Override public String status() { return p.status(); }
         @Override public String command(String cmd) {
-            return "car-wifi-reset".equals(cmd) ? p.resetWifiPass() : null;
+            if ("car-wifi-reset".equals(cmd)) return p.resetWifiPass();
+            if ("car-maps".equals(cmd)) return p.requestMaps("遠くからの指示");
+            return null;
         }
         @Override public void scroll(float dx, float dy) { p.scroll(dx, dy); }
         @Override public void scrollEnd() { p.scrollEnd(); }
