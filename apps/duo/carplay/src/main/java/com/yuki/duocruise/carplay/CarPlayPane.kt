@@ -129,8 +129,11 @@ class CarPlayPane @JvmOverloads constructor(
         private const val KEY_KNOB_BASIC = "knobBasic"
         private const val KEY_HID_SPLIT = "hidSplit"
         private const val KEY_AREAS = "areas2"
-        /** 描く範囲の既定: 画面全体(1画面・曲がり角の小窓)と半分(2画面。YouTube の 16:9 の残り)。 */
-        private const val DEFAULT_AREAS = "1480,740"
+        /**
+         * 描く範囲の既定: 画面全体(1画面・曲がり角の小窓)、半分、YouTube がちょうど 16:9(480 の高さで幅 853)に
+         * なるときの残り(627)。
+         */
+        private const val DEFAULT_AREAS = "1480,740,627"
 
         private val running = AtomicInteger(0)
 
@@ -162,8 +165,7 @@ class CarPlayPane @JvmOverloads constructor(
 
     /**
      * 描く範囲。iPhone には一番広い幅(画面全体 1480×480)で頼み、つないだまま描く範囲をこの幅のどれかへ切り替える。
-     * 範囲はどれも左上が原点。枠の幅に落ち着く範囲を選び([fitWidth])、範囲が枠より狭ければ横に伸ばして埋め、
-     * 広ければ(動いている途中)左に寄せて右を見せない。空(指示 car-areas off)なら [WIDTH]×[HEIGHT] だけで頼む。
+     * 範囲はどれも左上が原点。枠の幅に落ち着く範囲を選び([fitWidth])、範囲を枠の幅に合わせて横に伸び縮みさせる。空(指示 car-areas off)なら [WIDTH]×[HEIGHT] だけで頼む。
      */
     private var areas: List<Int> = emptyList()
     private var area = 0
@@ -183,8 +185,8 @@ class CarPlayPane @JvmOverloads constructor(
             super.onMeasure(widthMeasureSpec, heightMeasureSpec)
             if (areas.isEmpty() || measuredHeight <= 0) return
             val k = measuredHeight / areaH.toFloat()
-            val a = areas[area]
-            val kx = if (a <= measuredWidth) measuredWidth / a.toFloat() else k
+            // 範囲を枠の幅にぴったり合わせる(広くても切らずに縮める)
+            val kx = measuredWidth / areas[area].toFloat()
             video.measure(
                 MeasureSpec.makeMeasureSpec(Math.round(streamWidth() * kx), MeasureSpec.EXACTLY),
                 MeasureSpec.makeMeasureSpec(Math.round(streamH * k), MeasureSpec.EXACTLY),
@@ -458,8 +460,8 @@ class CarPlayPane @JvmOverloads constructor(
     }
 
     private fun fitArea(visible: Int) {
-        val fit = areas.indices.filter { areas[it] <= visible + 2 }.maxByOrNull { areas[it] }
-            ?: areas.indices.minByOrNull { areas[it] } ?: return
+        // 一番近い幅の範囲(伸び縮みを小さく)
+        val fit = areas.indices.minByOrNull { Math.abs(areas[it] - visible) } ?: return
         showArea(fit, "枠の幅 $visible")
     }
 
