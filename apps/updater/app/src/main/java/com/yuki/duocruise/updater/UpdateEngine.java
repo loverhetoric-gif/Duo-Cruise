@@ -158,6 +158,44 @@ final class UpdateEngine {
 
     private static String now() { return new SimpleDateFormat("MM/dd HH:mm", Locale.JAPAN).format(new Date()); }
 
+    /** 確かめる間隔(合図の直後、20 秒後、60 秒後)。 */
+    private static final long[] RETRY_MS = {0, 20_000, 40_000};
+    private static final java.util.concurrent.atomic.AtomicBoolean realtimeBusy = new java.util.concurrent.atomic.AtomicBoolean();
+
+    /**
+     * 新しい版ができた合図を受けたときの確認(リアルタイムの更新)。呼んだスレッドで最後まで動く。
+     * 合図は更新アプリ自身(PushListener)と Duo Cruise の中継(CheckReceiver)の両方から届くので、
+     * 確認中に届いた分は捨てる。公開の直後は GitHub の一覧に新しい版がまだ出ないことがある(10-29 に 1 回)ため、
+     * 何も入らなければ少し待って確かめ直す。結果はすぐ記録シートへ送る。
+     * @param from 合図の届き方(記録用)
+     */
+    static int checkRealtime(Context c, String from) {
+        if (!realtimeBusy.compareAndSet(false, true)) {
+            UpdLog.add("新しい版の合図(" + from + ")を受けました。すでに確認中なので、そちらに任せます");
+            return 0;
+        }
+        try {
+            UpdLog.add("新しい版の合図(" + from + ")を受けました。今すぐ確認します");
+            int n = 0;
+            for (long wait : RETRY_MS) {
+                if (wait > 0) {
+                    UpdLog.add("新しい版がまだ見えないので、" + wait / 1000 + " 秒後に確かめ直します");
+                    Remote.kick();
+                    Thread.sleep(wait);
+                }
+                n = checkAndInstall(c, false);
+                if (n > 0) break;
+            }
+            Remote.own("log", "リアルタイム更新: " + lastResult + "(開始 " + n + " 件)");
+            return n;
+        } catch (InterruptedException e) {
+            return 0;
+        } finally {
+            realtimeBusy.set(false);
+            Remote.kick();
+        }
+    }
+
     /** 確認して、新しいものを入れる。入れ始めた数を返す。 */
     static int checkAndInstall(Context c, boolean includeMissing) { return checkAndInstall(c, includeMissing, false); }
 
@@ -182,9 +220,16 @@ final class UpdateEngine {
                         continue;
                     }
                     UpdLog.add(it.label + ": v" + it.installed + " → v" + it.versionCode + " を取得します");
+                    long t0 = System.currentTimeMillis();
                     File f = download(c, it);
-                    UpdLog.add(it.label + ": 取得・照合OK。インストールします");
-                    install(c, f, it);
+                    UpdLog.add(it.label + ": 取得・照合OK(" + (f.length() / 1024) + " KB、"
+                            + (System.currentTimeMillis() - t0) / 1000 + " 秒)。インストールします");
+                    try {
+                        install(c, f, it);
+                    } catch (Exception e) {
+                        throw new Exception(it.label + " v" + it.versionCode + " のインストールを始められません: " + e.getMessage(), e);
+                    }
+                    UpdLog.add(it.label + ": v" + it.versionCode + " のインストールを始めました(結果は続けて届きます)");
                     started++;
                 }
                 UpdLog.add("確認を終了しました(インストール開始 " + started + " 件)");

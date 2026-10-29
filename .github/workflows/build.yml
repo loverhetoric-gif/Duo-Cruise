@@ -72,6 +72,8 @@ jobs:
 
       - name: Duo Cruise Market を作る
         working-directory: apps/updater
+        env:
+          DUO_PUSH_TOPIC: ${{ secrets.DUO_PUSH_TOPIC }}
         run: |
           echo "sdk.dir=$ANDROID_HOME" > local.properties
           gradle --no-daemon assembleDebug -Pvc=$VC
