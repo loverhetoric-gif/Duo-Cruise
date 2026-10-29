@@ -32,6 +32,18 @@ object AirPlayHid {
      */
     @Volatile var knobBasic = false
     @Volatile var distinctIds = false
+    /** 試し: 画面の機能(0x02 ダイヤル / 0x04 粗いタッチ / 0x08 細かいタッチ / 0x10 タッチパッド)。 */
+    @Volatile var displayFeatures = 0x0A
+    /** 試し: タッチの部品を iPhone に伝えるか。 */
+    @Volatile var withTouch = true
+    /** 試し: 部品の名前(uuid)を UUID の形で書くか(元は 16 進の数字だけ)。 */
+    @Volatile var realUuids = false
+    /** 試し: フォーカスの受け渡し(focusTransfer)に対応すると答えるか。 */
+    @Volatile var focusTransfer = true
+
+    /** 部品の名前。hidDevices と hidSendReport で同じものを使う。 */
+    fun uidString(uid: Int): String =
+        if (realUuids) "2a2a2a2a-0000-4000-8000-%012x".format(uid.toLong() and 0xffffffffL) else uid.toString(16)
 
     private const val TOUCH_CONTACTS = 2
     private const val BYTES_PER_FINGER = 6
@@ -94,7 +106,7 @@ object AirPlayHid {
         "hidProductID" to if (distinctIds) (uid - TOUCH_HID_UID + 1).toLong() else 1L,
         "hidVendorID" to 2L,
         "hidCountryCode" to 0L,
-        "uuid" to uid.toString(16),
+        "uuid" to uidString(uid),
         "name" to name,
         "displayUUID" to displayUuid,
         "hidDescriptor" to descriptor,

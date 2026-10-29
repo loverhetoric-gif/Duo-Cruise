@@ -129,6 +129,10 @@ class CarPlayPane @JvmOverloads constructor(
         private const val KEY_PRIMARY_INPUT = "primaryInput"
         private const val KEY_KNOB_BASIC = "knobBasic"
         private const val KEY_HID_SPLIT = "hidSplit"
+        private const val KEY_FEATURES = "dispFeatures"
+        private const val KEY_WITH_TOUCH = "withTouch"
+        private const val KEY_REAL_UUID = "realUuid"
+        private const val KEY_FOCUS = "focusTransfer"
         private const val KEY_AREAS = "areas2"
         /**
          * 描く範囲の既定: 分割比 5% きざみ(幅 74 ごと、148〜1480)と、YouTube がちょうど 16:9 になる残り(626)。
@@ -303,10 +307,15 @@ class CarPlayPane @JvmOverloads constructor(
             // ダイヤルの試しの切り替えは、iPhone に伝える前(/info を作る前)に決める
             AirPlayHid.knobBasic = prefs().getBoolean(KEY_KNOB_BASIC, false)
             AirPlayHid.distinctIds = prefs().getBoolean(KEY_HID_SPLIT, false)
+            AirPlayHid.displayFeatures = prefs().getInt(KEY_FEATURES, 0x0A)
+            AirPlayHid.withTouch = prefs().getBoolean(KEY_WITH_TOUCH, true)
+            AirPlayHid.realUuids = prefs().getBoolean(KEY_REAL_UUID, false)
+            AirPlayHid.focusTransfer = prefs().getBoolean(KEY_FOCUS, true)
             areas = savedAreas()
             areaH = if (areas.isEmpty()) HEIGHT else savedHeight('h') ?: HEIGHT
             streamH = if (areas.isEmpty()) HEIGHT else savedHeight('d') ?: areaH
-            area = areas.indices.minByOrNull { Math.abs(areas[it] - WIDTH) } ?: 0
+            val paneW = if (root.width > 0) root.width else WIDTH
+            area = areas.indices.minByOrNull { Math.abs(areas[it] - paneW) } ?: 0
             areaPinned = -1
             root.requestLayout()
             val airPlayConfig = createAirPlayConfig(microphone)
@@ -444,7 +453,33 @@ class CarPlayPane @JvmOverloads constructor(
 
     private fun knobTestText(): String =
         "ダイヤルの形=" + (if (prefs().getBoolean(KEY_KNOB_BASIC, false)) "簡単" else "元") +
-            " 機器の番号=" + (if (prefs().getBoolean(KEY_HID_SPLIT, false)) "部品ごと" else "共通")
+            " 機器の番号=" + (if (prefs().getBoolean(KEY_HID_SPLIT, false)) "部品ごと" else "共通") +
+            " 画面の機能=0x" + Integer.toHexString(prefs().getInt(KEY_FEATURES, 0x0A)) +
+            " タッチの部品=" + (if (prefs().getBoolean(KEY_WITH_TOUCH, true)) "あり" else "なし") +
+            " 部品の名前=" + (if (prefs().getBoolean(KEY_REAL_UUID, false)) "UUID" else "数字") +
+            " フォーカスの受け渡し=" + (if (prefs().getBoolean(KEY_FOCUS, true)) "あり" else "なし")
+
+    /**
+     * 指示(試し): car-knobcfg input=3 basic=0 split=0 feat=10 touch=1 uuid=0 … ダイヤルまわりの設定をまとめて変え、
+     * つなぎ直す(書かなかった項目は元に戻す)。adb から自動で組み合わせを回すために使う。
+     */
+    fun setKnobConfig(cmd: String): String {
+        val kv = cmd.trim().split(Regex("\\s+")).drop(1).mapNotNull {
+            val p = it.split('='); if (p.size == 2) p[0] to p[1] else null
+        }.toMap()
+        prefs().edit()
+            .putInt(KEY_PRIMARY_INPUT, kv["input"]?.toIntOrNull() ?: 3)
+            .putBoolean(KEY_KNOB_BASIC, kv["basic"] == "1")
+            .putBoolean(KEY_HID_SPLIT, kv["split"] == "1")
+            .putInt(KEY_FEATURES, kv["feat"]?.toIntOrNull() ?: 0x0A)
+            .putBoolean(KEY_WITH_TOUCH, kv["touch"] != "0")
+            .putBoolean(KEY_REAL_UUID, kv["uuid"] == "1")
+            .putBoolean(KEY_FOCUS, kv["focus"] != "0")
+            .apply()
+        record(DuoRecord.KIND_STATE, "ダイヤルの試しの設定: 主な操作=${primaryInputName()} ${knobTestText()}。つなぎ直します")
+        if (isRunning) { stop(); start() }
+        return "主な操作=${primaryInputName()} ${knobTestText()}"
+    }
 
     private fun savedAreas(): List<Int> =
         (prefs().getString(KEY_AREAS, null) ?: DEFAULT_AREAS).split(Regex("[,_\\s]+")).mapNotNull { it.trim().toIntOrNull() }

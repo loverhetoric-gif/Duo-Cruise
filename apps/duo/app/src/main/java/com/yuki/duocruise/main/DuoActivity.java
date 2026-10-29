@@ -235,6 +235,9 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         // 見た目の確かめ用(adb から): 案内のテストだけを受ける。ほかの指示は署名で守った受け口からだけ
         String t = i == null ? null : i.getStringExtra("routeTest");
         if (t != null && (t.startsWith("route-test") || t.equals("route-end"))) DuoLog.log(routeTest(t));
+        // ダイヤル・描く範囲の自動の試し(adb から)。この 2 つだけを受ける
+        String k = i == null ? null : i.getStringExtra("carTest");
+        if (k != null && (k.startsWith("car-knobcfg") || k.startsWith("car-areatest"))) DuoLog.log("adb の試し: " + command(k));
         if (root != null) root.requestApplyInsets();
     }
 

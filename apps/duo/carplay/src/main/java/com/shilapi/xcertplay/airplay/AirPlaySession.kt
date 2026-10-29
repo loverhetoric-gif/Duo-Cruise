@@ -247,7 +247,7 @@ class AirPlaySession(
         sendCommand(
             linkedMapOf(
                 "type" to "hidSendReport",
-                "uuid" to uid.toString(16),
+                "uuid" to AirPlayHid.uidString(uid),
                 "hidReport" to report,
             ),
         )
