@@ -462,7 +462,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     private void applyLayout() {
         if (curYt < 0) curYt = Store.splitYt(this);
         root.setSingle(Store.single(this));
-        root.setPip(mapEngaged, !Store.rightHand(this)); // 小窓は運転席と反対側
+        root.setPip(mapEngaged, false); // 小窓は右下(本人の指示。案内の札から遠い側)
         root.apply(Store.swapped(this), Store.side(this), Store.panelHalf(this), curYt);
         if (ytAnim == null || !ytAnim.isRunning()) fitCar(curYt);
         updateHint();

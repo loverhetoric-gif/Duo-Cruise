@@ -72,7 +72,7 @@ final class SplitGeometry {
     /** 1画面のときの、出す側の枠。どちらも横いっぱい(CarPlay は iPhone に画面全体の範囲で描かせる)。 */
     static int[] single(int w, int h, boolean tv) { return new int[]{0, 0, w, h}; }
 
-    /** 曲がり角の小窓(YouTube)。幅は画面の 1/3、16:9。運転席と反対側の下の隅。 */
+    /** 曲がり角の小窓(YouTube)。幅は画面の 1/3、16:9。下の隅(left なら左下、普段は右下)。 */
     static int[] pip(int w, int h, boolean left) {
         int pw = Math.round(w / 3f), ph = Math.min(h, Math.round(pw * 9 / 16f)), m = 16;
         return left ? new int[]{m, h - m - ph, m + pw, h - m} : new int[]{w - m - pw, h - m - ph, w - m, h - m};
