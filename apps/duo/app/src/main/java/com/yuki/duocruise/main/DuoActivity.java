@@ -445,6 +445,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         applyLayout();
         if (padServer != null) padServer.setState(Store.single(this) ? "s F"
                 : Store.side(this) == SplitGeometry.SIDE_LEFT ? "s L" : "s R");
+        padLayoutState();
         if (panel.getVisibility() == View.VISIBLE) panel.refresh();
         stateChanged();
     }
@@ -486,6 +487,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         root.setPip(mapEngaged, false); // 小窓は右下(本人の指示。案内の札から遠い側)
         root.apply(Store.swapped(this), Store.side(this), Store.panelHalf(this), curYt);
         if (ytAnim == null || !ytAnim.isRunning()) fitCar(curYt);
+        padLayoutState();
         updateHint();
     }
 
@@ -1306,6 +1308,31 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
 
     /** スクロール中は、操作する側を切り替えない(2本指スクロールで意図せず切り替わらないように)。 */
     @Override public void scrollActive(boolean on) { root.padScrolling = on; }
+
+    /** Duo Slate の画面の縮図へ、今の並びを送る。 */
+    private void padLayoutState() {
+        if (padServer == null) return;
+        padServer.setLayout("l " + (Store.single(this) ? 1 : 0) + " " + (Store.swapped(this) ? 1 : 0) + " "
+                + (Store.side(this) == SplitGeometry.SIDE_LEFT ? "L" : "R") + " " + Store.splitYt(this));
+    }
+
+    /** Duo Slate の画面の縮図から(メインスレッドへ)。 */
+    @Override public void padLayout(String cmd) {
+        main.post(() -> {
+            if (demoOn) stopDemo();
+            String[] a = cmd.trim().split(" ");
+            int side = a.length > 1 && a[1].equals("L") ? SplitGeometry.SIDE_LEFT : SplitGeometry.SIDE_RIGHT;
+            switch (a[0]) {
+                case "tg": if (Store.side(this) != side) setSide(side); break;
+                case "sw": swap(); break;
+                case "sg":
+                    if (!Store.single(this) && Store.side(this) != side) { Store.setSide(this, side); }
+                    toggleSingle();
+                    break;
+            }
+            padLayoutState();
+        });
+    }
 
     /** タスクボタン長押し: 設定メニューを開く。 */
     @Override public void openMenu() { if (panel.getVisibility() != View.VISIBLE) openPanel(); }

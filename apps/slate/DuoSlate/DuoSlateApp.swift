@@ -38,6 +38,11 @@ struct PadScreen: View {
     @Environment(\.colorScheme) private var scheme
     @State private var typing = false
     @State private var settings = false
+    /// 画面の縮図を出しているか。触らずに 6 秒で消える。
+    @State private var mapShown = false
+    @State private var mapTouchedAt = Date()
+    /// ネオンの発光の強さ(設定。1＝標準)。
+    @AppStorage("neonLevel") private var neonLevel = 1.0
     /// 指が触れている場所(画面の座標)と、その光の強さ。
     @State private var touch: CGPoint?
     @State private var touchGlow = 0.0
@@ -79,8 +84,14 @@ struct PadScreen: View {
             Surface(sensitivity: sensitivity, acceleration: acceleration, screenWidth: link.screen.width,
                     send: { link.send($0) }, onTouch: touched)
             Lights(c: c, night: night, connected: connected, target: link.target,
-                   touch: touch, touchGlow: touchGlow, notice: notice)
+                   touch: touch, touchGlow: touchGlow, notice: notice, level: neonLevel)
                 .allowsHitTesting(false)
+            if mapShown && connected {
+                LayoutMap(c: c, layout: link.layout, aspect: link.screen.width / max(1, link.screen.height),
+                          send: { link.send($0) }, touched: { mapTouchedAt = Date() })
+                    .padding(.horizontal, 28)
+                    .transition(.opacity.combined(with: .scale(scale: 0.94)))
+            }
             VStack {
                 // 角の丸みの内側に収める(横向きでは上の余白が 0 になるため、角の丸みから下げる)
                 HStack(alignment: .center) { settingLabel; Spacer(); statusLabel }
@@ -91,8 +102,9 @@ struct PadScreen: View {
                 HStack(spacing: 8) {
                     key("arrow.uturn.backward") { link.send("k b") }
                     key("house") { link.send("k h") }
-                    key("square.on.square") { link.send("k r") }
-                        .simultaneousGesture(LongPressGesture(minimumDuration: 0.5).onEnded { _ in link.send("k m") }) // 長押しで設定メニュー
+                    // 押す＝タスク、長押し＝設定メニュー(長押しのあとはタスクを送らない)
+                    HoldKey(icon: "square.on.square", c: c, tap: { link.send("k r") }, hold: { link.send("k m") })
+                    key(mapShown ? "rectangle.split.2x1.fill" : "rectangle.split.2x1") { toggleMap() }
                     key(typing ? "keyboard.chevron.compact.down" : "keyboard") { typing.toggle() }
                 }
                 .frame(height: 50)
@@ -114,8 +126,23 @@ struct PadScreen: View {
         }
         .sheet(isPresented: $settings) {
             SettingsSheet(sensitivity: $sensitivity, acceleration: $acceleration, theme: $theme,
-                          dayTone: $dayTone, nightTone: $nightTone, dayNeon: $dayNeon, nightNeon: $nightNeon)
+                          dayTone: $dayTone, nightTone: $nightTone, dayNeon: $dayNeon, nightNeon: $nightNeon,
+                          neonLevel: $neonLevel)
         }
+        .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { now in
+            #if DEBUG
+            // 確認用: 環境変数 DUO_MAP=1 で、画面の縮図を出したままにする
+            if ProcessInfo.processInfo.environment["DUO_MAP"] == "1" { if !mapShown { mapShown = true }; return }
+            #endif
+            if mapShown && now.timeIntervalSince(mapTouchedAt) > 6 {
+                withAnimation(.easeOut(duration: 0.3)) { mapShown = false }
+            }
+        }
+    }
+
+    private func toggleMap() {
+        mapTouchedAt = Date()
+        withAnimation(.spring(response: 0.42, dampingFraction: 0.75)) { mapShown.toggle() }
     }
 
     private func touched(_ p: CGPoint?) {
@@ -127,10 +154,10 @@ struct PadScreen: View {
         }
     }
 
-    /// 左上: 小さな SETTING。押すと設定。
+    /// 左上: 小さな Setting。押すと設定。
     private var settingLabel: some View {
         Button { settings = true } label: {
-            Text("SETTING")
+            Text("Setting")
                 .font(.system(size: 11, weight: .semibold))
                 .kerning(1.6)
                 .foregroundStyle(c.icon.opacity(c.dark ? 0.9 : 0.85))
@@ -238,6 +265,7 @@ struct SettingsSheet: View {
     @Binding var nightTone: String
     @Binding var dayNeon: String
     @Binding var nightNeon: String
+    @Binding var neonLevel: Double
     @State private var host = UserDefaults.standard.string(forKey: "host") ?? ""
     @Environment(\.dismiss) private var dismiss
 
@@ -267,6 +295,10 @@ struct SettingsSheet: View {
                 Section("ネオンの配色") {
                     NeonRow(title: String(localized: "ライト"), dark: false, selection: $dayNeon)
                     NeonRow(title: String(localized: "ダーク"), dark: true, selection: $nightNeon)
+                    VStack(alignment: .leading) {
+                        Text("発光の強さ \(String(format: "%d%%", Int((neonLevel * 100).rounded())))")
+                        Slider(value: $neonLevel, in: 0.4...1.6, step: 0.05)
+                    }
                 }
                 Section {
                     TextField("空欄のままで大丈夫です(例 192.168.43.1)", text: $host)
@@ -292,6 +324,33 @@ struct SettingsSheet: View {
         }
     }
 }
+/// 押すと tap、長押しで hold。長押しのあと指を離しても tap は送らない(タスクと設定メニューが同時に出ていた)。
+struct HoldKey: View {
+    let icon: String
+    let c: Palette
+    var tap: () -> Void
+    var hold: () -> Void
+    @State private var held = false
+
+    var body: some View {
+        Button {
+            if held { held = false; return }
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            tap()
+        } label: {
+            Image(systemName: icon).font(.system(size: 22, weight: .light))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(KeyStyle(c: c))
+        .simultaneousGesture(LongPressGesture(minimumDuration: 0.5).onEnded { _ in
+            held = true
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            hold()
+        })
+    }
+}
+
 /// 面の色を選ぶ行: 小さな色見本を並べ、選んだものに輪を付ける。
 struct ToneRow: View {
     let title: String

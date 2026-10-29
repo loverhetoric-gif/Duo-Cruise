@@ -11,6 +11,7 @@ S = {
 "Duo Slate の設定": ["Duo Slate Settings", "Duo Slate の設定", "Duo Slate 设置", "Duo Slate 設定", "Duo Slate 설정", "Einstellungen", "Réglages", "Ajustes", "Impostazioni"],
 "閉じる": ["Close", "閉じる", "关闭", "關閉", "닫기", "Schließen", "Fermer", "Cerrar", "Chiudi"],
 "動きの速さ": ["Pointer Speed", "動きの速さ", "指针速度", "指標速度", "포인터 속도", "Zeigergeschwindigkeit", "Vitesse du pointeur", "Velocidad del puntero", "Velocità del puntatore"],
+"発光の強さ %@": ["Glow Strength %@", "発光の強さ %@", "发光强度 %@", "發光強度 %@", "발광 강도 %@", "Leuchtstärke %@", "Intensité lumineuse %@", "Intensidad del brillo %@", "Intensità luminosa %@"],
 "感度 %@": ["Sensitivity %@", "感度 %@", "灵敏度 %@", "靈敏度 %@", "감도 %@", "Empfindlichkeit %@", "Sensibilité %@", "Sensibilidad %@", "Sensibilità %@"],
 "加速 %@(0＝加速なし)": ["Acceleration %@ (0 = none)", "加速 %@(0＝加速なし)", "加速 %@(0 = 不加速)", "加速 %@(0 = 不加速)", "가속 %@(0 = 가속 없음)", "Beschleunigung %@ (0 = keine)", "Accélération %@ (0 = aucune)", "Aceleración %@ (0 = ninguna)", "Accelerazione %@ (0 = nessuna)"],
 "ダークモード": ["Dark Mode", "ダークモード", "深色模式", "深色模式", "다크 모드", "Dunkelmodus", "Mode sombre", "Modo oscuro", "Modalità scura"],

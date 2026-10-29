@@ -276,8 +276,8 @@ final class SystemPad implements PadServer.Sink {
 
     private void place() {
         if (!added) return;
-        lp.x = Math.round(x);
-        lp.y = Math.round(y);
+        lp.x = Math.round(x - ((PadCursor) cursor).hot());
+        lp.y = Math.round(y - ((PadCursor) cursor).hot());
         try { wm.updateViewLayout(cursor, lp); } catch (Exception ignored) {}
     }
 

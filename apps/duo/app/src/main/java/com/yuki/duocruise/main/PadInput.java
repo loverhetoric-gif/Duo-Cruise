@@ -52,6 +52,8 @@ final class PadInput implements PadServer.Sink {
         void commanderRotate(int steps);
         /** MAZDA コマンダー: 倒す・押し込む(キーとして渡す。DPAD 上下左右・決定・戻る)。 */
         void commanderKey(int keyCode);
+        /** Duo Slate の画面の縮図から: "tg L|R"(ターゲット)・"sw"(ウィンドウの切り替え)・"sg L|R"(その側の 1 画面 ⇔ 2 画面)。 */
+        default void padLayout(String cmd) {}
     }
 
     private final Host host;
@@ -120,6 +122,8 @@ final class PadInput implements PadServer.Sink {
                     case "h": host.globalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_HOME); break;
                     case "r": host.globalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_RECENTS); break;
                     case "m": host.openMenu(); break; // 設定メニューを開く
+                    // ── 画面の縮図(Duo Slate) ──
+                    case "tg": case "sw": case "sg": host.padLayout(s.substring(2)); break;
                     // ── MAZDA コマンダー ──
                     case "rot": if (a.length > 2) host.commanderRotate((int) f(a[2])); break; // 回す
                     case "c": host.commanderKey(android.view.KeyEvent.KEYCODE_DPAD_CENTER); break; // 押し込み=決定
@@ -145,8 +149,8 @@ final class PadInput implements PadServer.Sink {
         int[] wh = screen();
         x = clamp(x + dx, 0, wh[0] - 1);
         y = clamp(y + dy, 0, wh[1] - 1);
-        cursor.setTranslationX(x);
-        cursor.setTranslationY(y);
+        cursor.setTranslationX(x - cursor.hot());
+        cursor.setTranslationY(y - cursor.hot());
         if (dragging) send(MotionEvent.ACTION_MOVE);
     }
 
@@ -181,7 +185,7 @@ final class PadInput implements PadServer.Sink {
     }
 
     private void show() {
-        if (x < 0) { int[] wh = screen(); x = wh[0] / 2f; y = wh[1] / 2f; cursor.setTranslationX(x); cursor.setTranslationY(y); }
+        if (x < 0) { int[] wh = screen(); x = wh[0] / 2f; y = wh[1] / 2f; cursor.setTranslationX(x - cursor.hot()); cursor.setTranslationY(y - cursor.hot()); }
         cursor.setVisibility(View.VISIBLE);
         cursor.bringToFront();
         main.removeCallbacks(hide);

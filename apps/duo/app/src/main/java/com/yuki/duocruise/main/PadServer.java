@@ -158,6 +158,7 @@ final class PadServer {
             int[] wh = sink.screen();
             send(out, "i " + wh[0] + " " + wh[1]);
             send(out, state);
+            if (!layout.isEmpty()) send(out, layout);
             send(out, bt);
             send(out, modeMsg);
             BufferedReader in = new BufferedReader(new InputStreamReader(c.getInputStream(), StandardCharsets.UTF_8));
@@ -208,6 +209,15 @@ final class PadServer {
     }
 
     /** 操作している側が変わった(メインスレッドから)。iPhone の縁の光と左右の印に使う。 */
+    /** 画面の並び(Duo Slate の画面の縮図用)。「l 1画面 入れ替え 操作側 YouTube%」。 */
+    private volatile String layout = "";
+
+    void setLayout(String s) {
+        if (s.equals(layout)) return;
+        layout = s;
+        broadcast(s);
+    }
+
     void setState(String s) {
         if (s.equals(state)) return;
         state = s;

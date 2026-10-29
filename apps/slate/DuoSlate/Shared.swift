@@ -262,6 +262,8 @@ struct Lights: View {
     let touch: CGPoint?
     let touchGlow: Double
     let notice: Notice?
+    /// 発光の強さ(設定。1＝標準)。
+    var level: Double = 1
     var body: some View {
         GeometryReader { geo in
             let size = geo.size
@@ -270,7 +272,7 @@ struct Lights: View {
             let shape = RoundedRectangle(cornerRadius: Screen.cornerRadius, style: .continuous)
             TimelineView(.animation) { ctx in
                 let t = ctx.date.timeIntervalSinceReferenceDate
-                let dim = night ? 0.75 : 1.0
+                let dim = (night ? 0.75 : 1.0) * level
                 ZStack {
                     if connected {
                         // 普段: 白い光。操作している側の半分を強く
