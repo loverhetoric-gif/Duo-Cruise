@@ -34,6 +34,10 @@ interface Pane {
     default void scroll(float dx, float dy) {}
     /** スクロールが終わった(たまりを捨てる)。 */
     default void scrollEnd() {}
+    /** 映像が届いているか(CarPlay だけ。つながるまでの演出に使う)。 */
+    default boolean streaming() { return true; }
+    /** 枠に出す、利用者向けの今の様子の文(CarPlay だけ)。 */
+    default String displayText() { return ""; }
     /** CarPlay 用の Wi-Fi(この機器のアクセスポイント)の名前。CarPlay の部品だけが使う。 */
     default String wifiSsid() { return null; }
     default boolean hasWifiPass() { return false; }

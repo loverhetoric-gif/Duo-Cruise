@@ -74,6 +74,23 @@ class CarPlayPane @JvmOverloads constructor(
 
         /** ナビの案内が変わった(Duo Cruise Unlimited Edition)。CarPlay が止まったら null。 */
         fun onRoute(route: Route?)
+
+        /** CarPlay の映像が届き始めた/止まった(持ち主が、つながるまでの演出を出し入れする)。 */
+        fun onStream(active: Boolean)
+    }
+
+    /** CarPlay の映像が届いているか。 */
+    var streaming = false
+        private set
+
+    /** 枠に出している、利用者向けの今の様子の文(持ち主が、つながるまでの演出に添える)。 */
+    fun displayText(): String = forPeople(statusText)
+
+    private fun setStreaming(active: Boolean) {
+        label.visibility = if (active) View.GONE else View.VISIBLE
+        if (streaming == active) return
+        streaming = active
+        listener?.onStream(active)
     }
 
     companion object {
@@ -237,7 +254,7 @@ class CarPlayPane @JvmOverloads constructor(
                 videoHeight = HEIGHT,
                 videoSizes = mapOf(SCREEN_TYPE_MAIN to (WIDTH to HEIGHT)),
                 onScreenStreamActiveChanged = { _, active ->
-                    main.post { if (myGeneration == generation) label.visibility = if (active) View.GONE else View.VISIBLE }
+                    main.post { if (myGeneration == generation) setStreaming(active) }
                 },
                 onAudioActive = { audioType, active ->
                     main.post {
@@ -554,7 +571,7 @@ class CarPlayPane @JvmOverloads constructor(
             main.post {
                 if (this@CarPlayPane.session === session) this@CarPlayPane.session = null
                 if (myGeneration != generation) return@post
-                label.visibility = View.VISIBLE
+                setStreaming(false)
                 setStatus("CarPlay が切れました(待機中)")
                 record(DuoRecord.KIND_STATE, "CarPlay の映像が切れた")
             }
@@ -672,7 +689,7 @@ class CarPlayPane @JvmOverloads constructor(
 
     private fun releaseAll() {
         session = null
-        label.visibility = View.VISIBLE
+        setStreaming(false)
         val c = controller
         val s = sink
         controller = null

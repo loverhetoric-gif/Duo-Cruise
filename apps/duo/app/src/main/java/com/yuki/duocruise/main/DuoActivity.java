@@ -117,7 +117,8 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
             SplashView splash = new SplashView(this);
             if (first) guide.prepare();   // 案内の地(演出と同じ色)を先に敷き、演出が消えたら案内が浮かぶ
             stage.addView(splash);
-            splash.play(Store.bootSound(this), () -> {
+            if (!first) root.setAlpha(0f);  // メイン画面は、起動画面が滲んで消えるのに合わせて現れる
+            splash.play(Store.bootSound(this), () -> { if (!first) revealMain(splash.still()); }, () -> {
                 stage.removeView(splash);
                 if (first) guide.reveal(this::guideDone);
             });
@@ -140,6 +141,33 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         DuoLog.log((BuildConfig.UNLIMITED ? "Duo Cruise Unlimited Edition" : "Duo Cruise") + " を開きました(版 "
                 + DuoLog.version() + (asHome ? "、ホームとして" : "") + ")");
         stateChanged();
+    }
+
+    /**
+     * 起動画面が滲んで消えるのと同時に、メイン画面を滲んだところから澄ませて出す(0.7 秒)。
+     * ぼかしはメイン画面の View ごと GPU で掛け(RenderEffect)、終わったら外す。
+     * この間 CarPlay の映像はまだ来ていない(枠には同じシンボルの「つながるまでの演出」が出ている)。
+     */
+    private void revealMain(boolean still) {
+        float dp = getResources().getDisplayMetrics().density;
+        android.animation.ValueAnimator va = android.animation.ValueAnimator.ofFloat(0f, 1f);
+        va.setDuration(SplashView.FADE_MS);
+        va.setInterpolator(new android.view.animation.DecelerateInterpolator(1.4f));
+        va.addUpdateListener(an -> {
+            float f = (float) an.getAnimatedValue();
+            root.setAlpha(f);
+            if (!still && Build.VERSION.SDK_INT >= 31) {
+                float r = SplashView.BLUR_DP * dp * (1 - f);
+                root.setRenderEffect(r < 0.5f ? null : android.graphics.RenderEffect.createBlurEffect(r, r, android.graphics.Shader.TileMode.CLAMP));
+            }
+        });
+        va.addListener(new android.animation.AnimatorListenerAdapter() {
+            @Override public void onAnimationEnd(android.animation.Animator a) {
+                root.setAlpha(1f);
+                if (Build.VERSION.SDK_INT >= 31) root.setRenderEffect(null);
+            }
+        });
+        va.start();
     }
 
     // ───────── 権限(CarPlay: Bluetooth・近くの Wi-Fi 機器・マイク) ─────────
@@ -1146,6 +1174,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         DuoActivity a = live;
         if (a == null) return;
         boolean bt = carBluetooth(safeStatus(a.car));
+        if (a.root != null) a.root.carLoading(!a.car.streaming(), a.car.displayText()); // つながるまでの演出
         if (a.padServer != null) a.padServer.setBluetooth(bt);
         if (!bt && a.route != null && !a.routeTesting) a.onRoute(null); // iPhone と切れたら、案内も終わり
         a.onConnChanged();

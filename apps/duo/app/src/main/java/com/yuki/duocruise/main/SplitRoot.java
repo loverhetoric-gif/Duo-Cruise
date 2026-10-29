@@ -31,6 +31,8 @@ final class SplitRoot extends ViewGroup {
     /** 曲がり角の案内と、曲がる方向の光(Duo Cruise Unlimited Edition)。 */
     private final TurnHintView hint;
     private final TurnGlow turnGlow;
+    /** CarPlay がつながるまでの演出(CarPlay の枠に重ねる)。 */
+    private final CarLoaderView carLoader;
     /** 分割比の調整中だけ出す、境目の光と左右の割合。 */
     private final SplitLine splitLine;
     View car, tv;
@@ -58,6 +60,7 @@ final class SplitRoot extends ViewGroup {
         hint = new TurnHintView(c);
         turnGlow = new TurnGlow(c);
         splitLine = new SplitLine(c);
+        carLoader = new CarLoaderView(c);
     }
 
     void setPanes(View carView, View tvView, PanelView p) {
@@ -67,6 +70,7 @@ final class SplitRoot extends ViewGroup {
         panel = p;
         addView(car);
         addView(tv);
+        addView(carLoader);
         addView(frame);
         addView(hint);
         addView(turnGlow);
@@ -89,6 +93,9 @@ final class SplitRoot extends ViewGroup {
     void turnHint(boolean show, int turn, Integer exitAngle, int drivingSide, String dist, String road) {
         hint.set(show, turn, exitAngle, drivingSide, dist, road);
     }
+
+    /** CarPlay がつながるまでの演出を出す/消す。msg は今の様子の文。 */
+    void carLoading(boolean show, String msg) { carLoader.set(show, msg); }
 
     /** 分割比の調整中の表示。show=false で消す。left/right は境目の左右に出す文字。 */
     void splitLine(boolean show, String left, String right) { splitLine.set(show, left, right); }
@@ -158,13 +165,14 @@ final class SplitRoot extends ViewGroup {
             // 移動だけ(拡大縮小は CarPlay の映像面と YouTube の描き直しが重く、カクついた)。
             // すれ違う感じは、手前を通る側を少しだけ上へ逃がして出す
             back.setTranslationX(dCar * (1 - f));
+            carLoader.setTranslationX(dCar * (1 - f)); // つながるまでの演出も CarPlay の枠と一緒に動く
             front.setTranslationX(dTv * (1 - f));
             front.setTranslationY(-6 * dp * arc);
             frame.moving = f < 1f;
         });
         swapAnim.addListener(new android.animation.AnimatorListenerAdapter() {
             @Override public void onAnimationEnd(android.animation.Animator a) {
-                for (View v : new View[]{back, front}) { v.setTranslationX(0); v.setTranslationY(0); }
+                for (View v : new View[]{back, front, carLoader}) { v.setTranslationX(0); v.setTranslationY(0); }
                 front.setLayerType(View.LAYER_TYPE_NONE, null);
                 frame.moving = false;
                 frame.update();
@@ -192,6 +200,7 @@ final class SplitRoot extends ViewGroup {
         setMeasuredDimension(MeasureSpec.getSize(wSpec), MeasureSpec.getSize(hSpec));
         int w = contentW(), h = contentH();
         measureTo(car, carRect(w, h));
+        measureTo(carLoader, carRect(w, h));
         measureTo(tv, tvRect(w, h));
         measureTo(frame, new int[]{0, 0, w, h});
         measureTo(turnGlow, new int[]{0, 0, w, h});
@@ -217,6 +226,7 @@ final class SplitRoot extends ViewGroup {
         int w = contentW(), h = contentH();
         int[] c = carRect(w, h), v = tvRect(w, h);
         layoutTo(car, c);
+        layoutTo(carLoader, c);
         layoutTo(tv, v);
         layoutTo(frame, new int[]{0, 0, w, h});
         layoutTo(turnGlow, new int[]{0, 0, w, h});

@@ -42,6 +42,11 @@ final class Panes {
                 @Override public void onRoute(Route route) {
                     DuoActivity.carRoute(route);
                 }
+
+                /** 映像が届き始めた/止まった。つながるまでの演出を出し入れする。 */
+                @Override public void onStream(boolean active) {
+                    DuoActivity.stateChanged();
+                }
             }, BuildConfig.UNLIMITED, Store.rightHand(a)));
         } catch (Throwable t) {
             DuoLog.error("CarPlay の部品を作れません: " + DuoLog.why(t));
@@ -82,6 +87,8 @@ final class Panes {
         /** OTTO の Wi-Fi のパスワードを入力中のときだけ使う。 */
         @Override public void typeText(String text) { p.typeText(text); }
         @Override public void typeKey(int keyCode) { p.typeKey(keyCode); }
+        @Override public boolean streaming() { return p.getStreaming(); }
+        @Override public String displayText() { return p.displayText(); }
         @Override public String wifiSsid() { return p.wifiSsid(); }
         @Override public boolean hasWifiPass() { return p.hasWifiPass(); }
         @Override public void editWifi(boolean ssid) { p.editWifi(ssid); }
