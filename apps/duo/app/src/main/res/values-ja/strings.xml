@@ -40,7 +40,7 @@
     <string name="sp_normal">通常の分割比</string>
     <string name="sp_auto">ナビ案内中に自動で調整</string>
     <string name="sp_nav">ナビ案内中の分割比</string>
-    <string name="sp_swap">ナビ案内中は地図を右に配置</string>
+    <string name="sp_swap">ナビ案内中は地図を運転席側に配置</string>
     <string name="sp_hold">通常の配置に戻るまでの時間</string>
     <string name="n_target">ターゲット切替</string>
     <string name="n_ok">接続完了</string>
@@ -130,4 +130,18 @@
     <string name="to_route">曲がり角の案内へ</string>
     <string name="to_route_light">方向の光へ</string>
     <string name="meters">%d m</string>
+    <string name="feet">%d ft</string>
+    <string name="s_vehicle">車の設定</string>
+    <string name="to_vehicle">車の設定へ</string>
+    <string name="s_wifi">CarPlay 用の Wi-Fi</string>
+    <string name="w_ssid">ネットワーク名(SSID)</string>
+    <string name="w_pass">パスワード</string>
+    <string name="v_set">設定済み</string>
+    <string name="v_unset">未設定</string>
+    <string name="s_drive">ハンドルの位置</string>
+    <string name="v_rhd">右ハンドル</string>
+    <string name="v_lhd">左ハンドル</string>
+    <string name="s_units">距離の単位</string>
+    <string name="v_km">キロメートル</string>
+    <string name="v_mi">マイル</string>
 </resources>

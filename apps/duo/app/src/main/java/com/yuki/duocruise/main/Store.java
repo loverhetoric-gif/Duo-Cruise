@@ -136,6 +136,33 @@ final class Store {
     static boolean arriveFull(Context c) { return p(c).getBoolean("rtArrive", false); }
     static void setArriveFull(Context c, boolean v) { p(c).edit().putBoolean("rtArrive", v).apply(); }
 
+    // ───────── 車の設定(メニュー › システム) ─────────
+
+    /** 右ハンドルか(false＝左ハンドル)。運転席がどちらの側かを決める。CarPlay とナビ案内中の地図の配置に使う。 */
+    static boolean rightHand(Context c) { return p(c).getBoolean("rightHand", true); }
+    static void setRightHand(Context c, boolean v) { p(c).edit().putBoolean("rightHand", v).apply(); }
+
+    /** 距離をマイルで出すか(false＝キロメートル)。初期値は端末の地域(米・英などはマイル)。 */
+    static boolean miles(Context c) {
+        String cc = java.util.Locale.getDefault().getCountry();
+        boolean def = cc.equals("US") || cc.equals("GB") || cc.equals("LR") || cc.equals("MM");
+        return p(c).getBoolean("miles", def);
+    }
+    static void setMiles(Context c, boolean v) { p(c).edit().putBoolean("miles", v).apply(); }
+
+    /** 距離(m)を、設定の単位の文字にする。km: 「300 m」「1.2 km」、マイル: 「500 ft」「0.3 mi」。 */
+    static String distance(Context c, long m) {
+        if (m < 0) return "";
+        if (miles(c)) {
+            double mi = m / 1609.344;
+            if (mi < 0.1) return Tx.s(R.string.feet, Math.round(m * 3.28084 / 50.0) * 50);
+            return mi >= 10 ? Math.round(mi) + " mi" : String.format(java.util.Locale.ROOT, "%.1f mi", mi);
+        }
+        if (m >= 10_000) return (m / 1000) + " km";
+        if (m >= 1_000) return String.format(java.util.Locale.ROOT, "%.1f km", m / 1000.0);
+        return Tx.s(R.string.meters, m >= 100 ? (m + 25) / 50 * 50 : (m + 5) / 10 * 10);
+    }
+
     /** 距離の設定の範囲(50〜2000 m)。 */
     static final int DIST_MIN = 50, DIST_MAX = 2000;
     static int clampDist(int v) { return Math.max(DIST_MIN, Math.min(DIST_MAX, v)); }

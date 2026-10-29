@@ -40,7 +40,7 @@
     <string name="sp_normal">常规分屏比例</string>
     <string name="sp_auto">导航时自动调整</string>
     <string name="sp_nav">导航时分屏比例</string>
-    <string name="sp_swap">导航时地图置于右侧</string>
+    <string name="sp_swap">导航时地图置于驾驶座一侧</string>
     <string name="sp_hold">恢复常规布局前的时间</string>
     <string name="n_target">切换屏幕</string>
     <string name="n_ok">连接成功</string>
@@ -130,4 +130,18 @@
     <string name="to_route">至转弯提示</string>
     <string name="to_route_light">至方向灯光</string>
     <string name="meters">%d 米</string>
+    <string name="feet">%d ft</string>
+    <string name="s_vehicle">车辆</string>
+    <string name="to_vehicle">至车辆</string>
+    <string name="s_wifi">CarPlay 用 Wi-Fi</string>
+    <string name="w_ssid">网络名称（SSID）</string>
+    <string name="w_pass">密码</string>
+    <string name="v_set">已设置</string>
+    <string name="v_unset">未设置</string>
+    <string name="s_drive">方向盘位置</string>
+    <string name="v_rhd">右舵</string>
+    <string name="v_lhd">左舵</string>
+    <string name="s_units">距离单位</string>
+    <string name="v_km">公里</string>
+    <string name="v_mi">英里</string>
 </resources>

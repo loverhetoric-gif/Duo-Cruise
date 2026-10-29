@@ -40,7 +40,7 @@
     <string name="sp_normal">Standardteilung</string>
     <string name="sp_auto">Während Navigation anpassen</string>
     <string name="sp_nav">Teilung während Navigation</string>
-    <string name="sp_swap">Karte rechts während Navigation</string>
+    <string name="sp_swap">Karte auf Fahrerseite bei Navigation</string>
     <string name="sp_hold">Verzögerung bis zur Rückkehr</string>
     <string name="n_target">Bildschirmwechsel</string>
     <string name="n_ok">Verbunden</string>
@@ -130,4 +130,18 @@
     <string name="to_route">Zu Abbiegehinweisen</string>
     <string name="to_route_light">Zum Richtungslicht</string>
     <string name="meters">%d m</string>
+    <string name="feet">%d ft</string>
+    <string name="s_vehicle">Fahrzeug</string>
+    <string name="to_vehicle">Zum Fahrzeug</string>
+    <string name="s_wifi">WLAN für CarPlay</string>
+    <string name="w_ssid">Netzwerkname (SSID)</string>
+    <string name="w_pass">Passwort</string>
+    <string name="v_set">Festgelegt</string>
+    <string name="v_unset">Nicht festgelegt</string>
+    <string name="s_drive">Lenkradposition</string>
+    <string name="v_rhd">Rechtslenker</string>
+    <string name="v_lhd">Linkslenker</string>
+    <string name="s_units">Entfernungseinheiten</string>
+    <string name="v_km">Kilometer</string>
+    <string name="v_mi">Meilen</string>
 </resources>

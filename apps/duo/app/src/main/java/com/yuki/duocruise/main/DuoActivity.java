@@ -472,10 +472,11 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
             main.removeCallbacks(navRevert);
             if (!navEngaged) {
                 navEngaged = true;
-                if (Store.autoSwap(this) && !Store.swapped(this)) {
+                // 地図を運転席の側へ(右ハンドルなら右、左ハンドルなら左)。入れ替え中＝地図が右
+                if (Store.autoSwap(this) && Store.swapped(this) != Store.rightHand(this)) {
                     navDidSwap = true;
                     curYt = Store.navYt(this);
-                    swap();                 // マップを右へ(くるっと)。比率も navYt で並べ直る
+                    swap();                 // 地図を運転席側へ(くるっと)。比率も navYt で並べ直る
                 } else {
                     navDidSwap = false;
                     animateYt(targetYt());
@@ -494,7 +495,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         if (navDidSwap) {
             navDidSwap = false;
             curYt = targetYt();
-            if (Store.swapped(this)) swap();   // 元(マップ左・YouTube 右)へ戻す
+            if (Store.swapped(this) == Store.rightHand(this)) swap();   // 運転席側へ寄せる前の配置へ戻す
             else applyLayout();
         } else {
             animateYt(targetYt());
@@ -575,14 +576,10 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
                 r == null ? -1 : r.drivingSide, r == null ? null : distanceText(r), r == null ? null : r.onto);
     }
 
-    /** 曲がり角までの距離の文字。iPhone の表示が無ければ、m から作る(案内と同じ丸め方)。 */
-    private static String distanceText(Route r) {
-        if (r.distanceText != null) return r.distanceText;
-        long m = r.distanceToTurnM;
-        if (m < 0) return "";
-        if (m >= 10_000) return (m / 1000) + " km";
-        if (m >= 1_000) return String.format(java.util.Locale.ROOT, "%.1f km", m / 1000.0);
-        return Tx.s(R.string.meters, m >= 100 ? (m + 25) / 50 * 50 : (m + 5) / 10 * 10);
+    /** 曲がり角までの距離の文字。設定の単位(km / マイル)で、m から作る。距離が分からなければ iPhone の表示。 */
+    private String distanceText(Route r) {
+        if (r.distanceToTurnM < 0) return r.distanceText == null ? "" : r.distanceText;
+        return Store.distance(this, r.distanceToTurnM);
     }
 
     /** 地図を表示する。2 画面なら地図を広げ、1 画面で YouTube を出していれば地図に切り替える。 */
@@ -626,6 +623,33 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     }
 
     @Override public void routeSettingsChanged() { applyRoute(); }
+
+    // ───────── 車の設定(メニュー › システム) ─────────
+
+    @Override public boolean rightHand() { return Store.rightHand(this); }
+    /** ハンドルの位置を変える。CarPlay は運転席側を iPhone に伝え直すため、動いていればつなぎ直す。 */
+    @Override public void toggleRightHand() {
+        Store.setRightHand(this, !Store.rightHand(this));
+        DuoLog.log("ハンドルの位置: " + (Store.rightHand(this) ? "右" : "左") + "ハンドル");
+        if (carOn) restartCar();
+    }
+    @Override public boolean miles() { return Store.miles(this); }
+    @Override public void toggleMiles() { Store.setMiles(this, !Store.miles(this)); updateHint(); }
+
+    @Override public String wifiSsid() { return car.wifiSsid(); }
+    @Override public boolean hasWifiPass() { return car.hasWifiPass(); }
+    /** CarPlay 用の Wi-Fi の名前かパスワードを、Duo Slate のキーボードで入れ直す。CarPlay を操作する側にして入力を待つ。 */
+    @Override public void editWifi(boolean ssid) {
+        closePanel();
+        if (active() != car) {
+            Store.setSide(this, Store.side(this) == SplitGeometry.SIDE_LEFT ? SplitGeometry.SIDE_RIGHT : SplitGeometry.SIDE_LEFT);
+            relayout();
+            focusActive();
+        }
+        carOn = true;
+        car.editWifi(ssid);
+        DuoLog.log("CarPlay 用の Wi-Fi の" + (ssid ? "名前" : "パスワード") + "を入れ直します");
+    }
 
     /**
      * 見た目の確かめ用(Unlimited Edition)。停車中に、案内が届いたことにして表示・光・地図・音量を動かす。

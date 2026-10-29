@@ -9,7 +9,9 @@
     <string name="cp_starting">Avvio di CarPlay</string>
     <string name="cp_stopped">CarPlay è interrotto</string>
     <string name="cp_preparing">Preparazione di CarPlay</string>
-    <string name="cp_wifi_ask">Inserisci la password del Wi-Fi OTTO “%1$s”\ncon la tastiera di Duo Slate, poi premi Invio\n%2$s</string>
+    <string name="cp_wifi_ask">Inserisci la password dell’hotspot Wi-Fi “%1$s” di questo dispositivo\ncon la tastiera di Duo Slate, poi premi Invio\n%2$s</string>
+    <string name="cp_ssid_ask">Inserisci il nome (SSID) dell’hotspot Wi-Fi di questo dispositivo\ncon la tastiera di Duo Slate, poi premi Invio\n%1$s</string>
+    <string name="cp_ssid_len">Il nome deve avere da 1 a 32 caratteri. Riprova\n%s</string>
     <string name="cp_wifi_len">La password deve contenere 8–63 caratteri. Riprova\n%s</string>
     <string name="cp_empty">(ancora nessun carattere)</string>
     <string name="cp_count">(%d caratteri)</string>

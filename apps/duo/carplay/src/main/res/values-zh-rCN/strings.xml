@@ -9,7 +9,9 @@
     <string name="cp_starting">正在启动 CarPlay</string>
     <string name="cp_stopped">CarPlay 已停止</string>
     <string name="cp_preparing">正在准备 CarPlay</string>
-    <string name="cp_wifi_ask">请用 Duo Slate 的键盘输入 OTTO 无线网络“%1$s”的密码，\n然后按 Return\n%2$s</string>
+    <string name="cp_wifi_ask">请用 Duo Slate 的键盘输入本设备 Wi-Fi 热点“%1$s”的密码，\n然后按 Return\n%2$s</string>
+    <string name="cp_ssid_ask">请用 Duo Slate 的键盘输入本设备 Wi-Fi 热点的名称（SSID），\n然后按 Return\n%1$s</string>
+    <string name="cp_ssid_len">名称须为 1–32 个字符，请重新输入\n%s</string>
     <string name="cp_wifi_len">密码须为 8–63 个字符，请重新输入\n%s</string>
     <string name="cp_empty">（尚未输入）</string>
     <string name="cp_count">（%d 个字符）</string>

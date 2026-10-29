@@ -34,6 +34,11 @@ interface Pane {
     default void scroll(float dx, float dy) {}
     /** スクロールが終わった(たまりを捨てる)。 */
     default void scrollEnd() {}
+    /** CarPlay 用の Wi-Fi(この機器のアクセスポイント)の名前。CarPlay の部品だけが使う。 */
+    default String wifiSsid() { return null; }
+    default boolean hasWifiPass() { return false; }
+    /** CarPlay 用の Wi-Fi の名前(ssid=true)かパスワードを入れ直す。 */
+    default void editWifi(boolean ssid) {}
     /** 「CarPlay」「YouTube」。 */
     String name();
     /** 本物の部品なら true、仮の部品なら false。 */

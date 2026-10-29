@@ -57,6 +57,8 @@ class CarPlayPane @JvmOverloads constructor(
     private val listener: Listener?,
     /** Duo Cruise Unlimited Edition: ナビの案内(曲がり角・距離・到着)を iPhone から受け取る。false なら元のまま。 */
     private val routeGuidance: Boolean = false,
+    /** 右ハンドルか(false＝左ハンドル)。iPhone はこれで、運転席の側に CarPlay の操作(ドック)を寄せる。 */
+    private val rightHandDrive: Boolean = true,
 ) {
 
     /** 持ち主への知らせ(どれもメインスレッドで呼ばれる)。 */
@@ -93,7 +95,12 @@ class CarPlayPane @JvmOverloads constructor(
          * 車を覚えるため、ペアリング直後の1回しかつながらなかった(2026-10-27・28 実機)。
          * パスワードは Duo Slate のキーボードで一度だけ入れてもらい、この端末の中にだけ保存する(記録には出さない)。
          */
-        private const val OTTO_AP_SSID = "OttoAibox-P3 Pro-99F0"
+        /**
+         * 名前の設定が無かった頃の版で使っていた、作者の車の機器のアクセスポイントの名前。
+         * パスワードだけが保存されている(＝その頃から使っている)ときに限り、これを名前として引き継ぐ。
+         */
+        private const val LEGACY_SSID = "OttoAibox-P3 Pro-99F0"
+        private const val KEY_SSID = "ssid"
         private const val WIFI_PREFS = "carplay_wifi"
         private const val KEY_PASS = "pass"
 
@@ -192,9 +199,14 @@ class CarPlayPane @JvmOverloads constructor(
             record(DuoRecord.KIND_ERROR, "CarPlay を始められません。権限なし: ${missing.joinToString()}")
             return
         }
+        val ssid = wifiSsid()
+        if (ssid == null) {
+            askWifi(ssid = true)
+            return
+        }
         val wifiPass = savedWifiPass()
         if (wifiPass == null) {
-            askWifiPass()
+            askWifi(ssid = false)
             return
         }
         isRunning = true
@@ -209,8 +221,8 @@ class CarPlayPane @JvmOverloads constructor(
         if (network.ottoTetheringOn() == false) {
             record(
                 DuoRecord.KIND_ERROR,
-                "OTTO 本体の Wi-Fi(ホットスポット $OTTO_AP_SSID)が切れています。CarPlay はこの Wi-Fi を使います。" +
-                    "OTTO の設定でホットスポットをオンにし、「自動的にオフ」をオフにしてください",
+                "この機器の Wi-Fi アクセスポイント「$ssid」が切れています。CarPlay はこの Wi-Fi を使います。" +
+                    "機器の設定でアクセスポイントをオンにし、「自動的にオフ」をオフにしてください",
             )
         }
         record(DuoRecord.KIND_LOG, "キー対応表: " + CarPlayKeyMap.describe())
@@ -244,7 +256,7 @@ class CarPlayPane @JvmOverloads constructor(
             }
             val next = CarPlayController(
                 context = app,
-                config = createRuntimeConfig(wifiPass),
+                config = createRuntimeConfig(ssid, wifiPass),
                 airPlayConfig = airPlayConfig,
                 identity = AirPlayPersistence.loadIdentity(app),
                 pairings = pairings,
@@ -293,17 +305,31 @@ class CarPlayPane @JvmOverloads constructor(
         val buf = typing ?: return
         when (keyCode) {
             KeyEvent.KEYCODE_DEL -> if (buf.isNotEmpty()) buf.setLength(buf.length - 1)
-            KeyEvent.KEYCODE_ENTER -> {
+            KeyEvent.KEYCODE_ENTER -> if (typingSsid) {
+                val name = buf.toString().trim()
+                if (name.toByteArray(Charsets.UTF_8).size !in 1..32) {
+                    typingText = app.getString(R.string.cp_ssid_len, shown(buf))
+                    setStatus("Wi-Fi の名前は 1〜32 バイトです。もう一度入れてください")
+                    return
+                }
+                prefs().edit().putString(KEY_SSID, name).apply()
+                record(DuoRecord.KIND_STATE, "CarPlay 用の Wi-Fi の名前を保存しました: $name")
+                buf.setLength(0)
+                typingSsid = false
+                if (savedWifiPass() == null) { showTyping(); return } // 続けてパスワード
+                typing = null
+                start()
+                return
+            } else {
                 if (buf.length !in 8..63) {
                     typingText = app.getString(R.string.cp_wifi_len, dots(buf.length))
                     setStatus("パスワードは 8〜63 文字です。もう一度入れてください")
                     return
                 }
-                app.getSharedPreferences(WIFI_PREFS, Context.MODE_PRIVATE).edit()
-                    .putString(KEY_PASS, buf.toString()).apply()
+                prefs().edit().putString(KEY_PASS, buf.toString()).apply()
                 buf.setLength(0)
                 typing = null
-                record(DuoRecord.KIND_STATE, "OTTO の Wi-Fi のパスワードを保存しました(値は記録しません)")
+                record(DuoRecord.KIND_STATE, "CarPlay 用の Wi-Fi のパスワードを保存しました(値は記録しません)")
                 start()
                 return
             }
@@ -315,28 +341,62 @@ class CarPlayPane @JvmOverloads constructor(
     /** 指示 car-wifi-reset: 保存したパスワードを消し、入力を待つ(パスワードを変えたとき)。 */
     fun resetWifiPass(): String {
         stop()
-        app.getSharedPreferences(WIFI_PREFS, Context.MODE_PRIVATE).edit().remove(KEY_PASS).apply()
-        askWifiPass()
-        return "OTTO の Wi-Fi のパスワードを消しました。Duo Slate のキーボードで入れ直してください"
+        prefs().edit().remove(KEY_PASS).apply()
+        askWifi(ssid = false)
+        return "CarPlay 用の Wi-Fi のパスワードを消しました。Duo Slate のキーボードで入れ直してください"
     }
 
-    private fun savedWifiPass(): String? =
-        app.getSharedPreferences(WIFI_PREFS, Context.MODE_PRIVATE).getString(KEY_PASS, null)
-            ?.takeIf { it.length in 8..63 }
+    /**
+     * 設定から: CarPlay 用の Wi-Fi(この機器のアクセスポイント)の名前(ssid=true)かパスワードを入れ直す。
+     * CarPlay をいったん止め、Duo Slate のキーボードの入力を待つ。決定すると保存して、CarPlay をつなぎ直す。
+     */
+    fun editWifi(ssid: Boolean) {
+        stop()
+        typing = null
+        askWifi(ssid)
+    }
 
-    private fun askWifiPass() {
+    /** CarPlay 用の Wi-Fi の名前(SSID)。まだ決まっていなければ null。 */
+    fun wifiSsid(): String? {
+        prefs().getString(KEY_SSID, null)?.takeIf { it.isNotBlank() }?.let { return it }
+        if (prefs().getString(KEY_PASS, null) == null) return null
+        prefs().edit().putString(KEY_SSID, LEGACY_SSID).apply() // 名前の設定が無かった頃から使っている
+        return LEGACY_SSID
+    }
+
+    /** パスワードが保存されているか。 */
+    fun hasWifiPass(): Boolean = savedWifiPass() != null
+
+    private fun prefs() = app.getSharedPreferences(WIFI_PREFS, Context.MODE_PRIVATE)
+
+    private fun savedWifiPass(): String? = prefs().getString(KEY_PASS, null)?.takeIf { it.length in 8..63 }
+
+    /** 入力中の欄。true＝名前(SSID)、false＝パスワード。 */
+    private var typingSsid = false
+
+    private fun askWifi(ssid: Boolean) {
         if (typing == null) {
             typing = StringBuilder()
-            record(DuoRecord.KIND_STATE, "OTTO の Wi-Fi のパスワード待ち(Duo Slate のキーボードで入力)")
+            typingSsid = ssid
+            record(DuoRecord.KIND_STATE, "CarPlay 用の Wi-Fi の" + (if (ssid) "名前" else "パスワード") + "待ち(Duo Slate のキーボードで入力)")
         }
         showTyping()
     }
 
     private fun showTyping() {
-        val n = typing?.length ?: 0
-        typingText = app.getString(R.string.cp_wifi_ask, OTTO_AP_SSID, dots(n))
-        setStatus("OTTO の Wi-Fi「$OTTO_AP_SSID」のパスワード待ち($n 文字)")
+        val buf = typing ?: StringBuilder()
+        if (typingSsid) {
+            typingText = app.getString(R.string.cp_ssid_ask, shown(buf))
+            setStatus("Wi-Fi の名前の入力待ち(${buf.length} 文字)")
+        } else {
+            val ssid = wifiSsid() ?: ""
+            typingText = app.getString(R.string.cp_wifi_ask, ssid, dots(buf.length))
+            setStatus("Wi-Fi「$ssid」のパスワード待ち(${buf.length} 文字)")
+        }
     }
+
+    /** 名前は伏せずに見せる(空なら「まだ何も…」)。 */
+    private fun shown(buf: CharSequence) = if (buf.isEmpty()) app.getString(R.string.cp_empty) else buf.toString()
 
     private fun dots(n: Int) = if (n == 0) app.getString(R.string.cp_empty) else "●".repeat(n) + app.getString(R.string.cp_count, n)
 
@@ -427,7 +487,7 @@ class CarPlayPane @JvmOverloads constructor(
         }
     }
 
-    private fun createRuntimeConfig(wifiPass: String) = CarPlayRuntimeConfig(
+    private fun createRuntimeConfig(ssid: String, wifiPass: String) = CarPlayRuntimeConfig(
         mfiTarget = MfiTarget.I2C,
         linuxI2cPath = MfiProbe.DEVICE_PATH,
         identification = Iap2IdentificationConfig(
@@ -444,9 +504,9 @@ class CarPlayPane @JvmOverloads constructor(
         hostName = "DuoCruise",
         transport = CarPlayTransport.WIRELESS,
         // OTTO では Wi-Fi Direct のグループが作れない(実機：家の Wi-Fi あり・なし とも createGroup が generic error)。
-        // OTTO 本体のホットスポット(名前が変わらない)で iPhone を受ける
+        // 機器のアクセスポイント(名前が変わらない。名前は設定で入れる)で iPhone を受ける
         wirelessHotspotMode = WirelessHotspotMode.MANUAL,
-        manualHotspotSsid = OTTO_AP_SSID,
+        manualHotspotSsid = ssid,
         manualHotspotPassphrase = wifiPass,
         manualHotspotBand = ManualHotspotBand.AUTO,
         manualHotspotSecurity = ManualHotspotSecurity.WPA2,
@@ -469,8 +529,8 @@ class CarPlayPane @JvmOverloads constructor(
                 heightPhysicalMm = heightMm,
                 fps = FPS,
             ),
-            // 日本の右ハンドル車(MX-30)
-            rightHandDrive = true,
+            // ハンドルの位置(設定。初期値は右ハンドル)
+            rightHandDrive = rightHandDrive,
             port = AIRPLAY_PORT,
             hevc = false,
             microphone = microphone,
@@ -569,7 +629,7 @@ class CarPlayPane @JvmOverloads constructor(
      */
     private fun forPeople(s: String): String = when {
         s.startsWith("権限が足りません") -> app.getString(R.string.cp_perm)
-        s.startsWith("パスワード") || s.startsWith("OTTO の Wi-Fi") -> typingText ?: s
+        s.startsWith("パスワード") || s.startsWith("Wi-Fi") -> typingText ?: s
         s.startsWith("失敗") || s.startsWith("始められません") -> app.getString(R.string.cp_failed)
         s.startsWith("CarPlay が切れました") || s.startsWith("iPhone との接続が終わりました") -> app.getString(R.string.cp_ended)
         s.startsWith("ペアリング済みの iPhone") -> app.getString(R.string.cp_waiting)

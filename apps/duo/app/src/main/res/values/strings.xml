@@ -40,7 +40,7 @@
     <string name="sp_normal">Standard Split</string>
     <string name="sp_auto">Adjust During Navigation</string>
     <string name="sp_nav">Split During Navigation</string>
-    <string name="sp_swap">Map on Right During Navigation</string>
+    <string name="sp_swap">Map on Driver’s Side During Navigation</string>
     <string name="sp_hold">Delay Before Restoring Layout</string>
     <string name="n_target">Screen Switch</string>
     <string name="n_ok">Connected</string>
@@ -130,4 +130,18 @@
     <string name="to_route">Turn-by-Turn</string>
     <string name="to_route_light">Direction Light</string>
     <string name="meters">%d m</string>
+    <string name="feet">%d ft</string>
+    <string name="s_vehicle">Vehicle</string>
+    <string name="to_vehicle">Vehicle</string>
+    <string name="s_wifi">Wi-Fi for CarPlay</string>
+    <string name="w_ssid">Network Name (SSID)</string>
+    <string name="w_pass">Password</string>
+    <string name="v_set">Set</string>
+    <string name="v_unset">Not Set</string>
+    <string name="s_drive">Steering Wheel Position</string>
+    <string name="v_rhd">Right-Hand Drive</string>
+    <string name="v_lhd">Left-Hand Drive</string>
+    <string name="s_units">Distance Units</string>
+    <string name="v_km">Kilometers</string>
+    <string name="v_mi">Miles</string>
 </resources>

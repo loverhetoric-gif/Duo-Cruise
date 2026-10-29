@@ -42,7 +42,7 @@ final class Panes {
                 @Override public void onRoute(Route route) {
                     DuoActivity.carRoute(route);
                 }
-            }, BuildConfig.UNLIMITED));
+            }, BuildConfig.UNLIMITED, Store.rightHand(a)));
         } catch (Throwable t) {
             DuoLog.error("CarPlay の部品を作れません: " + DuoLog.why(t));
             return new Broken(a, "CarPlay", DuoLog.why(t));
@@ -82,6 +82,9 @@ final class Panes {
         /** OTTO の Wi-Fi のパスワードを入力中のときだけ使う。 */
         @Override public void typeText(String text) { p.typeText(text); }
         @Override public void typeKey(int keyCode) { p.typeKey(keyCode); }
+        @Override public String wifiSsid() { return p.wifiSsid(); }
+        @Override public boolean hasWifiPass() { return p.hasWifiPass(); }
+        @Override public void editWifi(boolean ssid) { p.editWifi(ssid); }
         @Override public String name() { return "CarPlay"; }
         @Override public boolean real() { return true; }
     }

@@ -67,11 +67,17 @@ final class PanelView extends ViewGroup {
         void resetKeys();
         /** 曲がり角の案内の設定が変わった(Duo Cruise Unlimited Edition)。表示・地図・音量を合わせ直す。 */
         void routeSettingsChanged();
+        // 車の設定
+        boolean rightHand(); void toggleRightHand();
+        boolean miles(); void toggleMiles();
+        String wifiSsid(); boolean hasWifiPass(); void editWifi(boolean ssid);
     }
 
     static final int MAIN = 0, KEYS = 1, LOG = 2, SYS = 3, SPLIT = 4, NEON = 5, NEON_EDIT = 6, DISPLAY = 7, CONTROLS = 8;
     /** 曲がり角の案内(Duo Cruise Unlimited Edition だけ)。ROUTE が入口、R_* がその下。 */
     static final int ROUTE = 9, R_HINT = 10, R_MAP = 11, R_LIGHT = 12, R_AUDIO = 13, R_ARRIVE = 14;
+    /** 車の設定(ハンドルの位置・距離の単位・CarPlay 用の Wi-Fi)。 */
+    static final int VEHICLE = 15, WIFI = 16;
     /** 曲がる方向の光の色(ネオンの色編集ページを使い回す番号。Store.neon の which と同じ)。 */
     private static final int NEON_TURN = 3;
     private static final String GO = "›"; // 下の階層へ進む導線
@@ -309,6 +315,7 @@ final class PanelView extends ViewGroup {
             items.add(back(T(R.string.to_controls)));
         } else if (p == SYS) {
             title.setText(T(R.string.m_system));
+            items.add(new Item(() -> T(R.string.s_vehicle), () -> GO, () -> show(VEHICLE)));
             items.add(new Item(() -> T(R.string.s_range), () -> host.panelHalf() ? T(R.string.v_active_only) : T(R.string.v_full), host::togglePanelHalf, true));
             items.add(new Item(() -> T(R.string.s_access), () -> host.accessOn() ? T(R.string.on) : T(R.string.off), host::openAccessibility));
             items.add(new Item(() -> T(R.string.s_home), () -> host.isDefaultHome() ? "Duo Cruise" : host.otherHomeName(), host::chooseHome));
@@ -342,6 +349,21 @@ final class PanelView extends ViewGroup {
             items.add(back(neonWhich == NEON_TURN ? T(R.string.to_route_light) : T(R.string.to_neon)));
         } else if (p >= ROUTE && p <= R_ARRIVE) {
             routePage(p);
+        } else if (p == VEHICLE) {
+            title.setText(T(R.string.s_vehicle));
+            items.add(new Item(() -> T(R.string.s_drive), () -> host.rightHand() ? T(R.string.v_rhd) : T(R.string.v_lhd),
+                    () -> { host.toggleRightHand(); refresh(); }, true));
+            if (BuildConfig.UNLIMITED) items.add(new Item(() -> T(R.string.s_units), () -> host.miles() ? T(R.string.v_mi) : T(R.string.v_km),
+                    () -> { host.toggleMiles(); refresh(); }, true));
+            items.add(new Item(() -> T(R.string.s_wifi), () -> GO, () -> show(WIFI)));
+            items.add(back(T(R.string.to_system)));
+        } else if (p == WIFI) {
+            title.setText(T(R.string.s_wifi));
+            items.add(new Item(() -> T(R.string.w_ssid), () -> { String n = host.wifiSsid(); return n == null ? T(R.string.v_unset) : n; },
+                    () -> host.editWifi(true)));
+            items.add(new Item(() -> T(R.string.w_pass), () -> host.hasWifiPass() ? T(R.string.v_set) : T(R.string.v_unset),
+                    () -> host.editWifi(false)));
+            items.add(back(T(R.string.to_vehicle)));
         } else {
             title.setText(T(R.string.s_log));
             logPage = 0;
@@ -369,7 +391,7 @@ final class PanelView extends ViewGroup {
             case MAIN: return 0;
             case DISPLAY: case CONTROLS: case SYS: return 1;
             case NEON_EDIT: return neonWhich == NEON_TURN ? 4 : 3;
-            case R_HINT: case R_MAP: case R_LIGHT: case R_AUDIO: case R_ARRIVE: return 3;
+            case R_HINT: case R_MAP: case R_LIGHT: case R_AUDIO: case R_ARRIVE: case WIFI: return 3;
             default: return 2;
         }
     }
@@ -604,6 +626,8 @@ final class PanelView extends ViewGroup {
             case NEON_EDIT: return neonWhich == NEON_TURN ? R_LIGHT : NEON;
             case ROUTE: return DISPLAY;
             case R_HINT: case R_MAP: case R_LIGHT: case R_AUDIO: case R_ARRIVE: return ROUTE;
+            case VEHICLE: return SYS;
+            case WIFI: return VEHICLE;
             default: return MAIN;
         }
     }
@@ -709,7 +733,7 @@ final class PanelView extends ViewGroup {
                 set.set(Store.clampDist(v + d * step));
                 changed();
             }
-            public String text() { return T(R.string.meters, value()); }
+            public String text() { return Store.distance(getContext(), value()); }
             public int tint() { return Theme.NEON_WHITE; }
         };
     }

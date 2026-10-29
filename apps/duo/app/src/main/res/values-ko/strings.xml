@@ -40,7 +40,7 @@
     <string name="sp_normal">기본 분할 비율</string>
     <string name="sp_auto">내비 안내 중 자동 조정</string>
     <string name="sp_nav">내비 안내 중 분할 비율</string>
-    <string name="sp_swap">내비 안내 중 지도를 오른쪽에</string>
+    <string name="sp_swap">내비 안내 중 지도를 운전석 쪽에</string>
     <string name="sp_hold">기본 배치로 돌아가기까지</string>
     <string name="n_target">화면 전환</string>
     <string name="n_ok">연결 완료</string>
@@ -130,4 +130,18 @@
     <string name="to_route">턴바이턴 안내로</string>
     <string name="to_route_light">방향 조명으로</string>
     <string name="meters">%dm</string>
+    <string name="feet">%d ft</string>
+    <string name="s_vehicle">차량</string>
+    <string name="to_vehicle">차량으로</string>
+    <string name="s_wifi">CarPlay용 Wi-Fi</string>
+    <string name="w_ssid">네트워크 이름(SSID)</string>
+    <string name="w_pass">비밀번호</string>
+    <string name="v_set">설정됨</string>
+    <string name="v_unset">설정 안 됨</string>
+    <string name="s_drive">핸들 위치</string>
+    <string name="v_rhd">우핸들</string>
+    <string name="v_lhd">좌핸들</string>
+    <string name="s_units">거리 단위</string>
+    <string name="v_km">킬로미터</string>
+    <string name="v_mi">마일</string>
 </resources>
