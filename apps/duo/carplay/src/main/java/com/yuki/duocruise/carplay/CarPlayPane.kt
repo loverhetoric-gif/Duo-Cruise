@@ -131,10 +131,11 @@ class CarPlayPane @JvmOverloads constructor(
         private const val KEY_HID_SPLIT = "hidSplit"
         private const val KEY_AREAS = "areas2"
         /**
-         * 描く範囲の既定: 画面全体(1画面・曲がり角の小窓)と半分。それより狭い範囲(627)を足すと、
-         * iPhone がつないだ直後に切った(2026-10-29 実機)。狭い枠には半分の範囲を縮めて映す。
+         * 描く範囲の既定: 分割比 5% きざみ(幅 74 ごと、148〜1480)と、YouTube がちょうど 16:9 になる残り(626)。
+         * 2026-10-29 の自動の試し(car-areatest)で、範囲 19 個・幅 148〜1480・画面全体 1920 まで iPhone が受けた。
+         * 幅は偶数でないと受けない(627 だけ断られ、600・640 などは通った)。
          */
-        private const val DEFAULT_AREAS = "1480,740"
+        private val DEFAULT_AREAS = ((20 downTo 2).map { it * 74 } + 626).joinToString(",")
         /** つながってから、描く範囲の切り替えを送るまで待つ時間。 */
         private const val AREA_SETTLE_MS = 3000L
 
@@ -447,7 +448,7 @@ class CarPlayPane @JvmOverloads constructor(
 
     private fun savedAreas(): List<Int> =
         (prefs().getString(KEY_AREAS, null) ?: DEFAULT_AREAS).split(Regex("[,_\\s]+")).mapNotNull { it.trim().toIntOrNull() }
-            .filter { it in 100..4096 }.distinct()
+            .filter { it in 2..4096 && it % 2 == 0 }.distinct() // 奇数の幅は iPhone が断る
 
     private fun savedHeight(tag: Char): Int? =
         (prefs().getString(KEY_AREAS, null) ?: DEFAULT_AREAS).split(Regex("[,_\\s]+"))
@@ -491,7 +492,7 @@ class CarPlayPane @JvmOverloads constructor(
     fun setAreas(cmd: String): String {
         val parts = cmd.trim().split(Regex("\\s+"), limit = 2)
         val arg = parts.getOrNull(1)?.trim().orEmpty()
-        if (parts[0] == "car-areatest") return startAreaTest()
+        if (parts[0] == "car-areatest") return startAreaTest(if (arg == "2") testSet2 else testSet1)
         if (parts[0] == "car-area") {
             if (areas.isEmpty()) return "描く範囲の切り替えはオフです(car-areas で幅の一覧を決めてください)"
             if (arg == "auto") { areaPinned = -1; root.requestLayout(); return "枠の幅に合わせます。" + areasText() }
@@ -502,6 +503,12 @@ class CarPlayPane @JvmOverloads constructor(
             return areasText()
         }
         // 指示シートは「,」を通さないので、「_」や空白の区切りも受ける
+        if (arg == "default") {
+            prefs().edit().remove(KEY_AREAS).apply()
+            record(DuoRecord.KIND_STATE, "CarPlay の描く範囲を既定に戻しました。つなぎ直します")
+            if (isRunning) { stop(); start() }
+            return "描く範囲=既定(つなぎ直します)"
+        }
         val list = if (arg == "off") "" else arg.split(Regex("[,_\\s]+")).filter { it.isNotEmpty() }.joinToString(",")
         prefs().edit().putString(KEY_AREAS, list).apply()
         record(DuoRecord.KIND_STATE, "CarPlay の描く範囲の一覧を「${list.ifEmpty { "切り替えなし" }}」にしました。つなぎ直します")
@@ -510,11 +517,19 @@ class CarPlayPane @JvmOverloads constructor(
     }
 
     // ───────── 描く範囲の自動の試し(指示 car-areatest)。iPhone が受ける範囲の組み合わせを順に調べて記録する ─────────
-    private val testCases = listOf(
+    private var testCases: List<String> = emptyList()
+    /** 1 組目: 2026-10-29 に全部 OK。 */
+    private val testSet1 = listOf(
         "1480,1332,1184,1036,888,740",
         "1480,1406,1332,1258,1184,1110,1036,962,888,814,740",
         "1480,720", "1480,700", "1480,680", "1480,660", "1480,640",
         "1480,740,h480,d520", "1600,1480,740", "1920,1480,740",
+    )
+    /** 2 組目: 狭い側の限界と、5% きざみ 20 個。 */
+    private val testSet2 = listOf(
+        "1480,627", "1480,600", "1480,560", "1480,520", "1480,480", "1480,444", "1480,400",
+        "1480,360", "1480,296", "1480,222", "1480,148", "1480,74",
+        (20 downTo 1).joinToString(",") { (it * 74).toString() },
     )
     private var testIndex = -1
     private var testSeen = false
@@ -522,8 +537,9 @@ class CarPlayPane @JvmOverloads constructor(
     private val testResults = mutableListOf<String>()
     private var testRestore: String? = null
 
-    private fun startAreaTest(): String {
+    private fun startAreaTest(set: List<String>): String {
         if (testIndex >= 0) return "描く範囲の試しは実行中です(${testIndex + 1}/${testCases.size})"
+        testCases = set
         testRestore = prefs().getString(KEY_AREAS, null)
         testResults.clear()
         testIndex = 0
