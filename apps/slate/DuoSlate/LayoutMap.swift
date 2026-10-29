@@ -86,11 +86,14 @@ struct LayoutMap: View {
     /** 今の(動かしている間はその)YouTube の割合。 */
     private var ytNow: CGFloat { dragYt ?? CGFloat(min(100, max(0, layout.yt))) }
 
-    /** 左右の枠の境目の x(片方だけの全画面なら nil)。 */
+    /**
+     * 左右の枠の境目の x。片方だけの全画面(0% / 100%)のときは縮図の端に置く
+     * (端のつまみをつかんで引き戻せるように。端に寄せたまま消すと戻せなかった)。
+     */
     private func boundaryX(_ w: CGFloat) -> CGFloat? {
         let yt = ytNow / 100
-        if yt <= 0.01 || yt >= 0.99 { return nil }
-        return layout.swapped ? w * yt : w * (1 - yt)
+        let x = layout.swapped ? w * yt : w * (1 - yt)
+        return min(max(x, 4), w - 4)
     }
 
     /** 境目のつまみ: 細い光の線と、真ん中の小さな四角。動かしている間は割合を出す。 */
