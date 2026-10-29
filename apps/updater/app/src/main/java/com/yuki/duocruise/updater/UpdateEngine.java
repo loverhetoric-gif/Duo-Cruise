@@ -161,13 +161,9 @@ final class UpdateEngine {
     /** 確認して、新しいものを入れる。入れ始めた数を返す。 */
     static int checkAndInstall(Context c, boolean includeMissing) { return checkAndInstall(c, includeMissing, false); }
 
-    /** OTTO を起動してから、本体を入れ替えてよい時間。これを過ぎた定期確認では本体を入れ替えない。 */
-    static final long BOOT_WINDOW_MS = 10 * 60 * 1000;
-
     /**
-     * periodic=true は 15 分ごとの定期確認。このときは、OTTO の起動直後(BOOT_WINDOW_MS 以内)を除き、
-     * Duo Cruise 本体を入れ替えない。入れ替えると本体が強制終了され、運転中の CarPlay・YouTube が止まる
-     * (2026-10-27、テスト版を出すたびに本体が落ち続けた)。本体は次に OTTO を起動したときに入れる。
+     * periodic=true は 15 分ごとの定期確認。新しい版があれば、Duo Cruise 本体も含めてその場で入れ替える
+     * (2026-10-29 本人: 更新は停車中の検証で行うもの。起動直後にしか入れ替えない制限は外した)。
      */
     static int checkAndInstall(Context c, boolean includeMissing, boolean periodic) {
         synchronized (LOCK) {
@@ -183,11 +179,6 @@ final class UpdateEngine {
                     }
                     if (!missing && !it.needsUpdate()) {
                         UpdLog.add(it.label + ": 最新です (v" + it.installed + ")");
-                        continue;
-                    }
-                    if (periodic && it.pkg.equals("com.yuki.duocruise.main")
-                            && android.os.SystemClock.elapsedRealtime() > BOOT_WINDOW_MS) {
-                        UpdLog.add(it.label + ": v" + it.versionCode + " があります。使用中に落とさないよう、次に OTTO を起動したときに入れます");
                         continue;
                     }
                     UpdLog.add(it.label + ": v" + it.installed + " → v" + it.versionCode + " を取得します");

@@ -64,9 +64,9 @@ MAZDA MX-30 の CarPlay 口につないだ OTTOCAST OttoAibox P3 Pro(以下 OTTO
 1. GitHub(loverhetoric-gif/Duo-Cruise)に変更を入れる
 2. 自動ビルドが作って署名する。main に入ったら正式版(build-番号)、PR のときはテスト版(test-番号)
 3. OTTO の Duo Cruise Market が新しい版を取って入れる
-   - 15 分ごと(Android の最短)。指示 `updater:check` で今すぐ確認
+   - 15 分ごと(Android の最短)。記録シートの指示 `updater:check` で今すぐ確認(指示は 30 秒ごとに取りに行く)
    - 確認画面なしで更新する(UPDATE_PACKAGES_WITHOUT_USER_ACTION)。確認画面が出たときは、Duo Cruise が前にいても後ろの確認を見つけて押す(指示 `updater:confirm` でも押せる)
-   - 使用中の本体は、定期確認では入れ替えない(起動後 10 分以内だけ)。入れ替えたら本体を開き直す
+   - 新しい版があれば、本体もその場で入れ替え、入れ替えたら本体を開き直す(更新は停車中の検証で行う。2026-10-29 に「起動後 10 分以内だけ」の制限を外した)
    - 「テスト版を受け取る」がオンなら、公開時刻がいちばん新しい版を見る
    - 「1 つ前の版に戻す」ができる
    - Play プロテクトの画面は自動では押さない(本人が操作する)
