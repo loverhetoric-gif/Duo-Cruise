@@ -89,6 +89,7 @@ class CarPlayPane @JvmOverloads constructor(
     fun displayText(): String = forPeople(statusText)
 
     private fun setStreaming(active: Boolean) {
+        if (active) testSeen = true else if (testSeen) testDropped = true
         label.visibility = if (active) View.GONE else View.VISIBLE
         if (streaming == active) return
         streaming = active
@@ -490,6 +491,7 @@ class CarPlayPane @JvmOverloads constructor(
     fun setAreas(cmd: String): String {
         val parts = cmd.trim().split(Regex("\\s+"), limit = 2)
         val arg = parts.getOrNull(1)?.trim().orEmpty()
+        if (parts[0] == "car-areatest") return startAreaTest()
         if (parts[0] == "car-area") {
             if (areas.isEmpty()) return "描く範囲の切り替えはオフです(car-areas で幅の一覧を決めてください)"
             if (arg == "auto") { areaPinned = -1; root.requestLayout(); return "枠の幅に合わせます。" + areasText() }
@@ -505,6 +507,66 @@ class CarPlayPane @JvmOverloads constructor(
         record(DuoRecord.KIND_STATE, "CarPlay の描く範囲の一覧を「${list.ifEmpty { "切り替えなし" }}」にしました。つなぎ直します")
         if (isRunning) { stop(); start() }
         return "描く範囲=${list.ifEmpty { "切り替えなし" }}(つなぎ直します)"
+    }
+
+    // ───────── 描く範囲の自動の試し(指示 car-areatest)。iPhone が受ける範囲の組み合わせを順に調べて記録する ─────────
+    private val testCases = listOf(
+        "1480,1332,1184,1036,888,740",
+        "1480,1406,1332,1258,1184,1110,1036,962,888,814,740",
+        "1480,720", "1480,700", "1480,680", "1480,660", "1480,640",
+        "1480,740,h480,d520", "1600,1480,740", "1920,1480,740",
+    )
+    private var testIndex = -1
+    private var testSeen = false
+    private var testDropped = false
+    private val testResults = mutableListOf<String>()
+    private var testRestore: String? = null
+
+    private fun startAreaTest(): String {
+        if (testIndex >= 0) return "描く範囲の試しは実行中です(${testIndex + 1}/${testCases.size})"
+        testRestore = prefs().getString(KEY_AREAS, null)
+        testResults.clear()
+        testIndex = 0
+        record(DuoRecord.KIND_STATE, "描く範囲の試しを始めます(${testCases.size} 通り、1 通り約 40 秒)")
+        runTestCase()
+        return "描く範囲の試しを始めます(${testCases.size} 通り)"
+    }
+
+    private fun runTestCase() {
+        val list = testCases[testIndex]
+        prefs().edit().putString(KEY_AREAS, list).apply()
+        testSeen = false
+        testDropped = false
+        if (isRunning) stop()
+        start()
+        // つながるまで最大 25 秒。つながったら、範囲を全部順に切り替えて、切れないかを見る
+        main.postDelayed({ checkTestCase(list) }, 25_000)
+    }
+
+    private fun checkTestCase(list: String) {
+        if (testIndex < 0) return
+        if (!testSeen || testDropped || !streaming) {
+            finishTestCase(list, if (!testSeen) "つながらない" else "つながってすぐ切れた")
+            return
+        }
+        val n = areas.size
+        for (i in 0 until n) main.postDelayed({ if (testIndex >= 0) showArea(i, "試し") }, i * 1500L)
+        main.postDelayed({
+            finishTestCase(list, if (testDropped || !streaming) "つながるが、範囲の切り替えで切れた" else "OK(範囲 $n 個、切り替えも切れない)")
+        }, n * 1500L + 4000)
+    }
+
+    private fun finishTestCase(list: String, result: String) {
+        val line = "[$list] $result"
+        testResults += line
+        record(DuoRecord.KIND_STATE, "描く範囲の試し ${testIndex + 1}/${testCases.size}: $line")
+        testIndex++
+        if (testIndex < testCases.size) { runTestCase(); return }
+        testIndex = -1
+        prefs().edit().apply { if (testRestore == null) remove(KEY_AREAS) else putString(KEY_AREAS, testRestore) }.apply()
+        record(DuoRecord.KIND_STATE, "描く範囲の試し まとめ: " + testResults.joinToString(" / ") + "。元の範囲に戻してつなぎ直します")
+        if (isRunning) stop()
+        start()
     }
 
     private fun primaryInputName(): String = when (primaryInput()) {
