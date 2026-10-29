@@ -96,9 +96,9 @@ class CarPlayPane @JvmOverloads constructor(
     }
 
     companion object {
-        /** 左右それぞれの枠の大きさ(アプリが使える高さは 416)。 */
+        /** 左右それぞれの枠の大きさ(画面は 1480×480)。 */
         const val WIDTH = 740
-        const val HEIGHT = 416
+        const val HEIGHT = 480
         private const val SCREEN_TYPE_MAIN = 110
         private const val FPS = 60
         /**
@@ -238,7 +238,7 @@ class CarPlayPane @JvmOverloads constructor(
         video.setOnTouchListener { v, event -> onTouch(v, event) }
     }
 
-    /** 枠に置く View。大きさは持ち主が決める(740×416 を想定。違っても縦横比を保って描く)。 */
+    /** 枠に置く View。大きさは持ち主が決める(740×480 を想定。違っても縦横比を保って描く)。 */
     fun view(): View = root
 
     /** 今の状態(短い日本語)。 */

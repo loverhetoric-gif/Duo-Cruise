@@ -22,7 +22,7 @@ import android.view.WindowManager;
 import com.yuki.duocruise.carplay.Route;
 
 /**
- * Duo Cruise 本体の画面。1つの画面の中に、左右2つの枠(各 740×416)を持つ。
+ * Duo Cruise 本体の画面。1つの画面の中に、左右2つの枠(各 740×480)を持つ。
  * ・左＝CarPlay(B の CarPlayPane)、右＝TV 版 YouTube(D の TvPane)。入れ替え中は逆
  * ・入れ替え＝枠の置き直しだけ(YouTube を読み込み直さない)
  * ・操作側の切り替え・枠線・キーの振り分けは、この画面の中で行う(KeyRouter)

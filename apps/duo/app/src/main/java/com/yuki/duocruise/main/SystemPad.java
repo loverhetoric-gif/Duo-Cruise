@@ -73,7 +73,7 @@ final class SystemPad implements PadServer.Sink {
     }
 
     private void measure() {
-        // アプリが使える高さ(システムバーを除く=416)ではなく、画面全体(480)で測る。
+        // 画面全体(1480×480)で測る。
         // そうしないとカーソルが画面の一番下まで行けない(2026-10-28 実機)。
         try {
             android.graphics.Rect b = wm.getMaximumWindowMetrics().getBounds();

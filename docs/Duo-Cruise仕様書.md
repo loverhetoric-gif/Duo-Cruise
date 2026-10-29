@@ -35,7 +35,7 @@ MAZDA MX-30 の CarPlay 口につないだ OTTOCAST OttoAibox P3 Pro(以下 OTTO
 | 項目 | 値 |
 |---|---|
 | 機種 | QUALCOMM OttoAibox-P3 Pro、Android 13、Snapdragon(bengal) |
-| 画面 | 1480×480、密度 1.0(160dpi)。上に 24、下に 64 の余白が出ることがある |
+| 画面 | 1480×480、密度 1.0(160dpi)。Duo Cruise は 480 の高さいっぱいに出す |
 | USB | 口は 1 つで、車側(OTTO が iPhone 役)に使われる → iPhone と有線ではつなげない |
 | Bluetooth | Android 側の名前は「Duo Cruise」(iPhone の一覧で分かりやすくするため変更) |
 | Wi-Fi | CarPlay 用に、OTTO 本体のホットスポット「OttoAibox-P3 Pro-99F0」を使う(「自動的に OFF」はオフ) |
