@@ -110,7 +110,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         root.setPanes(car.view(), tv.view(), panel);
         guide = new GuideView(this);
         guide.setVisibility(View.GONE);
-        android.widget.FrameLayout stage = new android.widget.FrameLayout(this);
+        stage = new android.widget.FrameLayout(this);
         stage.setBackgroundColor(android.graphics.Color.BLACK); // 起動の地(白/黒)は演出の後ろに隠し、2 画面の地は黒
         stage.addView(root);
         stage.addView(guide);
@@ -237,7 +237,9 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         if (t != null && (t.startsWith("route-test") || t.equals("route-end"))) DuoLog.log(routeTest(t));
         // ダイヤル・描く範囲の自動の試し(adb から)。この 2 つだけを受ける
         String k = i == null ? null : i.getStringExtra("carTest");
-        if (k != null && (k.startsWith("car-knobcfg") || k.startsWith("car-areatest"))) DuoLog.log("adb の試し: " + command(k));
+        if (k != null && (k.startsWith("car-knobcfg") || k.startsWith("car-area"))) DuoLog.log("adb の試し: " + command(k));
+        if ("demo".equals(k)) startDemo();
+        if ("demo-stop".equals(k)) stopDemo();
         if (root != null) root.requestApplyInsets();
     }
 
@@ -291,6 +293,8 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
 
     @Override public boolean dispatchKeyEvent(KeyEvent e) {
         int code = e.getKeyCode();
+        // デモ中は、どのボタンでも終わる(押したキーは操作に使わない)
+        if (demoOn && !passToSystem(code)) { if (e.getAction() == KeyEvent.ACTION_UP) stopDemo(); return true; }
         recordKey(e, "画面");
         if (passToSystem(code)) return super.dispatchKeyEvent(e);
         return router.onKey(code, e.getAction(), e.getRepeatCount(), e.getEventTime(), false, e);
@@ -563,6 +567,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
      */
     private int targetYt() {
         if (splitAdjusting) return splitVal;
+        if (demoYt >= 0) return demoYt;
         if (navEngaged) return Store.navYt(this);
         if (straightEngaged) return Store.straightYt(this);
         if (arriveEngaged) return 100;
@@ -748,6 +753,139 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         } catch (NumberFormatException e) {
             return "使い方: route-test <曲がり方 0〜53> <距離 m> [same] / route-end";
         }
+    }
+
+    // ───────── デモ(人に見せる・挙動の確かめ) ─────────
+    //   全部の挙動を決まった順に自動で見せ、くり返す。画面の下に今の内容を出す。どのボタンでも終わり、元の状態に戻す。
+    //   曲がり角まわりは案内のまね(iPhone のナビ・音は動かさない)。Unlimited Edition だけ
+    private android.widget.FrameLayout stage;
+    private boolean demoOn;
+    private int demoYt = -1, demoIndex, demoTurn;
+    private final java.util.List<Object[]> demoSteps = new java.util.ArrayList<>();
+    private final Runnable demoNext = this::demoStep;
+    private android.widget.TextView demoCaption;
+    /** 始める前の設定(終わったら戻す)。 */
+    private boolean dSingle, dSwapped, dMap, dStraight, dLight, dArrive;
+    private int dSide, dHint;
+
+    @Override public void startDemo() {
+        if (demoOn) return;
+        if (panel.getVisibility() == View.VISIBLE) { panel.setVisibility(View.GONE); }
+        dSingle = Store.single(this); dSwapped = Store.swapped(this); dSide = Store.side(this);
+        dMap = Store.mapFront(this); dStraight = Store.straightOn(this); dLight = Store.turnLight(this);
+        dArrive = Store.arriveFull(this); dHint = Store.hintMode(this);
+        Store.setSingle(this, false);
+        Store.setMapFront(this, true); Store.setStraightOn(this, true); Store.setTurnLight(this, true);
+        Store.setArriveFull(this, true); Store.setHintMode(this, 2);
+        relayout();
+        buildDemo();
+        demoOn = true;
+        demoIndex = 0;
+        DuoLog.log("デモを始めました");
+        main.post(demoNext);
+    }
+
+    private void stopDemo() {
+        if (!demoOn) return;
+        demoOn = false;
+        main.removeCallbacks(demoNext);
+        demoCaption(null);
+        demoEndRoute();
+        demoYt = -1;
+        if (panel.getVisibility() == View.VISIBLE) panel.setVisibility(View.GONE);
+        Store.setSingle(this, dSingle); Store.setSwapped(this, dSwapped); Store.setSide(this, dSide);
+        Store.setMapFront(this, dMap); Store.setStraightOn(this, dStraight); Store.setTurnLight(this, dLight);
+        Store.setArriveFull(this, dArrive); Store.setHintMode(this, dHint);
+        relayout();
+        animateYt(targetYt());
+        focusActive();
+        DuoLog.log("デモを終えて、元の状態に戻しました");
+    }
+
+    private void demoStep() {
+        if (!demoOn) return;
+        if (demoIndex >= demoSteps.size()) demoIndex = 0; // くり返す
+        Object[] s = demoSteps.get(demoIndex++);
+        try { ((Runnable) s[1]).run(); } catch (Throwable t) { DuoLog.error("デモの途中で失敗: " + DuoLog.why(t)); }
+        main.postDelayed(demoNext, (Long) s[0]);
+    }
+
+    private void d(long ms, Runnable r) { demoSteps.add(new Object[]{ms, r}); }
+    private void dCap(int res, long ms) { d(ms, () -> demoCaption(Tx.s(res))); }
+
+    private void buildDemo() {
+        demoSteps.clear();
+        d(10, () -> { demoTurn++; Store.setSingle(this, false); relayout(); demoYt = 50; animateYt(50); });
+        dCap(R.string.dm_start, 3000);
+        dCap(R.string.dm_target, 600);
+        for (int i = 0; i < 3; i++) d(1700, this::switchSide);
+        dCap(R.string.dm_window, 600);
+        for (int i = 0; i < 2; i++) d(2000, this::swap);
+        dCap(R.string.dm_single, 600);
+        d(2200, this::toggleSingle);
+        dCap(R.string.dm_flip, 600);
+        for (int i = 0; i < 2; i++) d(2200, this::switchSide);
+        dCap(R.string.dm_single, 600);
+        d(2200, this::toggleSingle);
+        dCap(R.string.dm_split, 600);
+        for (int v : new int[]{0, 30, 40, 50, 60, 70, 100, 50}) d(1300, () -> { demoYt = v; animateYt(v); });
+        if (BuildConfig.UNLIMITED) {
+            d(10, () -> demoYt = -1);
+            dCap(R.string.dm_straight, 10);
+            d(3500, () -> demoRoute(Store.straightDist(this) + 500, 1));
+            dCap(R.string.dm_turn, 10);
+            d(3000, () -> demoRoute(Math.min(Store.hintDist(this), Store.straightDist(this) - 400), 1));
+            d(2500, () -> demoRoute(Math.max(Store.mapDist(this), Store.lightDist(this)) + 80, 1));
+            dCap(R.string.dm_pip, 10);
+            d(1500, () -> demoRoute(Store.mapDist(this) - 10, 1));
+            d(Math.max(1000, Store.mapHoldMs(this)) + 1500, () -> demoRoute(Math.min(Store.mapDist(this), Store.lightDist(this)) - 10, 1));
+            dCap(R.string.dm_arrive, 10);
+            d(4000, () -> demoRoute(0, 2));
+            d(1200, this::demoEndRoute);
+        }
+        dCap(R.string.dm_menu, 600);
+        d(3500, this::openPanel);
+        d(1500, () -> { panel.setVisibility(View.GONE); applyLayout(); demoCaption(null); });
+    }
+
+    /** 案内のまね。state 1 = 案内中、2 = 到着。 */
+    private void demoRoute(long dist, int state) {
+        routeTesting = true;
+        onRoute(new Route(state, Math.max(0, dist), null, state == 2 ? 12 : 2, "Demo", null, null, 1, demoTurn, "Demo", -1, "Demo"));
+    }
+
+    private void demoEndRoute() {
+        if (!BuildConfig.UNLIMITED) return;
+        routeTesting = false;
+        onRoute(null);
+        arriveEngaged = false;
+        straightEngaged = false;
+        mapRelease();
+        animateYt(targetYt());
+    }
+
+    /** 画面の下の説明。null で消す。四角(角は丸めない)、黒の透過の板に白い文字。 */
+    private void demoCaption(String text) {
+        if (stage == null) return;
+        if (demoCaption == null) {
+            demoCaption = new android.widget.TextView(this);
+            demoCaption.setTextColor(0xFFFFFFFF);
+            demoCaption.setTextSize(20);
+            demoCaption.setBackgroundColor(0xB3000000);
+            int p = Math.round(14 * getResources().getDisplayMetrics().density);
+            demoCaption.setPadding(p * 2, p, p * 2, p);
+            android.widget.FrameLayout.LayoutParams lp = new android.widget.FrameLayout.LayoutParams(
+                    android.view.ViewGroup.LayoutParams.WRAP_CONTENT, android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
+                    android.view.Gravity.BOTTOM | android.view.Gravity.CENTER_HORIZONTAL);
+            lp.bottomMargin = p * 2;
+            stage.addView(demoCaption, lp);
+            demoCaption.setAlpha(0f);
+        }
+        demoCaption.bringToFront();
+        demoCaption.animate().cancel();
+        if (text == null) { demoCaption.animate().alpha(0f).setDuration(250).start(); return; }
+        demoCaption.setText(text);
+        demoCaption.animate().alpha(1f).setDuration(250).start();
     }
 
     // ───────── 分割比の調整(メイン画面で、コマンダーを回して) ─────────

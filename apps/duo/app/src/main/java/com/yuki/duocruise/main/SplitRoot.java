@@ -364,7 +364,7 @@ final class SplitRoot extends ViewGroup {
         layoutTo(splitLine, new int[]{0, 0, w, h});
         splitLine.invalidate();
         // 案内は YouTube の枠の右上。枠が画面の外(1画面で地図だけ)なら、画面の右上
-        int[] at = v[0] >= w || v[2] <= 0 ? new int[]{0, 0, w, h} : v;
+        int[] at = pip || v[0] >= w || v[2] <= 0 ? new int[]{0, 0, w, h} : v; // 小窓のときは画面の右上
         int m = Math.round(16 * dp), hw = hint.getMeasuredWidth(), hh = hint.getMeasuredHeight();
         layoutTo(hint, new int[]{at[2] - m - hw, at[1] + m, at[2] - m, at[1] + m + hh});
         if (panel != null) layoutTo(panel, SplitGeometry.panel(w, h, panelHalf && !single, side));

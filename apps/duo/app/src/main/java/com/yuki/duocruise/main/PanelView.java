@@ -33,6 +33,8 @@ final class PanelView extends ViewGroup {
         void swap();
         /** はじめての案内を出す。 */
         void showGuide();
+        /** デモ(全部の挙動を順に見せる)を始める。 */
+        void startDemo();
         boolean bootSound(); void toggleBootSound();
         void closePanel();
         void toggleCar();
@@ -324,6 +326,7 @@ final class PanelView extends ViewGroup {
             items.add(new Item(() -> T(R.string.s_settings), () -> "", host::openSettings));
             items.add(new Item(() -> T(R.string.s_bootsound), () -> host.bootSound() ? T(R.string.on) : T(R.string.off), () -> { host.toggleBootSound(); refresh(); }, true));
             items.add(new Item(() -> T(R.string.s_guide), () -> "", host::showGuide));
+            items.add(new Item(() -> T(R.string.s_demo), () -> "", host::startDemo));
             items.add(new Item(() -> T(R.string.s_log), () -> GO, () -> show(LOG)));
             items.add(new Item(() -> T(R.string.s_open_home), host::otherHomeName, host::goHome));
             items.add(back(T(R.string.to_menu)));

@@ -135,11 +135,12 @@ class CarPlayPane @JvmOverloads constructor(
         private const val KEY_FOCUS = "focusTransfer"
         private const val KEY_AREAS = "areas2"
         /**
-         * 描く範囲の既定: 分割比 5% きざみ(幅 74 ごと、148〜1480)と、YouTube がちょうど 16:9 になる残り(626)。
-         * 2026-10-29 の自動の試し(car-areatest)で、範囲 19 個・幅 148〜1480・画面全体 1920 まで iPhone が受けた。
-         * 幅は偶数でないと受けない(627 だけ断られ、600・640 などは通った)。
+         * 描く範囲の既定: 分割比 5% きざみ(幅 74 ごと、592〜1480)と、YouTube がちょうど 16:9 になる残り(626)。
+         * 2026-10-29 に画面で確かめた: 592 以上は描かれ、518 以下は iPhone が「解像度に対応していません」を映す
+         * (つながったまま、その画面を映像として送ってくる。740 に戻せば直る)。
          */
-        private val DEFAULT_AREAS = ((20 downTo 2).map { it * 74 } + 626).joinToString(",")
+        private const val MIN_AREA = 592
+        private val DEFAULT_AREAS = ((20 downTo 8).map { it * 74 } + 626).joinToString(",")
         /** つながってから、描く範囲の切り替えを送るまで待つ時間。 */
         private const val AREA_SETTLE_MS = 3000L
 
@@ -193,8 +194,9 @@ class CarPlayPane @JvmOverloads constructor(
             super.onMeasure(widthMeasureSpec, heightMeasureSpec)
             if (areas.isEmpty() || measuredHeight <= 0) return
             val k = measuredHeight / areaH.toFloat()
-            // 範囲を枠の幅にぴったり合わせる(広くても切らずに縮める)
-            val kx = measuredWidth / areas[area].toFloat()
+            // 範囲を枠の幅にぴったり合わせる(広くても切らずに縮める)。つないで枠の幅の範囲へ切り替えるまでは、
+            // 伸ばさずに縦横比のまま真ん中に置く(最初の 740 を 1480 の枠へ 2 倍に伸ばしていた)
+            val kx = if (pendingFit > 0) k else measuredWidth / areas[area].toFloat()
             video.measure(
                 MeasureSpec.makeMeasureSpec(Math.round(streamWidth() * kx), MeasureSpec.EXACTLY),
                 MeasureSpec.makeMeasureSpec(Math.round(streamH * k), MeasureSpec.EXACTLY),
@@ -204,7 +206,8 @@ class CarPlayPane @JvmOverloads constructor(
         override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
             super.onLayout(changed, l, t, r, b)
             if (areas.isEmpty() || b - t <= 0) return
-            video.layout(0, 0, video.measuredWidth, video.measuredHeight)
+            val left = if (pendingFit > 0) maxOf(0, Math.round((r - l - areas[area] * (b - t) / areaH.toFloat()) / 2)) else 0
+            video.layout(left, 0, left + video.measuredWidth, video.measuredHeight)
         }
     }
     private val video = SurfaceView(context)
@@ -317,8 +320,7 @@ class CarPlayPane @JvmOverloads constructor(
             // 最初の範囲は必ず 740(横長すぎる範囲で始めると iPhone が「解像度に対応していません」と断る。
             // つないだ後の切り替えなら 1480 も受ける。2026-10-29 実機)。枠の幅に合わせるのは、つないで 3 秒後
             area = areas.indices.minByOrNull { Math.abs(areas[it] - WIDTH) } ?: 0
-            val paneW = root.width
-            if (paneW > 0) pendingFit = paneW
+            pendingFit = maxOf(1, root.width) // 1 = まだ枠の幅が決まっていない(落ち着いたときの枠の幅を使う)
             areaPinned = -1
             root.requestLayout()
             val airPlayConfig = createAirPlayConfig(microphone)
@@ -486,7 +488,7 @@ class CarPlayPane @JvmOverloads constructor(
 
     private fun savedAreas(): List<Int> =
         (prefs().getString(KEY_AREAS, null) ?: DEFAULT_AREAS).split(Regex("[,_\\s]+")).mapNotNull { it.trim().toIntOrNull() }
-            .filter { it in 2..4096 && it % 2 == 0 }.distinct() // 奇数の幅は iPhone が断る
+            .filter { it in MIN_AREA..4096 && it % 2 == 0 }.distinct() // 狭すぎる幅・奇数の幅は iPhone が断る
 
     private fun savedHeight(tag: Char): Int? =
         (prefs().getString(KEY_AREAS, null) ?: DEFAULT_AREAS).split(Regex("[,_\\s]+"))
@@ -498,6 +500,7 @@ class CarPlayPane @JvmOverloads constructor(
     /** 枠がこの幅(画面の画素)に落ち着く。収まる一番広い範囲へ切り替える(指示で範囲を決めているときは変えない)。 */
     fun fitWidth(px: Int) {
         if (areas.isEmpty() || areaPinned >= 0 || px <= 0) return
+        if (pendingFit > 0) { pendingFit = px; return } // つないで落ち着くまでは、行き先の幅だけ覚えておく
         fitArea(px)
     }
 
@@ -898,8 +901,9 @@ class CarPlayPane @JvmOverloads constructor(
                 sessionAt = android.os.SystemClock.uptimeMillis()
                 if (areas.isNotEmpty()) main.postDelayed({
                     if (myGeneration != generation) return@postDelayed
-                    val w = pendingFit
+                    val w = if (pendingFit > 1) pendingFit else root.width
                     pendingFit = 0
+                    root.requestLayout()
                     val before = area
                     if (w > 0 && areaPinned < 0) fitArea(w)
                     if (area == before) sendArea()
