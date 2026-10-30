@@ -151,7 +151,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         // (Duo Cruise 前面＝この窓を操作、それ以外＝ユーザー補助で全体を操作)
         PadRouter.get(this).setDuoSink(pad);
         padServer = PadRouter.get(this).server();
-        padServer.setState(Store.single(this) ? "s F" : Store.side(this) == SplitGeometry.SIDE_LEFT ? "s L" : "s R");
+        padServer.setState(sideMsg());
         try { tv.start(); } catch (Throwable t) { DuoLog.error("YouTube を始められません: " + DuoLog.why(t)); }
         boolean asHome = getIntent() != null && getIntent().hasCategory(Intent.CATEGORY_HOME);
         DuoLog.log((BuildConfig.UNLIMITED ? "Duo Cruise Unlimited Edition" : "Duo Cruise") + " を開きました(版 "
@@ -471,8 +471,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
 
     private void relayout() {
         applyLayout();
-        if (padServer != null) padServer.setState(Store.single(this) ? "s F"
-                : Store.side(this) == SplitGeometry.SIDE_LEFT ? "s L" : "s R");
+        if (padServer != null) padServer.setState(sideMsg());
         padLayoutState();
         if (panel.getVisibility() == View.VISIBLE) panel.refresh();
         stateChanged();
@@ -1374,10 +1373,22 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     @Override public void scrollActive(boolean on) { root.padScrolling = on; }
 
     /** Duo Slate の画面の縮図へ、今の並びを送る。 */
+    /** 操作できる側(極端な比率では見えている側に直したもの)。Duo Slate へ送る印・縮図に使う。 */
+    private int opSide() {
+        int side = Store.side(this);
+        if (!Store.single(this) && !mapEngaged) side = SplitGeometry.operableSide(side, Store.swapped(this), curYt < 0 ? Store.splitYt(this) : curYt);
+        return side;
+    }
+
+    /** Duo Slate へ送る「操作している側」の印。 */
+    private String sideMsg() {
+        return Store.single(this) ? "s F" : opSide() == SplitGeometry.SIDE_LEFT ? "s L" : "s R";
+    }
+
     private void padLayoutState() {
         if (padServer == null) return;
         padServer.setLayout("l " + (Store.single(this) ? 1 : 0) + " " + (Store.swapped(this) ? 1 : 0) + " "
-                + (Store.side(this) == SplitGeometry.SIDE_LEFT ? "L" : "R") + " " + Store.splitYt(this));
+                + (opSide() == SplitGeometry.SIDE_LEFT ? "L" : "R") + " " + Store.splitYt(this));
         padServer.setTargetName(active().name()); // 操作中のウィンドウのアプリ名(右上の表示用)
     }
 

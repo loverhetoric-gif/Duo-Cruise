@@ -292,8 +292,8 @@ struct StatusText: View {
             let active = env > 0.02 ? notice : nil
             let base: Color = connected ? c.glow : Notice(kind: .lost).colors(c)[0]
             let color = active?.colors(c)[0] ?? base
-            // つながっていてターゲットがあるときは、「Duo Cruise」とアプリ名を1秒ごとに入れ替える
-            let flip = Int(ctx.date.timeIntervalSinceReferenceDate) % 2 == 1
+            // つながっていてターゲットがあるときは、「Duo Cruise」とアプリ名を3秒ごとにゆっくり入れ替える
+            let flip = Int(ctx.date.timeIntervalSinceReferenceDate / 3) % 2 == 1
             let connText = (connected && !target.isEmpty && flip) ? target : "Duo Cruise"
             let text = active?.label ?? (connected ? connText : String(localized: "未接続"))
             let level = active != nil ? 0.55 + 0.45 * env : (connected ? 0.55 : 0.45 + 0.2 * sin(ctx.date.timeIntervalSinceReferenceDate * 1.6))
@@ -311,8 +311,8 @@ struct StatusText: View {
                 }
                 .shadow(color: color.opacity(0.5 * level), radius: 6)
                 .id(text)
-                .transition(.opacity.combined(with: .scale(scale: 0.94)).combined(with: .offset(y: 3)))
-                .animation(.easeInOut(duration: 0.4), value: text)
+                .transition(.opacity) // 柔らかく、ふわっと溶けるように入れ替える(拡大・ずれは付けない)
+                .animation(.easeInOut(duration: 0.9), value: text)
         }
     }
 }

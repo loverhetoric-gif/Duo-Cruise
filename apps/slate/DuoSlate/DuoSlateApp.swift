@@ -69,6 +69,11 @@ struct PadScreen: View {
         // 時計・ステータスバーと下のホームバーの高さは GeometryReader で受け取る
         // (描くたびに UIKit の窓から直接読むと、SwiftUI の描き直しが止まるため)
         GeometryReader { geo in content(geo.safeAreaInsets) }
+            .onAppear {
+                #if DEBUG
+                if ProcessInfo.processInfo.environment["DUO_AUDIT"] == "1" { print("[AUDIT] " + DuoAudit.run()) }
+                #endif
+            }
     }
 
     private var connected: Bool {
@@ -87,13 +92,25 @@ struct PadScreen: View {
         return link.menuOpen && connected
     }
 
+    /// 操作対象が YouTube のとき(フリックで操作)。アプリ名は箱から受けるので固定しない。
+    private var youtubeMode: Bool {
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["DUO_YT"] == "1" { return true }
+        #endif
+        return connected && !link.menuOpen && link.targetApp == "YouTube"
+    }
+
     private func content(_ ins: EdgeInsets) -> some View {
         ZStack {
             c.surface
             if menuMode {
                 // メニューを開いている間は、タッチパッドに代えてメニュー操作モードへ
-                MenuControls(c: c, level: neonLevel, send: { link.send($0) })
-                    .transition(.opacity) // 丸のネオンがふっと浮かぶ演出は MenuControls 側(appear)で
+                FlickPad(c: c, level: neonLevel, profile: .menu, send: { link.send($0) })
+                    .transition(.opacity) // 丸のネオンがふっと浮かぶ演出は FlickPad 側(appear)で
+            } else if youtubeMode {
+                // 操作対象が YouTube のときは、二本指でなく丸のフリック(上下左右＋決定＋戻る)で
+                FlickPad(c: c, level: neonLevel, profile: .youtube, send: { link.send($0) })
+                    .transition(.opacity)
             } else {
                 Surface(sensitivity: sensitivity, acceleration: acceleration, screen: link.screen, autoTune: autoSpeed,
                         send: { link.send($0) }, onTouch: touched)

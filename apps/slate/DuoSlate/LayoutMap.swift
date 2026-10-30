@@ -13,6 +13,14 @@ struct DuoLayout: Equatable {
 
     /// 画面上のその側にあるのは YouTube か(Duo Cruise の SplitGeometry.tvOn と同じ)。
     func tvOn(_ s: String) -> Bool { swapped ? s == "L" : s == "R" }
+
+    /// 操作対象は YouTube か。極端な比率(片方が画面外)のときは、見えている側にする(Duo Cruise の operableSide と同じ)。
+    var targetIsTv: Bool {
+        if single { return tvOn(side) }
+        if yt >= 98 { return true }   // YouTube 全画面 → 対象は YouTube
+        if yt <= 2 { return false }   // CarPlay 全画面 → 対象は CarPlay
+        return tvOn(side)
+    }
 }
 
 /// 画面の縮図。Duo Cruise の画面の形(1480×480)の中に、CarPlay と YouTube の枠を今の並びで描く。
@@ -117,16 +125,17 @@ struct LayoutMap: View {
     /// 今の並びの枠(画面の外に出ているものは描かない)。
     private func panes(_ w: CGFloat) -> [Pane] {
         if layout.single {
-            let tv = layout.tvOn(layout.side)
+            let tv = layout.targetIsTv
             return [Pane(name: tv ? "tv" : "car", x: 0, width: w, target: true)]
         }
         let yt = ytNow / 100
         let tvW = w * yt, carW = w - tvW
         let tvX: CGFloat = layout.swapped ? 0 : carW
         let carX: CGFloat = layout.swapped ? tvW : 0
+        let tgtTv = layout.targetIsTv
         var out: [Pane] = []
-        if carW > 1 { out.append(Pane(name: "car", x: carX, width: carW, target: !layout.tvOn(layout.side))) }
-        if tvW > 1 { out.append(Pane(name: "tv", x: tvX, width: tvW, target: layout.tvOn(layout.side))) }
+        if carW > 1 { out.append(Pane(name: "car", x: carX, width: carW, target: !tgtTv)) }
+        if tvW > 1 { out.append(Pane(name: "tv", x: tvX, width: tvW, target: tgtTv)) }
         return out
     }
 
