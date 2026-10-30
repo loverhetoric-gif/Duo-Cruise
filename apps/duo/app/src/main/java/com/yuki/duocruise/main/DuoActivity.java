@@ -1142,11 +1142,13 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         panel.setVisibility(View.VISIBLE);
         panel.enter();
         applyLayout();
+        if (padServer != null) padServer.setMenu(true); // Duo Slate をメニュー操作モードへ
     }
 
     @Override public void closePanel() {
         cancelLearn();
         if (panel.getVisibility() != View.VISIBLE) return;
+        if (padServer != null) padServer.setMenu(false); // メニュー操作モードを解く
         panel.leave(() -> {
             panel.setVisibility(View.GONE);
             applyLayout();

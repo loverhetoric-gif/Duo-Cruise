@@ -79,15 +79,29 @@ struct PadScreen: View {
         if case .connected = link.state { return true }; return false
     }
 
+    /// メニュー操作モードを出すか(つながっていて、Duo Cruise が設定を開いている)。
+    private var menuMode: Bool {
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["DUO_MENU"] == "1" { return true }
+        #endif
+        return link.menuOpen && connected
+    }
+
     private func content(_ ins: EdgeInsets) -> some View {
         ZStack {
             c.surface
-            Surface(sensitivity: sensitivity, acceleration: acceleration, screen: link.screen, autoTune: autoSpeed,
-                    send: { link.send($0) }, onTouch: touched)
+            if menuMode {
+                // メニューを開いている間は、タッチパッドに代えてメニュー操作モードへ
+                MenuControls(c: c, level: neonLevel, send: { link.send($0) })
+                    .transition(.opacity.combined(with: .scale(scale: 0.92)))
+            } else {
+                Surface(sensitivity: sensitivity, acceleration: acceleration, screen: link.screen, autoTune: autoSpeed,
+                        send: { link.send($0) }, onTouch: touched)
+            }
             Lights(c: c, night: night, connected: connected, target: link.target,
                    touch: touch, touchGlow: touchGlow, notice: notice, level: neonLevel)
                 .allowsHitTesting(false)
-            if mapShown && connected {
+            if mapShown && connected && !link.menuOpen {
                 LayoutMap(c: c, layout: link.layout, aspect: link.screen.width / max(1, link.screen.height),
                           send: { link.send($0) }, touched: { mapTouchedAt = Date() })
                     .padding(.horizontal, 28)
@@ -100,17 +114,20 @@ struct PadScreen: View {
                     .padding(.trailing, max(ins.trailing, Screen.cornerRadius * 0.45))
                     .padding(.leading, max(ins.leading, Screen.cornerRadius * 0.45))
                 Spacer()
-                HStack(spacing: 8) {
-                    key("arrow.uturn.backward") { link.send("k b") }
-                    key("house") { link.send("k h") }
-                    // 押す＝タスク、長押し＝設定メニュー(長押しのあとはタスクを送らない)
-                    HoldKey(icon: "square.on.square", c: c, tap: { link.send("k r") }, hold: { link.send("k m") })
-                    key(mapShown ? "rectangle.split.2x1.fill" : "rectangle.split.2x1") { toggleMap() }
-                    key(typing ? "keyboard.chevron.compact.down" : "keyboard") { typing.toggle() }
+                if !menuMode { // メニュー操作モード中は下のツールバーを隠し、操作に集中できるように
+                    HStack(spacing: 8) {
+                        key("arrow.uturn.backward") { link.send("k b") }
+                        key("house") { link.send("k h") }
+                        // 押す＝タスク、長押し＝設定メニュー(長押しのあとはタスクを送らない)
+                        HoldKey(icon: "square.on.square", c: c, tap: { link.send("k r") }, hold: { link.send("k m") })
+                        key(mapShown ? "rectangle.split.2x1.fill" : "rectangle.split.2x1") { toggleMap() }
+                        key(typing ? "keyboard.chevron.compact.down" : "keyboard") { typing.toggle() }
+                    }
+                    .frame(height: 50)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, max(ins.bottom, 12) + 4)
+                    .transition(.opacity)
                 }
-                .frame(height: 50)
-                .padding(.horizontal, 16)
-                .padding(.bottom, max(ins.bottom, 12) + 4)
             }
             KeyField(active: $typing) { link.send($0) }
                 .frame(width: 1, height: 1).opacity(0.01)

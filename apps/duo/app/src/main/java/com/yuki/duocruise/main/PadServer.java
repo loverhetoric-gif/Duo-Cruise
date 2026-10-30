@@ -161,6 +161,7 @@ final class PadServer {
             if (!layout.isEmpty()) send(out, layout);
             send(out, bt);
             send(out, modeMsg);
+            send(out, menu);
             BufferedReader in = new BufferedReader(new InputStreamReader(c.getInputStream(), StandardCharsets.UTF_8));
             PadPlayout po = new PadPlayout();
             playouts.add(po);
@@ -237,6 +238,15 @@ final class PadServer {
         String s = "g " + mode;
         if (s.equals(modeMsg)) return;
         modeMsg = s;
+        broadcast(s);
+    }
+
+    /** 設定メニューを開いた/閉じた(メインスレッドから)。Duo Slate をメニュー操作モードに切り替える合図。 */
+    private volatile String menu = "mn 0";
+    void setMenu(boolean open) {
+        String s = open ? "mn 1" : "mn 0";
+        if (s.equals(menu)) return;
+        menu = s;
         broadcast(s);
     }
 
