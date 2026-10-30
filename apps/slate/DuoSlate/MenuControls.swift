@@ -21,7 +21,7 @@ struct MenuControls: View {
     /// 今のフリックの向き(矢印を出す向き)。
     @State private var dir: Dir = .none
 
-    enum Dir { case none, up, down, back }
+    enum Dir { case none, up, down, back, right }
 
     private var accent: Color { c.glow }
 
@@ -57,8 +57,8 @@ struct MenuControls: View {
                         let dy = v.translation.height + v.predictedEndTranslation.height * 0.2
                         if abs(dy) >= abs(dx) {
                             flick(dy < 0 ? .up : .down)
-                        } else if dx < 0 {
-                            flick(.back)
+                        } else {
+                            flick(dx < 0 ? .back : .right)
                         }
                     }
             )
@@ -95,6 +95,9 @@ struct MenuControls: View {
         case .back:
             let x = center.x - d
             p.move(to: CGPoint(x: x + s * 0.7, y: center.y - s)); p.addLine(to: CGPoint(x: x - s * 0.3, y: center.y)); p.addLine(to: CGPoint(x: x + s * 0.7, y: center.y + s))
+        case .right:
+            let x = center.x + d
+            p.move(to: CGPoint(x: x - s * 0.7, y: center.y - s)); p.addLine(to: CGPoint(x: x + s * 0.3, y: center.y)); p.addLine(to: CGPoint(x: x - s * 0.7, y: center.y + s))
         case .none: return
         }
         var g = ctx
@@ -106,16 +109,19 @@ struct MenuControls: View {
 
     private func flick(_ d: Dir) {
         switch d {
-        case .up:   send("k rot -1")
-        case .down: send("k rot 1")
-        case .back: send("k b")
-        case .none: return
+        case .up:    send("k rot -1")
+        case .down:  send("k rot 1")
+        case .back:  send("k b")
+        case .right: send("k c") // 右フリックでも決定
+        case .none:  return
         }
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        UIImpactFeedbackGenerator(style: d == .right ? .medium : .light).impactOccurred()
+        if d == .right { okGlow = true; DispatchQueue.main.asyncAfter(deadline: .now() + 0.16) { withAnimation(.easeOut(duration: 0.4)) { okGlow = false } } }
         dir = d
         let reach: CGFloat = 34
         let to: CGSize = d == .up ? .init(width: 0, height: -reach)
                         : d == .down ? .init(width: 0, height: reach)
+                        : d == .right ? .init(width: reach, height: 0)
                         : .init(width: -reach, height: 0)
         withAnimation(.easeOut(duration: 0.13)) { off = to }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.13) {
