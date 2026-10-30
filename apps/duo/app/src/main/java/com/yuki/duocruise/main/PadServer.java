@@ -162,6 +162,7 @@ final class PadServer {
             send(out, bt);
             send(out, modeMsg);
             send(out, menu);
+            send(out, target);
             BufferedReader in = new BufferedReader(new InputStreamReader(c.getInputStream(), StandardCharsets.UTF_8));
             PadPlayout po = new PadPlayout();
             playouts.add(po);
@@ -238,6 +239,15 @@ final class PadServer {
         String s = "g " + mode;
         if (s.equals(modeMsg)) return;
         modeMsg = s;
+        broadcast(s);
+    }
+
+    /** 操作中のウィンドウのアプリ名(メインスレッドから)。Duo Slate の右上に出す。名前は固定しない(対応アプリが増える)。 */
+    private volatile String target = "tn ";
+    void setTargetName(String name) {
+        String s = "tn " + (name == null ? "" : name);
+        if (s.equals(target)) return;
+        target = s;
         broadcast(s);
     }
 

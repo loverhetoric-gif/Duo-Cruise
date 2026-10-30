@@ -163,6 +163,56 @@ final class SplitRoot extends ViewGroup {
         return SplitGeometry.activeHalf(w, h, side, swapped, ytPct);
     }
 
+    /**
+     * 総当たり検証: 並べ方のあらゆる組み合わせについて、CarPlay・YouTube・操作中の枠を計算し、
+     * 「操作対象が画面に見えているか」「光る枠が操作対象と合っているか」などの約束に反していないかを調べる。
+     * 画面はいじらず計算だけ(フィールドは元に戻す)。結果は1行ずつの文に。
+     */
+    String auditAll() { return auditAll(Math.max(1, contentW()), Math.max(1, contentH())); }
+
+    String auditAll(int w, int h) {
+        boolean oSingle = single, oSwap = swapped, oPip = pip, oPipL = pipLeft; int oSide = side, oYt = ytPct;
+        StringBuilder r = new StringBuilder();
+        int pass = 0, fail = 0;
+        int[] yts = {0, 30, 40, 50, 60, 70, 100};
+        for (boolean pp : new boolean[]{false, true})
+        for (boolean sg : new boolean[]{false, true})
+        for (boolean sw : new boolean[]{false, true})
+        for (int sd : new int[]{SplitGeometry.SIDE_LEFT, SplitGeometry.SIDE_RIGHT})
+        for (int yt : (sg || pp) ? new int[]{50} : yts) {
+            pip = pp; single = sg; swapped = sw; side = sd; pipLeft = false; ytPct = yt;
+            int[] car = carRect(w, h), tv = tvRect(w, h), act = activeRect(w, h);
+            boolean tgtTv = SplitGeometry.tvOn(sd, sw);
+            int[] tgt = tgtTv ? tv : car;
+            boolean carVis = onScreen(car, w), tvVis = onScreen(tv, w), tgtVis = onScreen(tgt, w);
+            String st = (pp ? "小窓" : sg ? "1画面" : "2画面") + " " + (sw ? "反転" : "通常")
+                    + " 操作=" + (tgtTv ? "YouTube" : "CarPlay") + (sg || pp ? "" : " YT" + yt + "%");
+            java.util.List<String> bad = new java.util.ArrayList<>();
+            if (!carVis && !tvVis) bad.add("両方が画面外");
+            if (!tgtVis) bad.add("操作対象が画面に見えない(" + (tgtTv ? "YouTube" : "CarPlay") + "が" + SplitGeometry.str(tgt) + ")");
+            if (!sameArea(act, tgt)) bad.add("光る枠が操作対象とずれ(光=" + SplitGeometry.str(act) + " 対象=" + SplitGeometry.str(tgt) + ")");
+            if (!sg && !pp && yt > 2 && yt < 98 && (!carVis || !tvVis)) bad.add("2画面なのに片方が見えない");
+            if (pp && !(tv[2] - tv[0] < w * 0.5 && car[2] - car[0] >= w * 0.9)) bad.add("小窓の形が変(小窓=" + SplitGeometry.str(tv) + ")");
+            if (bad.isEmpty()) { pass++; }
+            else { fail++; r.append("‼ ").append(st).append(" → ").append(String.join("、", bad)).append("\n"); }
+        }
+        pip = oPip; single = oSingle; swapped = oSwap; side = oSide; pipLeft = oPipL; ytPct = oYt;
+        requestLayout();
+        return "画面の総当たり検証: " + (pass + fail) + " 通り中 OK " + pass + " / 不具合 " + fail
+                + (fail == 0 ? "(問題なし)" : "\n" + r.toString().trim());
+    }
+
+    /** 枠が画面の中に見えているか(画面外 offscreen や幅ゼロでない)。 */
+    private static boolean onScreen(int[] r, int w) {
+        return r[0] < w - 2 && r[2] > 2 && (r[2] - r[0]) > 8 && r[0] < w;
+    }
+
+    /** 2つの枠がほぼ同じ場所か(数 px の差は許す)。 */
+    private static boolean sameArea(int[] a, int[] b) {
+        for (int i = 0; i < 4; i++) if (Math.abs(a[i] - b[i]) > 4) return false;
+        return true;
+    }
+
     void apply(boolean swapped, int side, boolean panelHalf, int ytPct) {
         if (swapped != this.swapped && car != null && tv != null && car.getWidth() > 0) {
             swapFromCar = car.getLeft();

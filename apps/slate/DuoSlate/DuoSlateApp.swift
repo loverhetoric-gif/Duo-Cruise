@@ -189,7 +189,7 @@ struct PadScreen: View {
     /// 右上(ステータスバーのすぐ下): 縁の光と同じ色・同じ動きの文字だけ。押すと設定。
     private var statusLabel: some View {
         Button { settings = true } label: {
-            StatusText(c: c, connected: connected, notice: notice)
+            StatusText(c: c, connected: connected, notice: notice, target: link.targetApp)
                 .padding(.vertical, 8).padding(.horizontal, 4)
         }
         .buttonStyle(.plain)

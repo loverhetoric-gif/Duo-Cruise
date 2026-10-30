@@ -32,6 +32,8 @@ final class PadLink: ObservableObject {
     @Published private(set) var mode = "duo"
     /// Duo Cruise で設定メニューを開いているか(メニュー操作モードに切り替える)。
     @Published private(set) var menuOpen = false
+    /// 操作中のウィンドウのアプリ名(右上に出す。固定しない＝対応アプリが増えても出せる)。
+    @Published private(set) var targetApp = ""
     /// Bluetooth がつながるたびに1つ増える(縁を緑に灯す合図)。
     @Published private(set) var bluetoothUps = 0
     /// 曲がる方向の合図が届くたびに1つ増える(Duo Cruise Unlimited Edition。縁の曲がる側を灯す合図)。
@@ -184,6 +186,7 @@ final class PadLink: ObservableObject {
     private func drop(_ why: String) {
         conn?.cancel(); conn = nil
         menuOpen = false
+        targetApp = ""
         guard !stopped else { return }
         state = .failed(why)
         reconnects += 1
@@ -234,6 +237,8 @@ final class PadLink: ObservableObject {
                 mode = String(p[1])
             } else if k == "mn", p.count > 1 {
                 withAnimation(.spring(response: 0.5, dampingFraction: 0.78)) { menuOpen = p[1] == "1" }
+            } else if k == "tn" {
+                targetApp = p.count > 1 ? p.dropFirst().joined(separator: " ") : ""
             } else if k == "t", p.count > 1 {
                 // 「t L FFC24F 55」: 曲がる側・色・強さ(%)
                 turnSide = String(p[1])

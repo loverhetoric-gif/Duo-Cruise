@@ -282,6 +282,8 @@ struct StatusText: View {
     let c: Palette
     let connected: Bool
     let notice: Notice?
+    /// 操作中のウィンドウのアプリ名(つながっている間、「Duo Cruise」と1秒ごとに交互に出す)。
+    var target: String = ""
 
     var body: some View {
         TimelineView(.animation) { ctx in
@@ -290,7 +292,10 @@ struct StatusText: View {
             let active = env > 0.02 ? notice : nil
             let base: Color = connected ? c.glow : Notice(kind: .lost).colors(c)[0]
             let color = active?.colors(c)[0] ?? base
-            let text = active?.label ?? (connected ? "Duo Cruise" : String(localized: "未接続"))
+            // つながっていてターゲットがあるときは、「Duo Cruise」とアプリ名を1秒ごとに入れ替える
+            let flip = Int(ctx.date.timeIntervalSinceReferenceDate) % 2 == 1
+            let connText = (connected && !target.isEmpty && flip) ? target : "Duo Cruise"
+            let text = active?.label ?? (connected ? connText : String(localized: "未接続"))
             let level = active != nil ? 0.55 + 0.45 * env : (connected ? 0.55 : 0.45 + 0.2 * sin(ctx.date.timeIntervalSinceReferenceDate * 1.6))
             Text(text)
                 .font(.system(size: 12, weight: .semibold))

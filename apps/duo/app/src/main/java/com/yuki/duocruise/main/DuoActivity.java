@@ -280,6 +280,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         if (k != null && (k.startsWith("car-knobcfg") || k.startsWith("car-area"))) DuoLog.log("adb の試し: " + command(k));
         if ("demo".equals(k)) startDemo();
         if ("demo-stop".equals(k)) stopDemo();
+        if ("uiaudit".equals(k) && root != null) for (String ln : root.auditAll().split("\n")) DuoLog.log(ln);
         if (root != null) root.requestApplyInsets();
     }
 
@@ -1374,6 +1375,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         if (padServer == null) return;
         padServer.setLayout("l " + (Store.single(this) ? 1 : 0) + " " + (Store.swapped(this) ? 1 : 0) + " "
                 + (Store.side(this) == SplitGeometry.SIDE_LEFT ? "L" : "R") + " " + Store.splitYt(this));
+        padServer.setTargetName(active().name()); // 操作中のウィンドウのアプリ名(右上の表示用)
     }
 
     /** Duo Slate の画面の縮図から(メインスレッドへ)。 */
