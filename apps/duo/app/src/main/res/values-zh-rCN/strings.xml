@@ -113,6 +113,17 @@
     <string name="r_map">自动显示地图</string>
     <string name="r_light">方向灯光</string>
     <string name="r_audio">自动调节音量</string>
+    <string name="mode_parking">Parking Mode</string>
+    <string name="mode_stopped">Stopped</string>
+    <string name="mode_driving">Driving</string>
+    <string name="mode_corner">Corner Mode</string>
+    <string name="mode_cruise">Cruise Mode</string>
+    <string name="mode_arrived">Arrived</string>
+    <string name="mode_parking_cap">驻车时 YouTube 全屏</string>
+    <string name="mode_stopped_cap">停车时 YouTube 变大</string>
+    <string name="mode_corner_cap">转弯时地图全屏</string>
+    <string name="mode_cruise_cap">长直路 YouTube 变大</string>
+    <string name="mode_arrived_cap">已到达目的地</string>
     <string name="s_demo">演示</string>
     <string name="dm_start">Duo Cruise 演示 — 按任意键结束</string>
     <string name="dm_target">切换目标</string>

@@ -134,10 +134,12 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         startCar("開いたので自動で");
         drive = new DriveWatch(this, new DriveWatch.Listener() {
             @Override public void driveState(int s) {
+                int was = driveState;
                 driveState = s;
                 DuoLog.log("運転の見張り: " + (s == DriveWatch.PARKED ? "駐車" : s == DriveWatch.STOPPED ? "停止" : "走行"));
                 if (s == DriveWatch.MOVING) driveHeld = false; // 走り出したら、止まったとき/駐車の自動を再開
                 if (!Store.single(this0())) animateYt(targetYt());
+                modeForDrive(was, s);
             }
             @Override public void daylight(boolean d) { isDay = d; DuoLog.log("運転の見張り: " + (d ? "昼" : "夜") + "になりました"); }
         });
@@ -701,6 +703,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         if (Store.single(this) && active() == car) return;
         mapEngaged = true;
         applyLayout();
+        showMode("corner", R.string.mode_corner, R.string.mode_corner_cap, Store.neonTurn(this));
         main.removeCallbacks(mapRelease);
         main.postDelayed(mapRelease, Math.max(1000, Store.mapHoldMs(this)));
         DuoLog.log("曲がり角の案内: CarPlay を全画面にし、YouTube を小窓にしました");
@@ -720,6 +723,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         mapRelease();
         if (Store.single(this)) { if (active() == car) flipQuietly(); }
         else animateYt(targetYt());
+        showMode("arrived", R.string.mode_arrived, R.string.mode_arrived_cap, 0xFF7CE36A);
         DuoLog.log("曲がり角の案内: 到着したので YouTube を全画面にしました");
     }
 
@@ -744,6 +748,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         if (want == straightEngaged) return;
         straightEngaged = want;
         animateYt(targetYt());
+        if (want) showMode("cruise", R.string.mode_cruise, R.string.mode_cruise_cap, 0xFFB07BFF);
         DuoLog.log("一本道: " + (want ? "YouTube を大きくしました(次の曲がり角まで " + r.distanceToTurnM + " m)" : "元の比率に戻しました"));
     }
 
@@ -807,6 +812,27 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     private boolean driveHeld;
     /** 手で分割比を決めた印(停車中なら、自動に戻されないよう保つ)。 */
     private void holdByHand() { driveHeld = true; }
+
+    // ───────── 自動の切り替えを伝えるモードの帯 ─────────
+
+    /** 運転の見張りの状態が変わったら、対応するモードの帯を出す(自動が効いているときだけ)。 */
+    private void modeForDrive(int from, int to) {
+        if (from == to || driveHeld) return; // 手動で保っているときは、自動の帯は出さない(嘘になる)
+        if (to == DriveWatch.PARKED && Store.parkOn(this))
+            showMode("parking", R.string.mode_parking, R.string.mode_parking_cap, 0xFF59E3B0);
+        else if (to == DriveWatch.STOPPED && Store.stopOn(this))
+            showMode("stopped", R.string.mode_stopped, R.string.mode_stopped_cap, 0xFF4F8CFF);
+        else if (to == DriveWatch.MOVING && from != DriveWatch.MOVING && (Store.parkOn(this) || Store.stopOn(this)))
+            showMode("driving", R.string.mode_driving, 0, Theme.NEON_WHITE);
+    }
+
+    /** モードの帯を左端から出す。初めてのモードのときだけ、下に一行の説明を添える。 */
+    private void showMode(String key, int nameRes, int capRes, int color) {
+        if (guiding() || panel.getVisibility() == View.VISIBLE) return;
+        String cap = "";
+        if (capRes != 0 && !Store.modeSeen(this, key)) { cap = Tx.s(capRes); Store.setModeSeen(this, key); }
+        root.showMode(Tx.s(nameRes), cap, color, true);
+    }
     private boolean isDay, alertDucked;
     private final Runnable alertUnduck = () -> { alertDucked = false; applyDuck(); };
     private DuoActivity this0() { return this; }

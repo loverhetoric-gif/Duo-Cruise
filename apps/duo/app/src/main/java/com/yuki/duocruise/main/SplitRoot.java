@@ -35,6 +35,8 @@ final class SplitRoot extends ViewGroup {
     private final CarLoaderView carLoader;
     /** 分割比の調整中だけ出す、境目の光と左右の割合。 */
     private final SplitLine splitLine;
+    /** 自動の切り替え(駐車・曲がり角など)で、端から出すモードの帯。 */
+    private final ModeTag modeTag;
     View car, tv;
     /** タッチパッドのカーソル(いちばん上に置く)。 */
     View cursor;
@@ -67,6 +69,15 @@ final class SplitRoot extends ViewGroup {
         turnGlow = new TurnGlow(c);
         splitLine = new SplitLine(c);
         carLoader = new CarLoaderView(c);
+        modeTag = new ModeTag(c);
+    }
+
+    /** モードの帯を端から出す(駐車・曲がり角などの自動の切り替え)。メニュー表示中は出さない。 */
+    void showMode(String label, String caption, int color, boolean fromLeft) {
+        if (panel != null && panel.getVisibility() == VISIBLE) return;
+        modeTag.bringToFront();
+        if (cursor != null) cursor.bringToFront();
+        modeTag.show(label, caption, color, fromLeft);
     }
 
     void setPanes(View carView, View tvView, PanelView p) {
@@ -80,6 +91,7 @@ final class SplitRoot extends ViewGroup {
         addView(frame);
         addView(hint);
         addView(turnGlow);
+        addView(modeTag);
         addView(splitLine);
         addView(panel);
         if (cursor != null) { if (cursor.getParent() != null) ((ViewGroup) cursor.getParent()).removeView(cursor); addView(cursor); }
@@ -331,6 +343,7 @@ final class SplitRoot extends ViewGroup {
         measureTo(tv, v);
         measureTo(frame, new int[]{0, 0, w, h});
         measureTo(turnGlow, new int[]{0, 0, w, h});
+        measureTo(modeTag, new int[]{0, 0, w, h});
         measureTo(splitLine, new int[]{0, 0, w, h});
         hint.measure(MeasureSpec.makeMeasureSpec(Math.round(TurnHintView.W_DP * dp), MeasureSpec.EXACTLY),
                 MeasureSpec.makeMeasureSpec(Math.round(TurnHintView.H_DP * dp), MeasureSpec.EXACTLY));
@@ -361,6 +374,7 @@ final class SplitRoot extends ViewGroup {
         layoutTo(tv, v);
         layoutTo(frame, new int[]{0, 0, w, h});
         layoutTo(turnGlow, new int[]{0, 0, w, h});
+        layoutTo(modeTag, new int[]{0, 0, w, h});
         layoutTo(splitLine, new int[]{0, 0, w, h});
         splitLine.invalidate();
         // 案内は YouTube の枠の右上。枠が画面の外(1画面で地図だけ)なら、画面の右上

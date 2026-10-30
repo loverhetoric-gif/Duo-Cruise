@@ -113,6 +113,17 @@
     <string name="r_map">Mapa automático</string>
     <string name="r_light">Luz de dirección</string>
     <string name="r_audio">Volumen automático</string>
+    <string name="mode_parking">Parking Mode</string>
+    <string name="mode_stopped">Stopped</string>
+    <string name="mode_driving">Driving</string>
+    <string name="mode_corner">Corner Mode</string>
+    <string name="mode_cruise">Cruise Mode</string>
+    <string name="mode_arrived">Arrived</string>
+    <string name="mode_parking_cap">Aparcado: YouTube a pantalla completa</string>
+    <string name="mode_stopped_cap">Al parar: YouTube más grande</string>
+    <string name="mode_corner_cap">En el giro: mapa a pantalla completa</string>
+    <string name="mode_cruise_cap">En recta: YouTube más grande</string>
+    <string name="mode_arrived_cap">Has llegado a tu destino</string>
     <string name="s_demo">Demostración</string>
     <string name="dm_start">Demostración de Duo Cruise — pulsa un botón para salir</string>
     <string name="dm_target">Cambiar objetivo</string>

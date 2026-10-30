@@ -113,6 +113,17 @@
     <string name="r_map">地図の自動表示</string>
     <string name="r_light">方向の光</string>
     <string name="r_audio">音量の自動調整</string>
+    <string name="mode_parking">Parking Mode</string>
+    <string name="mode_stopped">Stopped</string>
+    <string name="mode_driving">Driving</string>
+    <string name="mode_corner">Corner Mode</string>
+    <string name="mode_cruise">Cruise Mode</string>
+    <string name="mode_arrived">Arrived</string>
+    <string name="mode_parking_cap">駐車中は YouTube を全画面</string>
+    <string name="mode_stopped_cap">停車中は YouTube を大きく</string>
+    <string name="mode_corner_cap">曲がり角は地図を全画面</string>
+    <string name="mode_cruise_cap">一本道は YouTube を大きく</string>
+    <string name="mode_arrived_cap">目的地に到着しました</string>
     <string name="s_demo">デモ</string>
     <string name="dm_start">Duo Cruise のデモ ― ボタンを押すと終わります</string>
     <string name="dm_target">ターゲットの切り替え</string>

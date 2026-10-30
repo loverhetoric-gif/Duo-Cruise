@@ -30,6 +30,10 @@ final class Store {
 
     /** true のとき1画面(操作中の側だけを出す)。 */
     /** 起動音を鳴らすか(初期値: 鳴らす)。 */
+    /** モードの帯の一行説明を、そのモードで初めて出すときだけ添える(見たら印を付ける)。 */
+    static boolean modeSeen(Context c, String key) { return p(c).getBoolean("modeSeen_" + key, false); }
+    static void setModeSeen(Context c, String key) { p(c).edit().putBoolean("modeSeen_" + key, true).apply(); }
+
     static boolean bootSound(Context c) { return p(c).getBoolean("bootSound", true); }
     static void setBootSound(Context c, boolean v) { p(c).edit().putBoolean("bootSound", v).apply(); }
 
