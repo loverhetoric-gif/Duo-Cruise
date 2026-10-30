@@ -60,29 +60,61 @@ enum Screen {
 /// 快適の基準は 2 つ:
 /// 1. ゆっくり動かすと細かく合わせられる。指先の細かさは一定なので、1480×480 で合わせた
 ///    1pt＝1.6px を基準に、画面の対角の px 数の √ で少しだけ増減する(大きな画面ほど少し速く)。
-/// 2. 速く払うと、パッドの幅(高さ)の半分で画面の端から端まで届く。縦と横の厳しい方に合わせる。
+/// 2. ひと払い(パッドの半分・最大 200pt を 0.16 秒)で、画面の端から端まで届く。縦と横の厳しい方に合わせる。
+///    指の速さは山なりに変わるので、その動きを実際に足し合わせて、届く加速を逆算する。
 ///    iPhone を縦・横に向けるとパッドの形が変わるので、そのたびに計算し直す。
 /// pad が nil(Mac。macOS が加速を済ませている)なら、感度だけ。
 enum CursorTune {
     static let slowBase = 1.6
-    /// 加速が最大になる指の速さ(pt/ms)と、その時の伸び(PadSurface の式と同じ)。
+    /// 加速が最大になる指の速さ(pt/ms)と、その時の伸び。
     static let fastSpeed = 2.5, fastK = 1.4
+    static let maxAccel = 5.0
 
     static func auto(_ screen: CGSize, pad: CGSize? = nil) -> (sensitivity: Double, acceleration: Double) {
         let f = hypot(Double(screen.width), Double(screen.height)) / hypot(1480.0, 480.0)
-        let sens = min(3, max(0.3, f.squareRoot()))
-        guard let pad, pad.width > 50, pad.height > 50 else { return (round1(sens), 1) }
-        let reach = max(Double(screen.width) / (Double(pad.width) * 0.5),
-                        Double(screen.height) / (Double(pad.height) * 0.5))   // 速く払った時に要る 1pt あたりの px
-        let accel = (reach / (slowBase * sens) - 1) / (fastSpeed * fastK)
-        return (round1(sens), round1(min(3, max(0, accel))))
+        let sens = round1(min(3, max(0.3, f.squareRoot())))
+        guard let pad, pad.width > 50, pad.height > 50 else { return (sens, 1) }
+        var need = 0.0
+        for (px, pt) in [(Double(screen.width), Double(pad.width)), (Double(screen.height), Double(pad.height))] {
+            let dist = min(pt * 0.5, 200)
+            var lo = 0.0, hi = maxAccel
+            for _ in 0..<24 {
+                let m = (lo + hi) / 2
+                if flick(dist, 0.16, (sens, m)) < px { lo = m } else { hi = m }
+            }
+            need = max(need, hi)
+        }
+        return (sens, round1(need))
     }
+
+    /// 指を dist pt、秒数 time で払った時(なめらかに加速して止まる動き)に、カーソルが進む px。PadSurface と同じ計算。
+    static func flick(_ dist: Double, _ time: Double, _ t: (sensitivity: Double, acceleration: Double)) -> Double {
+        let dt = 1000.0 / 240, n = Int(time * 1000 / dt)
+        var out = 0.0, sp = 0.0, prev = 0.0
+        for i in 1...max(n, 1) {
+            let u = Double(i) / Double(n)
+            let x = dist * (10 * pow(u, 3) - 15 * pow(u, 4) + 6 * pow(u, 5))
+            let d = x - prev; prev = x
+            sp = follow(sp, d / dt, dt)
+            out += d * gain(sp, t)
+        }
+        return out
+    }
+
+    /// 指の速さの追い方。速くなる時は 12ms で追いつき(払い始めからすぐ伸びる)、
+    /// 遅くなる時は 4ms で落とす(ボタンの手前で減速したら、すぐ細かくなる＝飛び越えない)。
+    static func follow(_ smooth: Double, _ speed: Double, _ dtMs: Double) -> Double {
+        smooth + (speed - smooth) * min(1, dtMs / (speed > smooth ? 12 : 4))
+    }
+
     /// 指の速さ(pt/ms)での 1pt あたりの px。
     /// ② 0.02 以下は標準の半分、0.25 で標準へなめらかに戻り、そこから先が加速(払うほど遠くへ)。
+    /// 加速は 1.5 乗: 中くらいの速さ(ボタンへ寄せる時)は控えめ、速く払う時ほど大きく伸びる。
     static func gain(_ speed: Double, _ t: (sensitivity: Double, acceleration: Double)) -> Double {
         func smooth(_ x: Double) -> Double { let c = min(1, max(0, x)); return c * c * (3 - 2 * c) }
         let precise = 0.5 + 0.5 * smooth((speed - 0.02) / 0.23)
-        let fast = t.acceleration * min(max(speed - 0.25, 0), fastSpeed) * fastK
+        let u = min(max(speed - 0.25, 0), fastSpeed) / fastSpeed
+        let fast = t.acceleration * fastSpeed * fastK * pow(u, 1.5)
         return slowBase * t.sensitivity * precise * (1 + fast)
     }
     private static func round1(_ v: Double) -> Double { (v * 10).rounded() / 10 }

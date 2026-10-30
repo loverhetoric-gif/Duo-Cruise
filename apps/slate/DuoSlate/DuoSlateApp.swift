@@ -290,7 +290,7 @@ struct SettingsSheet: View {
                     .disabled(autoSpeed)
                     VStack(alignment: .leading) {
                         Text("加速 \(String(format: "%.1f", autoSpeed ? tune.acceleration : acceleration))(0＝加速なし)")
-                        Slider(value: autoSpeed ? .constant(tune.acceleration) : $acceleration, in: 0...3, step: 0.1)
+                        Slider(value: autoSpeed ? .constant(tune.acceleration) : $acceleration, in: 0...CursorTune.maxAccel, step: 0.1)
                     }
                     .disabled(autoSpeed)
                 } header: { Text("動きの速さ") } footer: {

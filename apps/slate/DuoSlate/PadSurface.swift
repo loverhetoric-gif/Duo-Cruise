@@ -7,7 +7,8 @@ import UIKit
 /// - 速さに応じた加速(Mac のトラックパッドと同じ考え方): ゆっくりは細かく、速くは遠くまで
 /// - 1px 未満の動きも捨てずに足していく(小数のまま送る)
 /// - 小さなボタンで飛び越え・手前止まりをしないための 3 つ:
-///   ① 速さは 30ms ほどならして測る(細かい点ごとのぶれで加速が急に効かない)
+///   ① 指の加速・減速に合わせる。速くなる時は 12ms で追いつき(払い始めからすぐ伸びる)、
+///      遅くなる時は 4ms で落とす(ボタンの手前で減速したら、すぐ細かくなる＝飛び越えない)
 ///   ② ごくゆっくりは、さらに細かく(標準の半分まで)。狙いを定める最後の数 px を合わせやすく
 ///   ③ 指を離す直前のずれは捨てる(離す瞬間に接点が数 pt 動き、狙った所から外れるため)
 /// - 1本指で軽く触れて離す → タップ(押す)。触れた直後の小さな揺れは動きとみなさない
@@ -53,9 +54,16 @@ final class PadSurface: UIView {
 
     /// iPhone の 1pt を OTTO の何 px にするか(加速前)。
     private var tune: (sensitivity: Double, acceleration: Double) {
-        autoTune ? CursorTune.auto(CGSize(width: screenWidth, height: screenHeight), pad: bounds.size)
-                 : (sensitivity, acceleration)
+        guard autoTune else { return (sensitivity, acceleration) }
+        let key = CGRect(x: screenWidth, y: screenHeight, width: bounds.width, height: bounds.height)
+        if key != autoKey {   // 画面か向きが変わった時だけ計算し直す
+            autoKey = key
+            autoValue = CursorTune.auto(CGSize(width: screenWidth, height: screenHeight), pad: bounds.size)
+        }
+        return autoValue
     }
+    private var autoKey = CGRect.null
+    private var autoValue = (sensitivity: 1.0, acceleration: 1.0)
     private var base: Double { CursorTune.slowBase * tune.sensitivity }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -101,9 +109,9 @@ final class PadSurface: UIView {
             let ddx = Double(p.x - lp.x), ddy = Double(p.y - lp.y)
             let dt = max(s.timestamp - lt, 0.001) * 1000           // ms
             let speed = hypot(ddx, ddy) / dt                         // pt/ms
-            let k = min(1, dt / 30)                                  // ① 30ms ほどでならす
-            smoothSpeed += (speed - smoothSpeed) * k
-            dx += ddx * CursorTune.gain(smoothSpeed, tune); dy += ddy * CursorTune.gain(smoothSpeed, tune)
+            smoothSpeed = CursorTune.follow(smoothSpeed, speed, dt)  // ① 指の加速・減速に合わせる
+            let g = CursorTune.gain(smoothSpeed, tune)
+            dx += ddx * g; dy += ddy * g
         }
         guard dx != 0 || dy != 0 else { return }
         // ③ ゆっくりの間は 45ms 遅らせて送り、離したときは最後の 45ms 分だけ捨てる
