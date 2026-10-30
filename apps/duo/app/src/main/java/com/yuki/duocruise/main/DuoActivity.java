@@ -136,6 +136,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
             @Override public void driveState(int s) {
                 driveState = s;
                 DuoLog.log("運転の見張り: " + (s == DriveWatch.PARKED ? "駐車" : s == DriveWatch.STOPPED ? "停止" : "走行"));
+                if (s == DriveWatch.MOVING) driveHeld = false; // 走り出したら、止まったとき/駐車の自動を再開
                 if (!Store.single(this0())) animateYt(targetYt());
             }
             @Override public void daylight(boolean d) { isDay = d; DuoLog.log("運転の見張り: " + (d ? "昼" : "夜") + "になりました"); }
@@ -609,8 +610,10 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         if (splitAdjusting) return splitVal;
         if (demoYt >= 0) return demoYt;
         if (navEngaged) return Store.navYt(this);
-        if (driveState == DriveWatch.PARKED && Store.parkOn(this)) return 100;
-        if (driveState >= DriveWatch.STOPPED && Store.stopOn(this)) return Store.stopYt(this);
+        if (!driveHeld) { // 手で分割比を変えたら、次に走り出すまで自動を止める(家では常に停車のため)
+            if (driveState == DriveWatch.PARKED && Store.parkOn(this)) return 100;
+            if (driveState >= DriveWatch.STOPPED && Store.stopOn(this)) return Store.stopYt(this);
+        }
         if (straightEngaged) return Store.straightYt(this);
         if (arriveEngaged) return 100;
         return Store.splitYt(this);
@@ -800,6 +803,10 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     // ───────── 運転中の自動の切り替え(止まった・駐車・昼のネオン・Y!カーナビの警告) ─────────
     private DriveWatch drive;
     private int driveState = DriveWatch.MOVING;
+    /** 手で分割比を変えた後は、次に走り出すまで「止まったら/駐車したら」の自動を止める。 */
+    private boolean driveHeld;
+    /** 手で分割比を決めた印(停車中なら、自動に戻されないよう保つ)。 */
+    private void holdByHand() { driveHeld = true; }
     private boolean isDay, alertDucked;
     private final Runnable alertUnduck = () -> { alertDucked = false; applyDuck(); };
     private DuoActivity this0() { return this; }
@@ -1034,7 +1041,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         main.removeCallbacks(splitIdle);
         if (!splitAdjusting) return;
         splitAdjusting = false;
-        if (keep) Store.setSplitYt(this, splitVal);
+        if (keep) { Store.setSplitYt(this, splitVal); holdByHand(); }
         root.splitLine(false, null, null);
         animateYt(targetYt());
         DuoLog.log("分割比の調整: " + (keep ? "決定 " + splitYtText() : "取り消し"));
@@ -1054,6 +1061,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     @Override public void cycleSplitYt() {
         int v = Store.splitYt(this) + 10; if (v > 100) v = 30;
         Store.setSplitYt(this, v);
+        holdByHand();
         animateYt(targetYt());
     }
     @Override public void cycleNavYt() { int v = Store.navYt(this) + 10; if (v > 100) v = 30; Store.setNavYt(this, v); animateYt(targetYt()); }
@@ -1062,6 +1070,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     @Override public int navYtPct() { return Store.navYt(this); }
     @Override public void adjustSplitYt(int dir) {
         Store.setSplitYt(this, SplitGeometry.stepYt(Store.splitYt(this), dir));
+        holdByHand();
         animateYt(targetYt());
     }
     @Override public void adjustNavYt(int dir) {
@@ -1080,7 +1089,9 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     /** 1画面と2画面の切り替え。1画面では操作中の側だけを出し、押し込み2回で YouTube だけ⇔マップだけになる。 */
     void toggleSingle() {
         Store.setSingle(this, !Store.single(this));
+        holdByHand(); // 1画面/2画面を手で切り替えたら、停車の自動に戻されない
         relayout();
+        if (!Store.single(this)) animateYt(targetYt()); // 2画面へ戻すとき、手動の比率で出す
         focusActive();
         DuoLog.log("表示: " + (Store.single(this) ? "1画面 " + active().name() : "2画面"));
     }
