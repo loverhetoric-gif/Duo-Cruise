@@ -180,9 +180,11 @@ final class SplitRoot extends ViewGroup {
         for (boolean sw : new boolean[]{false, true})
         for (int sd : new int[]{SplitGeometry.SIDE_LEFT, SplitGeometry.SIDE_RIGHT})
         for (int yt : (sg || pp) ? new int[]{50} : yts) {
-            pip = pp; single = sg; swapped = sw; side = sd; pipLeft = false; ytPct = yt;
+            // 2画面で極端な比率のときは、操作対象は見えている側(operableSide)
+            int es = (!sg && !pp) ? SplitGeometry.operableSide(sd, sw, yt) : sd;
+            pip = pp; single = sg; swapped = sw; side = es; pipLeft = false; ytPct = yt;
             int[] car = carRect(w, h), tv = tvRect(w, h), act = activeRect(w, h);
-            boolean tgtTv = SplitGeometry.tvOn(sd, sw);
+            boolean tgtTv = SplitGeometry.tvOn(es, sw);
             int[] tgt = tgtTv ? tv : car;
             boolean carVis = onScreen(car, w), tvVis = onScreen(tv, w), tgtVis = onScreen(tgt, w);
             String st = (pp ? "小窓" : sg ? "1画面" : "2画面") + " " + (sw ? "反転" : "通常")

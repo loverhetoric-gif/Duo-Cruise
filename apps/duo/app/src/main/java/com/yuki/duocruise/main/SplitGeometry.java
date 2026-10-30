@@ -64,6 +64,17 @@ final class SplitGeometry {
     /** 画面上のその側にあるのは YouTube か。 */
     static boolean tvOn(int side, boolean swapped) { return swapped ? side == SIDE_LEFT : side == SIDE_RIGHT; }
 
+    /**
+     * 操作できる側(ターゲット)。分割比が極端(片方が画面外)のときは、見えている側に直す。
+     * これで「見えていない CarPlay を操作してしまう／YouTube 全画面なのに操作が CarPlay」を防ぐ。
+     * 2画面のときだけ効く(1画面・小窓は別の仕組みで出す側を決める)。
+     */
+    static int operableSide(int side, boolean swapped, int ytPct) {
+        if (ytPct >= 98) return swapped ? SIDE_LEFT : SIDE_RIGHT;  // YouTube が見える側
+        if (ytPct <= 2)  return swapped ? SIDE_RIGHT : SIDE_LEFT;  // CarPlay が見える側
+        return side;
+    }
+
     /** 操作盤の位置。全体か、操作している側の半分。 */
     static int[] panel(int w, int h, boolean halfOnly, int side) {
         return halfOnly ? half(w, h, side) : new int[]{0, 0, w, h};

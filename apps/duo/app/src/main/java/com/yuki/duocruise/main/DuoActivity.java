@@ -446,7 +446,10 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     // ───────── 操作 ─────────
 
     private Pane active() {
-        return SplitGeometry.tvOn(Store.side(this), Store.swapped(this)) ? tv : car;
+        int side = Store.side(this);
+        // 2画面で分割比が極端なときは、見えている側を操作対象にする(見えない側は操作させない)
+        if (!Store.single(this) && !mapEngaged) side = SplitGeometry.operableSide(side, Store.swapped(this), curYt < 0 ? Store.splitYt(this) : curYt);
+        return SplitGeometry.tvOn(side, Store.swapped(this)) ? tv : car;
     }
 
     private void focusActive() {
