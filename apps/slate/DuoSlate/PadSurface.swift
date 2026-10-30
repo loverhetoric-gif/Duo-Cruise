@@ -6,6 +6,10 @@ import UIKit
 /// - 1本指でなぞる → カーソルを動かす。iPhone が読み取った細かい点(coalesced)をすべて使い、間引かない
 /// - 速さに応じた加速(Mac のトラックパッドと同じ考え方): ゆっくりは細かく、速くは遠くまで
 /// - 1px 未満の動きも捨てずに足していく(小数のまま送る)
+/// - 小さなボタンで飛び越え・手前止まりをしないための 3 つ:
+///   ① 速さは 30ms ほどならして測る(細かい点ごとのぶれで加速が急に効かない)
+///   ② ごくゆっくりは、さらに細かく(標準の半分まで)。狙いを定める最後の数 px を合わせやすく
+///   ③ 指を離す直前のずれは捨てる(離す瞬間に接点が数 pt 動き、狙った所から外れるため)
 /// - 1本指で軽く触れて離す → タップ(押す)。触れた直後の小さな揺れは動きとみなさない
 /// - 1本指で 0.4 秒じっと押す → ドラッグ(押したまま動かす)。離すと終わる
 /// - 2本指 → 2本の指としてそのまま OTTO へ(スクロール・ピンチ)
@@ -32,6 +36,11 @@ final class PadSurface: UIView {
     private var moved = false, dragging = false, twoActive = false
     private var last: [ObjectIdentifier: (CGPoint, TimeInterval)] = [:]
     private var holdTimer: Timer?
+    /// ならした指の速さ(pt/ms)。
+    private var smoothSpeed = 0.0
+    /// ゆっくりの間は少しだけ送らずに持っておく動き(離したらそのまま捨てる)。
+    private var held: [(t: TimeInterval, dx: Double, dy: Double)] = []
+    private let liftDrop: TimeInterval = 0.045
     private let tapHaptic = UIImpactFeedbackGenerator(style: .light)
     private let holdHaptic = UIImpactFeedbackGenerator(style: .medium)
 
@@ -62,6 +71,7 @@ final class PadSurface: UIView {
         firstStart = t.location(in: self)
         firstStartTime = t.timestamp
         moved = false
+        smoothSpeed = 0; held = []
         tapHaptic.prepare(); holdHaptic.prepare()
         holdTimer?.invalidate()
         holdTimer = Timer.scheduledTimer(withTimeInterval: holdTime, repeats: false) { [weak self] _ in
@@ -91,11 +101,22 @@ final class PadSurface: UIView {
             let ddx = Double(p.x - lp.x), ddy = Double(p.y - lp.y)
             let dt = max(s.timestamp - lt, 0.001) * 1000           // ms
             let speed = hypot(ddx, ddy) / dt                         // pt/ms
-            let t = tune
-            let gain = CursorTune.slowBase * t.sensitivity * (1 + t.acceleration * min(speed, CursorTune.fastSpeed) * CursorTune.fastK)
-            dx += ddx * gain; dy += ddy * gain
+            let k = min(1, dt / 30)                                  // ① 30ms ほどでならす
+            smoothSpeed += (speed - smoothSpeed) * k
+            dx += ddx * CursorTune.gain(smoothSpeed, tune); dy += ddy * CursorTune.gain(smoothSpeed, tune)
         }
-        if dx != 0 || dy != 0 { send(String(format: "m %.2f %.2f", dx, dy)) }
+        guard dx != 0 || dy != 0 else { return }
+        // ③ ゆっくりの間は 45ms 遅らせて送り、離したときは最後の 45ms 分だけ捨てる
+        held.append((f.timestamp, dx, dy))
+        flushHeld(before: smoothSpeed < 0.12 ? f.timestamp - liftDrop : .infinity)
+    }
+
+    private func flushHeld(before t: TimeInterval) {
+        var dx = 0.0, dy = 0.0, n = 0
+        for h in held where h.t <= t { dx += h.dx; dy += h.dy; n += 1 }
+        guard n > 0 else { return }
+        held.removeFirst(n)
+        send(String(format: "m %.2f %.2f", dx, dy))
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) { end(touches, event) }
@@ -112,6 +133,7 @@ final class PadSurface: UIView {
         }
         guard let f = first, touches.contains(f) else { return }
         holdTimer?.invalidate()
+        flushHeld(before: f.timestamp - liftDrop); held = [] // ③ 離す直前のずれは送らない
         if dragging {
             dragging = false
             send("u")

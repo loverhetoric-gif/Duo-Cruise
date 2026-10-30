@@ -77,6 +77,14 @@ enum CursorTune {
         let accel = (reach / (slowBase * sens) - 1) / (fastSpeed * fastK)
         return (round1(sens), round1(min(3, max(0, accel))))
     }
+    /// 指の速さ(pt/ms)での 1pt あたりの px。
+    /// ② 0.02 以下は標準の半分、0.25 で標準へなめらかに戻り、そこから先が加速(払うほど遠くへ)。
+    static func gain(_ speed: Double, _ t: (sensitivity: Double, acceleration: Double)) -> Double {
+        func smooth(_ x: Double) -> Double { let c = min(1, max(0, x)); return c * c * (3 - 2 * c) }
+        let precise = 0.5 + 0.5 * smooth((speed - 0.02) / 0.23)
+        let fast = t.acceleration * min(max(speed - 0.25, 0), fastSpeed) * fastK
+        return slowBase * t.sensitivity * precise * (1 + fast)
+    }
     private static func round1(_ v: Double) -> Double { (v * 10).rounded() / 10 }
 }
 
