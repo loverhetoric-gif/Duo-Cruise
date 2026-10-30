@@ -93,10 +93,11 @@ struct PadScreen: View {
             if menuMode {
                 // メニューを開いている間は、タッチパッドに代えてメニュー操作モードへ
                 MenuControls(c: c, level: neonLevel, send: { link.send($0) })
-                    .transition(.opacity.combined(with: .scale(scale: 0.92)))
+                    .transition(.opacity) // 丸のネオンがふっと浮かぶ演出は MenuControls 側(appear)で
             } else {
                 Surface(sensitivity: sensitivity, acceleration: acceleration, screen: link.screen, autoTune: autoSpeed,
                         send: { link.send($0) }, onTouch: touched)
+                    .transition(.opacity)
             }
             Lights(c: c, night: night, connected: connected, target: link.target,
                    touch: touch, touchGlow: touchGlow, notice: notice, level: neonLevel)
