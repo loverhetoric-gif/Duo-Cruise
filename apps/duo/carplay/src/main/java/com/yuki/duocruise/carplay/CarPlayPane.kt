@@ -20,9 +20,11 @@ import com.shilapi.xcertplay.shared.R
 import com.shilapi.xcertplay.AirPlayPersistence
 import com.shilapi.xcertplay.airplay.AirPlayConfig
 import com.shilapi.xcertplay.airplay.AirPlayDisplayConfig
+import com.shilapi.xcertplay.airplay.AirPlayHid
 import com.shilapi.xcertplay.airplay.AirPlayKnobState
 import com.shilapi.xcertplay.airplay.AirPlaySession
 import com.shilapi.xcertplay.airplay.AirPlaySessionListener
+import com.shilapi.xcertplay.airplay.AirPlayViewArea
 import com.shilapi.xcertplay.airplay.CarPlayMediaEngine
 import com.shilapi.xcertplay.media.AndroidMediaSink
 import com.shilapi.xcertplay.media.CarPlayTouchMapper
@@ -52,7 +54,14 @@ import java.util.concurrent.atomic.AtomicInteger
  * MultiPlay とは止めずに「使う時間を分ける」。[stop] で Wi-Fi・Bluetooth・チップを全部手放す。
  * メインスレッドから呼ぶこと。
  */
-class CarPlayPane(context: Context, private val listener: Listener?) {
+class CarPlayPane @JvmOverloads constructor(
+    context: Context,
+    private val listener: Listener?,
+    /** Duo Cruise Unlimited Edition: ナビの案内(曲がり角・距離・到着)を iPhone から受け取る。false なら元のまま。 */
+    private val routeGuidance: Boolean = false,
+    /** 右ハンドルか(false＝左ハンドル)。iPhone はこれで、運転席の側に CarPlay の操作(ドック)を寄せる。 */
+    private val rightHandDrive: Boolean = true,
+) {
 
     /** 持ち主への知らせ(どれもメインスレッドで呼ばれる)。 */
     interface Listener {
@@ -64,12 +73,36 @@ class CarPlayPane(context: Context, private val listener: Listener?) {
 
         /** CarPlay の音の流れが始まった/終わった(audioType: media・default(ナビ)・alert・telephony・speechrecognition)。 */
         fun onAudio(audioType: String, active: Boolean)
+
+        /** ナビの案内が変わった(Duo Cruise Unlimited Edition)。CarPlay が止まったら null。 */
+        fun onRoute(route: Route?)
+
+        /** CarPlay の映像が届き始めた/止まった(持ち主が、つながるまでの演出を出し入れする)。 */
+        fun onStream(active: Boolean)
+    }
+
+    /** CarPlay の映像が届いているか。 */
+    var streaming = false
+        private set
+
+    /** 枠に出している、利用者向けの今の様子の文(持ち主が、つながるまでの演出に添える)。 */
+    fun displayText(): String = forPeople(statusText)
+
+    private fun setStreaming(active: Boolean) {
+        if (active) testSeen = true else if (testSeen) testDropped = true
+        label.visibility = if (active) View.GONE else View.VISIBLE
+        if (streaming == active) return
+        streaming = active
+        listener?.onStream(active)
     }
 
     companion object {
-        /** 左右それぞれの枠の大きさ(アプリが使える高さは 416)。 */
+        /** 左右それぞれの枠の大きさ(画面は 1480×480)。 */
         const val WIDTH = 740
-        const val HEIGHT = 416
+        const val HEIGHT = 480
+        /** 車の画面(1480×480)の、映る部分の実際の大きさ(mm、本人の実測)。 */
+        private const val SCREEN_W_MM = 230
+        private const val SCREEN_H_MM = 90
         private const val SCREEN_TYPE_MAIN = 110
         private const val FPS = 60
         /**
@@ -85,9 +118,31 @@ class CarPlayPane(context: Context, private val listener: Listener?) {
          * 車を覚えるため、ペアリング直後の1回しかつながらなかった(2026-10-27・28 実機)。
          * パスワードは Duo Slate のキーボードで一度だけ入れてもらい、この端末の中にだけ保存する(記録には出さない)。
          */
-        private const val OTTO_AP_SSID = "OttoAibox-P3 Pro-99F0"
+        /**
+         * 名前の設定が無かった頃の版で使っていた、作者の車の機器のアクセスポイントの名前。
+         * パスワードだけが保存されている(＝その頃から使っている)ときに限り、これを名前として引き継ぐ。
+         */
+        private const val LEGACY_SSID = "OttoAibox-P3 Pro-99F0"
+        private const val KEY_SSID = "ssid"
         private const val WIFI_PREFS = "carplay_wifi"
         private const val KEY_PASS = "pass"
+        private const val KEY_PRIMARY_INPUT = "primaryInput"
+        private const val KEY_KNOB_BASIC = "knobBasic"
+        private const val KEY_HID_SPLIT = "hidSplit"
+        private const val KEY_FEATURES = "dispFeatures"
+        private const val KEY_WITH_TOUCH = "withTouch"
+        private const val KEY_REAL_UUID = "realUuid"
+        private const val KEY_FOCUS = "focusTransfer"
+        private const val KEY_AREAS = "areas2"
+        /**
+         * 描く範囲の既定: 分割比 5% きざみ(幅 74 ごと、592〜1480)と、YouTube がちょうど 16:9 になる残り(626)。
+         * 2026-10-29 に画面で確かめた: 592 以上は描かれ、518 以下は iPhone が「解像度に対応していません」を映す
+         * (つながったまま、その画面を映像として送ってくる。740 に戻せば直る)。
+         */
+        private const val MIN_AREA = 592
+        private val DEFAULT_AREAS = ((20 downTo 8).map { it * 74 } + 626).joinToString(",")
+        /** つながってから、描く範囲の切り替えを送るまで待つ時間。 */
+        private const val AREA_SETTLE_MS = 3000L
 
         private val running = AtomicInteger(0)
 
@@ -117,7 +172,44 @@ class CarPlayPane(context: Context, private val listener: Listener?) {
     private val hidExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private val network = CarPlayNetworkCheck(app)
 
-    private val root = FrameLayout(context)
+    /**
+     * 描く範囲。iPhone には一番広い幅(画面全体 1480×480)で頼み、つないだまま描く範囲をこの幅のどれかへ切り替える。
+     * 範囲はどれも左上が原点。枠の幅に落ち着く範囲を選び([fitWidth])、範囲を枠の幅に合わせて横に伸び縮みさせる。空(指示 car-areas off)なら [WIDTH]×[HEIGHT] だけで頼む。
+     */
+    private var areas: List<Int> = emptyList()
+    private var area = 0
+    /** 指示で選んだ範囲。-1 なら枠の幅に合わせて自動で選ぶ。 */
+    private var areaPinned = -1
+    private fun streamWidth(): Int = areas.maxOrNull() ?: WIDTH
+    /**
+     * 流れてくる絵の高さ(iPhone に伝える画面全体の高さ)と、描く範囲の高さ。一覧に「h480」で範囲の高さ、
+     * 「d555」で画面全体の高さを書ける(試し)。iPhone は横長すぎる画面を断るので、画面全体は受け付けられる形で
+     * 伝え、範囲を上から詰めて置き、範囲の高さを枠の高さに合わせて映す(下のはみ出しは見せない)。
+     */
+    private var streamH = HEIGHT
+    private var areaH = HEIGHT
+
+    private val root = object : FrameLayout(context) {
+        override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+            super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+            if (areas.isEmpty() || measuredHeight <= 0) return
+            val k = measuredHeight / areaH.toFloat()
+            // 範囲を枠の幅にぴったり合わせる(広くても切らずに縮める)。つないで枠の幅の範囲へ切り替えるまでは、
+            // 伸ばさずに縦横比のまま真ん中に置く(最初の 740 を 1480 の枠へ 2 倍に伸ばしていた)
+            val kx = if (pendingFit > 0) k else measuredWidth / areas[area].toFloat()
+            video.measure(
+                MeasureSpec.makeMeasureSpec(Math.round(streamWidth() * kx), MeasureSpec.EXACTLY),
+                MeasureSpec.makeMeasureSpec(Math.round(streamH * k), MeasureSpec.EXACTLY),
+            )
+        }
+
+        override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
+            super.onLayout(changed, l, t, r, b)
+            if (areas.isEmpty() || b - t <= 0) return
+            val left = if (pendingFit > 0) maxOf(0, Math.round((r - l - areas[area] * (b - t) / areaH.toFloat()) / 2)) else 0
+            video.layout(left, 0, left + video.measuredWidth, video.measuredHeight)
+        }
+    }
     private val video = SurfaceView(context)
     private val label = TextView(context)
 
@@ -166,7 +258,7 @@ class CarPlayPane(context: Context, private val listener: Listener?) {
         video.setOnTouchListener { v, event -> onTouch(v, event) }
     }
 
-    /** 枠に置く View。大きさは持ち主が決める(740×416 を想定。違っても縦横比を保って描く)。 */
+    /** 枠に置く View。大きさは持ち主が決める(740×480 を想定。違っても縦横比を保って描く)。 */
     fun view(): View = root
 
     /** 今の状態(短い日本語)。 */
@@ -184,9 +276,14 @@ class CarPlayPane(context: Context, private val listener: Listener?) {
             record(DuoRecord.KIND_ERROR, "CarPlay を始められません。権限なし: ${missing.joinToString()}")
             return
         }
+        val ssid = wifiSsid()
+        if (ssid == null) {
+            askWifi(ssid = true)
+            return
+        }
         val wifiPass = savedWifiPass()
         if (wifiPass == null) {
-            askWifiPass()
+            askWifi(ssid = false)
             return
         }
         isRunning = true
@@ -201,8 +298,8 @@ class CarPlayPane(context: Context, private val listener: Listener?) {
         if (network.ottoTetheringOn() == false) {
             record(
                 DuoRecord.KIND_ERROR,
-                "OTTO 本体の Wi-Fi(ホットスポット $OTTO_AP_SSID)が切れています。CarPlay はこの Wi-Fi を使います。" +
-                    "OTTO の設定でホットスポットをオンにし、「自動的にオフ」をオフにしてください",
+                "この機器の Wi-Fi アクセスポイント「$ssid」が切れています。CarPlay はこの Wi-Fi を使います。" +
+                    "機器の設定でアクセスポイントをオンにし、「自動的にオフ」をオフにしてください",
             )
         }
         record(DuoRecord.KIND_LOG, "キー対応表: " + CarPlayKeyMap.describe())
@@ -210,19 +307,36 @@ class CarPlayPane(context: Context, private val listener: Listener?) {
         try {
             val microphone = app.checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
                 PackageManager.PERMISSION_GRANTED
+            // ダイヤルの試しの切り替えは、iPhone に伝える前(/info を作る前)に決める
+            AirPlayHid.knobBasic = prefs().getBoolean(KEY_KNOB_BASIC, false)
+            AirPlayHid.distinctIds = prefs().getBoolean(KEY_HID_SPLIT, false)
+            AirPlayHid.displayFeatures = prefs().getInt(KEY_FEATURES, 0x0A)
+            AirPlayHid.withTouch = prefs().getBoolean(KEY_WITH_TOUCH, true)
+            AirPlayHid.realUuids = prefs().getBoolean(KEY_REAL_UUID, false)
+            AirPlayHid.focusTransfer = prefs().getBoolean(KEY_FOCUS, true)
+            areas = savedAreas()
+            areaH = if (areas.isEmpty()) HEIGHT else savedHeight('h') ?: HEIGHT
+            streamH = if (areas.isEmpty()) HEIGHT else savedHeight('d') ?: areaH
+            // 最初の範囲は必ず 740(横長すぎる範囲で始めると iPhone が「解像度に対応していません」と断る。
+            // つないだ後の切り替えなら 1480 も受ける。2026-10-29 実機)。枠の幅に合わせるのは、つないで 3 秒後
+            area = areas.indices.minByOrNull { Math.abs(areas[it] - WIDTH) } ?: 0
+            pendingFit = maxOf(1, root.width) // 1 = まだ枠の幅が決まっていない(落ち着いたときの枠の幅を使う)
+            areaPinned = -1
+            root.requestLayout()
             val airPlayConfig = createAirPlayConfig(microphone)
             val renderer = AndroidMediaSink(
                 context = app,
-                videoWidth = WIDTH,
-                videoHeight = HEIGHT,
-                videoSizes = mapOf(SCREEN_TYPE_MAIN to (WIDTH to HEIGHT)),
+                videoWidth = streamWidth(),
+                videoHeight = streamH,
+                videoSizes = mapOf(SCREEN_TYPE_MAIN to (streamWidth() to streamH)),
                 onScreenStreamActiveChanged = { _, active ->
-                    main.post { if (myGeneration == generation) label.visibility = if (active) View.GONE else View.VISIBLE }
+                    main.post { if (myGeneration == generation) setStreaming(active) }
                 },
                 onAudioActive = { audioType, active ->
                     main.post {
                         if (myGeneration == generation) {
-                            record(DuoRecord.KIND_STATE, "CarPlay の音: $audioType " + if (active) "開始" else "終了")
+                            record(DuoRecord.KIND_STATE, "CarPlay の音: $audioType " + (if (active) "開始" else "終了") +
+                                " (再生中のアプリ=${nowPlayingApp ?: "不明"})")
                             listener?.onAudio(audioType.lowercase(), active)
                         }
                     }
@@ -236,11 +350,13 @@ class CarPlayPane(context: Context, private val listener: Listener?) {
             }
             val next = CarPlayController(
                 context = app,
-                config = createRuntimeConfig(wifiPass),
+                config = createRuntimeConfig(ssid, wifiPass),
                 airPlayConfig = airPlayConfig,
                 identity = AirPlayPersistence.loadIdentity(app),
                 pairings = pairings,
                 listener = sessionListener(myGeneration),
+                onRouteGuidance = { frame -> onRouteFrame(frame, myGeneration) },
+                onNowPlaying = { state -> onNowPlayingState(state, myGeneration) },
                 media = media,
                 reportStatus = { status -> if (myGeneration == generation) onControllerStatus(status) },
                 loadPairRecord = { AirPlayPersistence.loadLockdownRecord(app) },
@@ -249,7 +365,7 @@ class CarPlayPane(context: Context, private val listener: Listener?) {
             )
             controller = next
             setStatus("開始しています")
-            record(DuoRecord.KIND_STATE, "CarPlay 開始 ${WIDTH}x$HEIGHT 無線 MFi=${MfiProbe.DEVICE_PATH} " +
+            record(DuoRecord.KIND_STATE, "CarPlay 開始 ${streamWidth()}x$streamH ${areasText()} 無線 主な操作=${primaryInputName()} ${knobTestText()} MFi=${MfiProbe.DEVICE_PATH} " +
                 "MultiPlay の様子: " + network.multiPlayHints())
             next.start()
         } catch (error: Throwable) {
@@ -263,6 +379,7 @@ class CarPlayPane(context: Context, private val listener: Listener?) {
     fun stop() {
         if (!isRunning) return
         generation++
+        clearRoute()
         releaseAll()
         setStatus("停止中")
         record(DuoRecord.KIND_STATE, "CarPlay 停止(Wi-Fi・Bluetooth・チップを手放した)")
@@ -283,17 +400,31 @@ class CarPlayPane(context: Context, private val listener: Listener?) {
         val buf = typing ?: return
         when (keyCode) {
             KeyEvent.KEYCODE_DEL -> if (buf.isNotEmpty()) buf.setLength(buf.length - 1)
-            KeyEvent.KEYCODE_ENTER -> {
+            KeyEvent.KEYCODE_ENTER -> if (typingSsid) {
+                val name = buf.toString().trim()
+                if (name.toByteArray(Charsets.UTF_8).size !in 1..32) {
+                    typingText = app.getString(R.string.cp_ssid_len, shown(buf))
+                    setStatus("Wi-Fi の名前は 1〜32 バイトです。もう一度入れてください")
+                    return
+                }
+                prefs().edit().putString(KEY_SSID, name).apply()
+                record(DuoRecord.KIND_STATE, "CarPlay 用の Wi-Fi の名前を保存しました: $name")
+                buf.setLength(0)
+                typingSsid = false
+                if (savedWifiPass() == null) { showTyping(); return } // 続けてパスワード
+                typing = null
+                start()
+                return
+            } else {
                 if (buf.length !in 8..63) {
                     typingText = app.getString(R.string.cp_wifi_len, dots(buf.length))
                     setStatus("パスワードは 8〜63 文字です。もう一度入れてください")
                     return
                 }
-                app.getSharedPreferences(WIFI_PREFS, Context.MODE_PRIVATE).edit()
-                    .putString(KEY_PASS, buf.toString()).apply()
+                prefs().edit().putString(KEY_PASS, buf.toString()).apply()
                 buf.setLength(0)
                 typing = null
-                record(DuoRecord.KIND_STATE, "OTTO の Wi-Fi のパスワードを保存しました(値は記録しません)")
+                record(DuoRecord.KIND_STATE, "CarPlay 用の Wi-Fi のパスワードを保存しました(値は記録しません)")
                 start()
                 return
             }
@@ -303,30 +434,271 @@ class CarPlayPane(context: Context, private val listener: Listener?) {
     }
 
     /** 指示 car-wifi-reset: 保存したパスワードを消し、入力を待つ(パスワードを変えたとき)。 */
-    fun resetWifiPass(): String {
-        stop()
-        app.getSharedPreferences(WIFI_PREFS, Context.MODE_PRIVATE).edit().remove(KEY_PASS).apply()
-        askWifiPass()
-        return "OTTO の Wi-Fi のパスワードを消しました。Duo Slate のキーボードで入れ直してください"
+    /**
+     * iPhone に伝える「主な操作」(0 宣言しない / 1 タッチ画面 / 2 タッチパッド / 3 ダイヤル。Apple の受信機の部品の定義)。
+     * MX-30 はダイヤルが主なので初期値 3。ダイヤルが効かない件(2026-10-29)を確かめるため、遠くから変えられる。
+     * 次に CarPlay がつながったときから効く。
+     */
+    private fun primaryInput(): Int = prefs().getInt(KEY_PRIMARY_INPUT, 3)
+
+    /** 指示 car-knob basic|full: ダイヤルの形。car-hidid split|same: 入力の部品の機器の番号。どちらもつなぎ直す。 */
+    fun setKnobTest(cmd: String): String {
+        val parts = cmd.trim().split(Regex("\\s+"))
+        val e = prefs().edit()
+        when {
+            parts[0] == "car-knob" && parts.getOrNull(1) in setOf("basic", "full") -> e.putBoolean(KEY_KNOB_BASIC, parts[1] == "basic")
+            parts[0] == "car-hidid" && parts.getOrNull(1) in setOf("split", "same") -> e.putBoolean(KEY_HID_SPLIT, parts[1] == "split")
+            else -> return "使い方: car-knob basic|full / car-hidid split|same"
+        }
+        e.apply()
+        record(DuoRecord.KIND_STATE, "CarPlay のダイヤルの試し: ${knobTestText()}。つなぎ直します")
+        if (isRunning) { stop(); start() }
+        return knobTestText() + "(つなぎ直します)"
     }
 
-    private fun savedWifiPass(): String? =
-        app.getSharedPreferences(WIFI_PREFS, Context.MODE_PRIVATE).getString(KEY_PASS, null)
-            ?.takeIf { it.length in 8..63 }
+    private fun knobTestText(): String =
+        "ダイヤルの形=" + (if (prefs().getBoolean(KEY_KNOB_BASIC, false)) "簡単" else "元") +
+            " 機器の番号=" + (if (prefs().getBoolean(KEY_HID_SPLIT, false)) "部品ごと" else "共通") +
+            " 画面の機能=0x" + Integer.toHexString(prefs().getInt(KEY_FEATURES, 0x0A)) +
+            " タッチの部品=" + (if (prefs().getBoolean(KEY_WITH_TOUCH, true)) "あり" else "なし") +
+            " 部品の名前=" + (if (prefs().getBoolean(KEY_REAL_UUID, false)) "UUID" else "数字") +
+            " フォーカスの受け渡し=" + (if (prefs().getBoolean(KEY_FOCUS, true)) "あり" else "なし")
 
-    private fun askWifiPass() {
+    /**
+     * 指示(試し): car-knobcfg input=3 basic=0 split=0 feat=10 touch=1 uuid=0 … ダイヤルまわりの設定をまとめて変え、
+     * つなぎ直す(書かなかった項目は元に戻す)。adb から自動で組み合わせを回すために使う。
+     */
+    fun setKnobConfig(cmd: String): String {
+        val kv = cmd.trim().split(Regex("\\s+")).drop(1).mapNotNull {
+            val p = it.split('='); if (p.size == 2) p[0] to p[1] else null
+        }.toMap()
+        prefs().edit()
+            .putInt(KEY_PRIMARY_INPUT, kv["input"]?.toIntOrNull() ?: 3)
+            .putBoolean(KEY_KNOB_BASIC, kv["basic"] == "1")
+            .putBoolean(KEY_HID_SPLIT, kv["split"] == "1")
+            .putInt(KEY_FEATURES, kv["feat"]?.toIntOrNull() ?: 0x0A)
+            .putBoolean(KEY_WITH_TOUCH, kv["touch"] != "0")
+            .putBoolean(KEY_REAL_UUID, kv["uuid"] == "1")
+            .putBoolean(KEY_FOCUS, kv["focus"] != "0")
+            .apply()
+        record(DuoRecord.KIND_STATE, "ダイヤルの試しの設定: 主な操作=${primaryInputName()} ${knobTestText()}。つなぎ直します")
+        if (isRunning) { stop(); start() }
+        return "主な操作=${primaryInputName()} ${knobTestText()}"
+    }
+
+    private fun savedAreas(): List<Int> =
+        (prefs().getString(KEY_AREAS, null) ?: DEFAULT_AREAS).split(Regex("[,_\\s]+")).mapNotNull { it.trim().toIntOrNull() }
+            .filter { it in MIN_AREA..4096 && it % 2 == 0 }.distinct() // 狭すぎる幅・奇数の幅は iPhone が断る
+
+    private fun savedHeight(tag: Char): Int? =
+        (prefs().getString(KEY_AREAS, null) ?: DEFAULT_AREAS).split(Regex("[,_\\s]+"))
+            .firstOrNull { it.startsWith(tag) }?.drop(1)?.toIntOrNull()?.takeIf { it in 100..2048 }
+
+    private fun areasText(): String =
+        if (areas.isEmpty()) "描く範囲=切り替えなし" else "描く範囲=${areas.joinToString(",")}×$areaH(今=${areas[area]}、画面全体=${streamWidth()}×$streamH)"
+
+    /** 枠がこの幅(画面の画素)に落ち着く。収まる一番広い範囲へ切り替える(指示で範囲を決めているときは変えない)。 */
+    fun fitWidth(px: Int) {
+        if (areas.isEmpty() || areaPinned >= 0 || px <= 0) return
+        if (pendingFit > 0) { pendingFit = px; return } // つないで落ち着くまでは、行き先の幅だけ覚えておく
+        fitArea(px)
+    }
+
+    private fun fitArea(visible: Int) {
+        // 一番近い幅の範囲(伸び縮みを小さく)
+        val fit = areas.indices.minByOrNull { Math.abs(areas[it] - visible) } ?: return
+        showArea(fit, "枠の幅 $visible")
+    }
+
+    private fun showArea(index: Int, why: String) {
+        if (index == area || index !in areas.indices) return
+        area = index
+        record(DuoRecord.KIND_STATE, "CarPlay の描く範囲: ${areas[index]}×$areaH へ($why)")
+        // つながってすぐなら、落ち着くのを待ってから送る(sessionListener が送る)
+        if (session != null && android.os.SystemClock.uptimeMillis() - sessionAt >= AREA_SETTLE_MS) sendArea()
+        main.post { root.requestLayout() }
+    }
+
+    private var sessionAt = 0L
+    /** つなぎ始めたときの枠の幅。つないで落ち着いてから、この幅の範囲へ切り替える。 */
+    private var pendingFit = 0
+
+    private fun sendArea() {
+        val sent = controller?.showViewArea(area) ?: false
+        if (!sent) record(DuoRecord.KIND_STATE, "CarPlay の描く範囲 ${areas.getOrNull(area)} を送れません(つながる前か、iPhone が範囲の切り替えに未対応)")
+    }
+
+    /**
+     * 指示(試し): car-areas 1480_740 … 描く範囲の幅の一覧を決めて、つなぎ直す / car-areas off … 元に戻す /
+     * car-area N … N 番の範囲へ切り替える(auto で枠の幅に合わせる)。
+     */
+    fun setAreas(cmd: String): String {
+        val parts = cmd.trim().split(Regex("\\s+"), limit = 2)
+        val arg = parts.getOrNull(1)?.trim().orEmpty()
+        if (parts[0] == "car-areatest") return startAreaTest(if (arg == "2") testSet2 else testSet1)
+        if (parts[0] == "car-area") {
+            if (areas.isEmpty()) return "描く範囲の切り替えはオフです(car-areas で幅の一覧を決めてください)"
+            if (arg == "auto") { areaPinned = -1; root.requestLayout(); return "枠の幅に合わせます。" + areasText() }
+            val i = arg.toIntOrNull() ?: return "使い方: car-area 0〜${areas.size - 1} / car-area auto"
+            if (i !in areas.indices) return "使い方: car-area 0〜${areas.size - 1} / car-area auto"
+            areaPinned = i
+            showArea(i, "指示")
+            return areasText()
+        }
+        // 指示シートは「,」を通さないので、「_」や空白の区切りも受ける
+        if (arg == "default") {
+            prefs().edit().remove(KEY_AREAS).apply()
+            record(DuoRecord.KIND_STATE, "CarPlay の描く範囲を既定に戻しました。つなぎ直します")
+            if (isRunning) { stop(); start() }
+            return "描く範囲=既定(つなぎ直します)"
+        }
+        val list = if (arg == "off") "" else arg.split(Regex("[,_\\s]+")).filter { it.isNotEmpty() }.joinToString(",")
+        prefs().edit().putString(KEY_AREAS, list).apply()
+        record(DuoRecord.KIND_STATE, "CarPlay の描く範囲の一覧を「${list.ifEmpty { "切り替えなし" }}」にしました。つなぎ直します")
+        if (isRunning) { stop(); start() }
+        return "描く範囲=${list.ifEmpty { "切り替えなし" }}(つなぎ直します)"
+    }
+
+    // ───────── 描く範囲の自動の試し(指示 car-areatest)。iPhone が受ける範囲の組み合わせを順に調べて記録する ─────────
+    private var testCases: List<String> = emptyList()
+    /** 1 組目: 2026-10-29 に全部 OK。 */
+    private val testSet1 = listOf(
+        "1480,1332,1184,1036,888,740",
+        "1480,1406,1332,1258,1184,1110,1036,962,888,814,740",
+        "1480,720", "1480,700", "1480,680", "1480,660", "1480,640",
+        "1480,740,h480,d520", "1600,1480,740", "1920,1480,740",
+    )
+    /** 2 組目: 狭い側の限界と、5% きざみ 20 個。 */
+    private val testSet2 = listOf(
+        "1480,627", "1480,600", "1480,560", "1480,520", "1480,480", "1480,444", "1480,400",
+        "1480,360", "1480,296", "1480,222", "1480,148", "1480,74",
+        (20 downTo 1).joinToString(",") { (it * 74).toString() },
+    )
+    private var testIndex = -1
+    private var testSeen = false
+    private var testDropped = false
+    private val testResults = mutableListOf<String>()
+    private var testRestore: String? = null
+
+    private fun startAreaTest(set: List<String>): String {
+        if (testIndex >= 0) return "描く範囲の試しは実行中です(${testIndex + 1}/${testCases.size})"
+        testCases = set
+        testRestore = prefs().getString(KEY_AREAS, null)
+        testResults.clear()
+        testIndex = 0
+        record(DuoRecord.KIND_STATE, "描く範囲の試しを始めます(${testCases.size} 通り、1 通り約 40 秒)")
+        runTestCase()
+        return "描く範囲の試しを始めます(${testCases.size} 通り)"
+    }
+
+    private fun runTestCase() {
+        val list = testCases[testIndex]
+        prefs().edit().putString(KEY_AREAS, list).apply()
+        testSeen = false
+        testDropped = false
+        if (isRunning) stop()
+        start()
+        // つながるまで最大 25 秒。つながったら、範囲を全部順に切り替えて、切れないかを見る
+        main.postDelayed({ checkTestCase(list) }, 25_000)
+    }
+
+    private fun checkTestCase(list: String) {
+        if (testIndex < 0) return
+        if (!testSeen || testDropped || !streaming) {
+            finishTestCase(list, if (!testSeen) "つながらない" else "つながってすぐ切れた")
+            return
+        }
+        val n = areas.size
+        for (i in 0 until n) main.postDelayed({ if (testIndex >= 0) showArea(i, "試し") }, i * 1500L)
+        main.postDelayed({
+            finishTestCase(list, if (testDropped || !streaming) "つながるが、範囲の切り替えで切れた" else "OK(範囲 $n 個、切り替えも切れない)")
+        }, n * 1500L + 4000)
+    }
+
+    private fun finishTestCase(list: String, result: String) {
+        val line = "[$list] $result"
+        testResults += line
+        record(DuoRecord.KIND_STATE, "描く範囲の試し ${testIndex + 1}/${testCases.size}: $line")
+        testIndex++
+        if (testIndex < testCases.size) { runTestCase(); return }
+        testIndex = -1
+        prefs().edit().apply { if (testRestore == null) remove(KEY_AREAS) else putString(KEY_AREAS, testRestore) }.apply()
+        record(DuoRecord.KIND_STATE, "描く範囲の試し まとめ: " + testResults.joinToString(" / ") + "。元の範囲に戻してつなぎ直します")
+        if (isRunning) stop()
+        start()
+    }
+
+    private fun primaryInputName(): String = when (primaryInput()) {
+        0 -> "宣言しない"; 1 -> "タッチ画面"; 2 -> "タッチパッド"; 3 -> "ダイヤル"; else -> "?"
+    }
+
+    /** 指示 car-input 0〜3: 主な操作を変え、CarPlay をつなぎ直す。 */
+    fun setPrimaryInput(value: Int): String {
+        if (value !in 0..3) return "car-input は 0(宣言しない)・1(タッチ画面)・2(タッチパッド)・3(ダイヤル)"
+        prefs().edit().putInt(KEY_PRIMARY_INPUT, value).apply()
+        record(DuoRecord.KIND_STATE, "CarPlay の主な操作を「${primaryInputName()}」にしました。つなぎ直します")
+        if (isRunning) { stop(); start() }
+        return "主な操作=${primaryInputName()}(つなぎ直します)"
+    }
+
+    fun resetWifiPass(): String {
+        stop()
+        prefs().edit().remove(KEY_PASS).apply()
+        askWifi(ssid = false)
+        return "CarPlay 用の Wi-Fi のパスワードを消しました。Duo Slate のキーボードで入れ直してください"
+    }
+
+    /**
+     * 設定から: CarPlay 用の Wi-Fi(この機器のアクセスポイント)の名前(ssid=true)かパスワードを入れ直す。
+     * CarPlay をいったん止め、Duo Slate のキーボードの入力を待つ。決定すると保存して、CarPlay をつなぎ直す。
+     */
+    fun editWifi(ssid: Boolean) {
+        stop()
+        typing = null
+        askWifi(ssid)
+    }
+
+    /** CarPlay 用の Wi-Fi の名前(SSID)。まだ決まっていなければ null。 */
+    fun wifiSsid(): String? {
+        prefs().getString(KEY_SSID, null)?.takeIf { it.isNotBlank() }?.let { return it }
+        if (prefs().getString(KEY_PASS, null) == null) return null
+        prefs().edit().putString(KEY_SSID, LEGACY_SSID).apply() // 名前の設定が無かった頃から使っている
+        return LEGACY_SSID
+    }
+
+    /** パスワードが保存されているか。 */
+    fun hasWifiPass(): Boolean = savedWifiPass() != null
+
+    private fun prefs() = app.getSharedPreferences(WIFI_PREFS, Context.MODE_PRIVATE)
+
+    private fun savedWifiPass(): String? = prefs().getString(KEY_PASS, null)?.takeIf { it.length in 8..63 }
+
+    /** 入力中の欄。true＝名前(SSID)、false＝パスワード。 */
+    private var typingSsid = false
+
+    private fun askWifi(ssid: Boolean) {
         if (typing == null) {
             typing = StringBuilder()
-            record(DuoRecord.KIND_STATE, "OTTO の Wi-Fi のパスワード待ち(Duo Slate のキーボードで入力)")
+            typingSsid = ssid
+            record(DuoRecord.KIND_STATE, "CarPlay 用の Wi-Fi の" + (if (ssid) "名前" else "パスワード") + "待ち(Duo Slate のキーボードで入力)")
         }
         showTyping()
     }
 
     private fun showTyping() {
-        val n = typing?.length ?: 0
-        typingText = app.getString(R.string.cp_wifi_ask, OTTO_AP_SSID, dots(n))
-        setStatus("OTTO の Wi-Fi「$OTTO_AP_SSID」のパスワード待ち($n 文字)")
+        val buf = typing ?: StringBuilder()
+        if (typingSsid) {
+            typingText = app.getString(R.string.cp_ssid_ask, shown(buf))
+            setStatus("Wi-Fi の名前の入力待ち(${buf.length} 文字)")
+        } else {
+            val ssid = wifiSsid() ?: ""
+            typingText = app.getString(R.string.cp_wifi_ask, ssid, dots(buf.length))
+            setStatus("Wi-Fi「$ssid」のパスワード待ち(${buf.length} 文字)")
+        }
     }
+
+    /** 名前は伏せずに見せる(空なら「まだ何も…」)。 */
+    private fun shown(buf: CharSequence) = if (buf.isEmpty()) app.getString(R.string.cp_empty) else buf.toString()
 
     private fun dots(n: Int) = if (n == 0) app.getString(R.string.cp_empty) else "●".repeat(n) + app.getString(R.string.cp_count, n)
 
@@ -342,20 +714,37 @@ class CarPlayPane(context: Context, private val listener: Listener?) {
         val current = session ?: return false
         val down = event.action == KeyEvent.ACTION_DOWN
         val first = down && event.repeatCount == 0
+        val name = KeyEvent.keyCodeToString(event.keyCode).removePrefix("KEYCODE_")
         when (action) {
             CarPlayKeyMap.Action.SELECT -> {
                 if (event.action == KeyEvent.ACTION_UP || first) {
-                    hid { current.sendKnobSelect(down) }
+                    knob("$name→決定" + if (down) "(押)" else "(離)") { current.sendKnobSelect(down) }
                 }
             }
-            CarPlayKeyMap.Action.ROTATE_RIGHT -> if (down) hid { current.sendKnob(AirPlayKnobState(wheel = CarPlayKeyMap.ROTATE_STEP)) }
-            CarPlayKeyMap.Action.ROTATE_LEFT -> if (down) hid { current.sendKnob(AirPlayKnobState(wheel = -CarPlayKeyMap.ROTATE_STEP)) }
-            CarPlayKeyMap.Action.BACK -> if (first) hid { current.sendKnob(AirPlayKnobState(back = true)) }
-            CarPlayKeyMap.Action.HOME -> if (first) hid { current.sendKnob(AirPlayKnobState(home = true)) }
-            CarPlayKeyMap.Action.TILT_UP -> if (first) hid { current.sendKnob(AirPlayKnobState(y = -CarPlayKeyMap.TILT_AMOUNT)) }
-            CarPlayKeyMap.Action.TILT_DOWN -> if (first) hid { current.sendKnob(AirPlayKnobState(y = CarPlayKeyMap.TILT_AMOUNT)) }
-            CarPlayKeyMap.Action.TILT_LEFT -> if (first) hid { current.sendKnob(AirPlayKnobState(x = -CarPlayKeyMap.TILT_AMOUNT)) }
-            CarPlayKeyMap.Action.TILT_RIGHT -> if (first) hid { current.sendKnob(AirPlayKnobState(x = CarPlayKeyMap.TILT_AMOUNT)) }
+            CarPlayKeyMap.Action.ROTATE_RIGHT -> if (down) knob("$name→右回し") { current.sendKnob(AirPlayKnobState(wheel = CarPlayKeyMap.ROTATE_STEP)) }
+            CarPlayKeyMap.Action.ROTATE_LEFT -> if (down) knob("$name→左回し") { current.sendKnob(AirPlayKnobState(wheel = -CarPlayKeyMap.ROTATE_STEP)) }
+            CarPlayKeyMap.Action.BACK -> if (first) knob("$name→戻る") { current.sendKnob(AirPlayKnobState(back = true)) }
+            CarPlayKeyMap.Action.HOME -> if (first) knob("$name→ホーム") { current.sendKnob(AirPlayKnobState(home = true)) }
+            CarPlayKeyMap.Action.TILT_UP -> if (first) {
+                // 簡単な形には倒すが無いので、回すとして送る
+                if (AirPlayHid.knobBasic) knob("$name→上へ倒す(回すで代用)") { current.sendKnob(AirPlayKnobState(wheel = -CarPlayKeyMap.ROTATE_STEP)) }
+                else knob("$name→上へ倒す") { current.sendKnob(AirPlayKnobState(y = -CarPlayKeyMap.TILT_AMOUNT)) }
+            }
+            CarPlayKeyMap.Action.TILT_DOWN -> if (first) {
+                // 簡単な形には倒すが無いので、回すとして送る
+                if (AirPlayHid.knobBasic) knob("$name→下へ倒す(回すで代用)") { current.sendKnob(AirPlayKnobState(wheel = CarPlayKeyMap.ROTATE_STEP)) }
+                else knob("$name→下へ倒す") { current.sendKnob(AirPlayKnobState(y = CarPlayKeyMap.TILT_AMOUNT)) }
+            }
+            CarPlayKeyMap.Action.TILT_LEFT -> if (first) {
+                // 簡単な形には倒すが無いので、回すとして送る
+                if (AirPlayHid.knobBasic) knob("$name→左へ倒す(回すで代用)") { current.sendKnob(AirPlayKnobState(wheel = -CarPlayKeyMap.ROTATE_STEP)) }
+                else knob("$name→左へ倒す") { current.sendKnob(AirPlayKnobState(x = -CarPlayKeyMap.TILT_AMOUNT)) }
+            }
+            CarPlayKeyMap.Action.TILT_RIGHT -> if (first) {
+                // 簡単な形には倒すが無いので、回すとして送る
+                if (AirPlayHid.knobBasic) knob("$name→右へ倒す(回すで代用)") { current.sendKnob(AirPlayKnobState(wheel = CarPlayKeyMap.ROTATE_STEP)) }
+                else knob("$name→右へ倒す") { current.sendKnob(AirPlayKnobState(x = CarPlayKeyMap.TILT_AMOUNT)) }
+            }
             // 番号は xcertplay の再生系 HID の並び(1 再生, 2 一時停止, 3 再生/一時停止, 4 次, 5 前)
             CarPlayKeyMap.Action.MEDIA_PLAY -> if (first) hid { current.sendMedia(1) }
             CarPlayKeyMap.Action.MEDIA_PAUSE -> if (first) hid { current.sendMedia(2) }
@@ -364,6 +753,31 @@ class CarPlayPane(context: Context, private val listener: Listener?) {
             CarPlayKeyMap.Action.MEDIA_PREVIOUS -> if (first) hid { current.sendMedia(5) }
         }
         return true
+    }
+
+    /** ダイヤルの信号の記録。3 秒ぶんまとめて 1 通にする(効かない原因を確かめるため。2026-10-29)。 */
+    private val knobLog = StringBuilder()
+    private var knobLogPosted = false
+
+    /** ダイヤルの信号を送り、送れたかを記録する。 */
+    private fun knob(what: String, send: () -> Boolean) {
+        hid {
+            val ok = send()
+            main.post {
+                if (knobLog.isNotEmpty()) knobLog.append(" | ")
+                knobLog.append(what).append(if (ok) "" else "(送れず)")
+                if (!knobLogPosted) {
+                    knobLogPosted = true
+                    main.postDelayed({
+                        knobLogPosted = false
+                        if (knobLog.isNotEmpty()) {
+                            record(DuoRecord.KIND_STATE, "CarPlay へダイヤル(主な操作=${primaryInputName()}): $knobLog")
+                            knobLog.setLength(0)
+                        }
+                    }, 3000)
+                }
+            }
+        }
     }
 
     /** ダイヤルの回転がキーでなく「スクロール」として届く機種のための受け口(任意)。 */
@@ -398,7 +812,7 @@ class CarPlayPane(context: Context, private val listener: Listener?) {
     private fun onTouch(v: View, event: MotionEvent): Boolean {
         val c = controller ?: return false
         if (session == null) return false
-        val contacts = CarPlayTouchMapper.contacts(event, v.width, v.height, WIDTH, HEIGHT)
+        val contacts = CarPlayTouchMapper.contacts(event, v.width, v.height, streamWidth(), streamH)
         if (contacts.isEmpty() && event.actionMasked == MotionEvent.ACTION_DOWN) return false
         c.sendTouch(contacts)
         return true
@@ -417,7 +831,7 @@ class CarPlayPane(context: Context, private val listener: Listener?) {
         }
     }
 
-    private fun createRuntimeConfig(wifiPass: String) = CarPlayRuntimeConfig(
+    private fun createRuntimeConfig(ssid: String, wifiPass: String) = CarPlayRuntimeConfig(
         mfiTarget = MfiTarget.I2C,
         linuxI2cPath = MfiProbe.DEVICE_PATH,
         identification = Iap2IdentificationConfig(
@@ -428,14 +842,15 @@ class CarPlayPane(context: Context, private val listener: Listener?) {
             firmwareVersion = "1.0.0",
             hardwareVersion = "1.0",
             carPlayUsbInterfaceNumber = 3,
+            routeGuidanceEnabled = routeGuidance,
         ),
         label = "Duo Cruise",
         hostName = "DuoCruise",
         transport = CarPlayTransport.WIRELESS,
         // OTTO では Wi-Fi Direct のグループが作れない(実機：家の Wi-Fi あり・なし とも createGroup が generic error)。
-        // OTTO 本体のホットスポット(名前が変わらない)で iPhone を受ける
+        // 機器のアクセスポイント(名前が変わらない。名前は設定で入れる)で iPhone を受ける
         wirelessHotspotMode = WirelessHotspotMode.MANUAL,
-        manualHotspotSsid = OTTO_AP_SSID,
+        manualHotspotSsid = ssid,
         manualHotspotPassphrase = wifiPass,
         manualHotspotBand = ManualHotspotBand.AUTO,
         manualHotspotSecurity = ManualHotspotSecurity.WPA2,
@@ -443,23 +858,27 @@ class CarPlayPane(context: Context, private val listener: Listener?) {
     )
 
     private fun createAirPlayConfig(microphone: Boolean): AirPlayConfig {
-        val metrics = app.resources.displayMetrics
-        val widthMm = Math.round(WIDTH / metrics.xdpi * 25.4f).coerceAtLeast(1)
-        val heightMm = Math.round(HEIGHT / metrics.ydpi * 25.4f).coerceAtLeast(1)
+        // 実際の画面の大きさ(本人の実測: 1480×480 の映る部分が 幅 23cm・高さ 9cm)。
+        // 機器が申告する画素の細かさ(321dpi)はスマホ並みの値で、そこから求めると幅 117mm の小さな画面として伝わっていた
+        val widthMm = Math.round(streamWidth() * SCREEN_W_MM / 1480f).coerceAtLeast(1)
+        val heightMm = Math.round(streamH * SCREEN_H_MM / 480f).coerceAtLeast(1)
         return AirPlayConfig(
             deviceName = "Duo Cruise",
             deviceId = "02:00:00:00:00:02",
             btMac = "02:00:00:00:00:01",
             sourceVersion = "950.7.1",
             main = AirPlayDisplayConfig(
-                widthPixels = WIDTH,
-                heightPixels = HEIGHT,
+                widthPixels = streamWidth(),
+                heightPixels = streamH,
                 widthPhysicalMm = widthMm,
                 heightPhysicalMm = heightMm,
                 fps = FPS,
+                primaryInputDevice = primaryInput(),
+                viewAreas = areas.map { AirPlayViewArea(it, areaH) },
+                initialViewArea = area,
             ),
-            // 日本の右ハンドル車(MX-30)
-            rightHandDrive = true,
+            // ハンドルの位置(設定。初期値は右ハンドル)
+            rightHandDrive = rightHandDrive,
             port = AIRPLAY_PORT,
             hevc = false,
             microphone = microphone,
@@ -475,7 +894,20 @@ class CarPlayPane(context: Context, private val listener: Listener?) {
                 if (myGeneration != generation) return@post
                 this@CarPlayPane.session = session
                 setStatus("CarPlay 表示中")
-                record(DuoRecord.KIND_STATE, "CarPlay の映像がつながった")
+                record(DuoRecord.KIND_STATE, "CarPlay の映像がつながった " + areasText() +
+                    if (areas.isEmpty()) "" else " iPhone が範囲の切り替えを受けるか=" + session.acceptsViewAreas())
+                // つながった直後に範囲の切り替えを送ると、iPhone が通信を切る(2026-10-29 実機)。
+                // 少し待ってから、つながる前に枠の幅で選んだ範囲を伝える
+                sessionAt = android.os.SystemClock.uptimeMillis()
+                if (areas.isNotEmpty()) main.postDelayed({
+                    if (myGeneration != generation) return@postDelayed
+                    val w = if (pendingFit > 1) pendingFit else root.width
+                    pendingFit = 0
+                    root.requestLayout()
+                    val before = area
+                    if (w > 0 && areaPinned < 0) fitArea(w)
+                    if (area == before) sendArea()
+                }, AREA_SETTLE_MS)
             }
         }
 
@@ -483,10 +915,23 @@ class CarPlayPane(context: Context, private val listener: Listener?) {
             main.post {
                 if (this@CarPlayPane.session === session) this@CarPlayPane.session = null
                 if (myGeneration != generation) return@post
-                label.visibility = View.VISIBLE
+                setStreaming(false)
                 setStatus("CarPlay が切れました(待機中)")
                 record(DuoRecord.KIND_STATE, "CarPlay の映像が切れた")
             }
+        }
+
+        /** iPhone から来た命令(画面の持ち主の切り替えなど)。地図を開く頼みの効き目を見るため記録する(同じ種類は 10 秒に 1 回)。 */
+        override fun onCommand(session: AirPlaySession, type: String, params: Map<String, Any?>) {
+            val now = android.os.SystemClock.elapsedRealtime()
+            val last = commandSeen[type]
+            if (last != null && now - last < 10_000) return
+            commandSeen[type] = now
+            val detail = params.entries.joinToString(" ") { (k, v) ->
+                val s = v.toString()
+                "$k=" + if (s.length > 160) s.take(160) + "…" else s
+            }
+            main.post { if (myGeneration == generation) record(DuoRecord.KIND_STATE, "iPhone からの命令: $type $detail") }
         }
 
         override fun onTransportError(message: String) {
@@ -558,7 +1003,7 @@ class CarPlayPane(context: Context, private val listener: Listener?) {
      */
     private fun forPeople(s: String): String = when {
         s.startsWith("権限が足りません") -> app.getString(R.string.cp_perm)
-        s.startsWith("パスワード") || s.startsWith("OTTO の Wi-Fi") -> typingText ?: s
+        s.startsWith("パスワード") || s.startsWith("Wi-Fi") -> typingText ?: s
         s.startsWith("失敗") || s.startsWith("始められません") -> app.getString(R.string.cp_failed)
         s.startsWith("CarPlay が切れました") || s.startsWith("iPhone との接続が終わりました") -> app.getString(R.string.cp_ended)
         s.startsWith("ペアリング済みの iPhone") -> app.getString(R.string.cp_waiting)
@@ -568,6 +1013,93 @@ class CarPlayPane(context: Context, private val listener: Listener?) {
         else -> app.getString(R.string.cp_preparing)
     }
 
+    // ───────── ナビの案内(Duo Cruise Unlimited Edition) ─────────
+
+    private val route = RouteGuidanceAccumulator()
+    private var lastRouteLog = ""
+
+    /** iAP2 の受信スレッドから。積み重ねて、メインスレッドで持ち主へ渡す。 */
+    private var lastNowPlayingLog: String? = null
+
+    /** 今 CarPlay で再生しているアプリの名前(iPhone が知らせてきたもの)。分からなければ null。 */
+    @Volatile var nowPlayingApp: String? = null
+        private set
+
+    /**
+     * 再生中の情報。CarPlay で鳴っている音がどのアプリのものかを見分けるために、
+     * アプリの名前と再生状態が変わったときだけ記録する(曲名・動画名は記録しない)。
+     */
+    private fun onNowPlayingState(state: com.shilapi.xcertplay.iap2.message.Iap2NowPlayingState, myGeneration: Int) {
+        nowPlayingApp = state.appName
+        main.post {
+            if (myGeneration != generation) return@post
+            val key = "アプリ=${state.appName ?: "(名前なし)"} 状態=${state.status}"
+            if (key != lastNowPlayingLog) {
+                lastNowPlayingLog = key
+                record(DuoRecord.KIND_STATE, "CarPlay の再生中: $key")
+            }
+        }
+    }
+
+    private fun onRouteFrame(frame: com.shilapi.xcertplay.iap2.wire.Iap2Frame, myGeneration: Int) {
+        val now = route.update(frame) ?: return
+        main.post {
+            if (myGeneration != generation) return@post
+            // 記録は、状態か曲がり角が変わったときだけ(距離が縮むたびには残さない)
+            val key = "${now.state}/${now.turnIndex}/${now.maneuverType}/${now.onto}"
+            if (key != lastRouteLog) {
+                lastRouteLog = key
+                record(DuoRecord.KIND_STATE, "ナビの案内: $now")
+            }
+            // 案内が始まったら(つながった時点で案内中のときも)、CarPlay に地図を開くよう 1 回だけ頼む
+            if (now.guiding && !guidingSeen) {
+                guidingSeen = true
+                requestMaps("ナビの案内が始まった")
+            } else if (!now.guiding && !now.arrived) {
+                guidingSeen = false
+            }
+            listener?.onRoute(now)
+        }
+    }
+
+    /** iPhone からの命令の種類ごとの、最後に記録した時刻(記録の連発を防ぐ)。 */
+    private val commandSeen = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
+    /** 今の案内について、地図を開くよう頼み済みか。 */
+    private var guidingSeen = false
+
+    /**
+     * CarPlay に地図(マップ)の画面を開くよう iPhone に頼む(AirPlay の命令 requestUI、URL は maps:)。
+     * CarPlay にどの画面を出すかは iPhone が決める。この命令を iPhone が受け付けるかは確かめ中(2026-10-29)。
+     * 送れたかどうかだけ記録する(画面が変わったかは、こちらからは分からない)。
+     * @return 送れたら true(受け付けられたかではない)
+     */
+    fun requestMaps(why: String): String {
+        val s = session
+        if (s == null) {
+            record(DuoRecord.KIND_STATE, "地図を開く頼み($why): CarPlay がつながっていないので送りません")
+            return "CarPlay がつながっていません"
+        }
+        hidExecutor.execute {
+            val ok = try {
+                s.sendCommand(linkedMapOf("type" to "requestUI", "params" to linkedMapOf<String, Any?>("url" to "maps:")))
+            } catch (e: Exception) {
+                false
+            }
+            main.post {
+                record(DuoRecord.KIND_STATE, "地図を開くよう iPhone に頼みました($why): " + if (ok) "送信済み" else "送れません")
+            }
+        }
+        return "地図を開くよう iPhone に頼みます"
+    }
+
+    private fun clearRoute() {
+        route.reset()
+        guidingSeen = false
+        lastRouteLog = ""
+        listener?.onRoute(null)
+    }
+
     private fun record(kind: String, text: String) {
         DuoRecord.send(app, kind, text)
         listener?.onRecord(kind, text)
@@ -575,7 +1107,7 @@ class CarPlayPane(context: Context, private val listener: Listener?) {
 
     private fun releaseAll() {
         session = null
-        label.visibility = View.VISIBLE
+        setStreaming(false)
         val c = controller
         val s = sink
         controller = null

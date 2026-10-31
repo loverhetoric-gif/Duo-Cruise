@@ -25,6 +25,26 @@ object AirPlayHid {
     const val MEDIA_HID_UID = 0x2a2a2a2c
     const val TELEPHONY_HID_UID = 0x2a2a2a2d
 
+    /**
+     * Duo Cruise: ダイヤルが CarPlay に効かない件(2026-10-29)を確かめるための切り替え。CarPlay を始める前に決める。
+     * knobBasic=true: 押す・ホーム・戻る・回すだけの簡単な形(Apple の受信機部品の HIDKnobBasic と同じ。2 バイト)。
+     * distinctIds=true: 入力の部品ごとに機器の番号(hidProductID)を分ける(元は全部 1)。
+     */
+    @Volatile var knobBasic = false
+    @Volatile var distinctIds = false
+    /** 試し: 画面の機能(0x02 ダイヤル / 0x04 粗いタッチ / 0x08 細かいタッチ / 0x10 タッチパッド)。 */
+    @Volatile var displayFeatures = 0x0A
+    /** 試し: タッチの部品を iPhone に伝えるか。 */
+    @Volatile var withTouch = true
+    /** 試し: 部品の名前(uuid)を UUID の形で書くか(元は 16 進の数字だけ)。 */
+    @Volatile var realUuids = false
+    /** 試し: フォーカスの受け渡し(focusTransfer)に対応すると答えるか。 */
+    @Volatile var focusTransfer = true
+
+    /** 部品の名前。hidDevices と hidSendReport で同じものを使う。 */
+    fun uidString(uid: Int): String =
+        if (realUuids) "2a2a2a2a-0000-4000-8000-%012x".format(uid.toLong() and 0xffffffffL) else uid.toString(16)
+
     private const val TOUCH_CONTACTS = 2
     private const val BYTES_PER_FINGER = 6
 
@@ -32,7 +52,7 @@ object AirPlayHid {
         hidDeviceEntry(TOUCH_HID_UID, "xcertplay Touchscreen", multitouchDescriptor(xMax, yMax), displayUuid)
 
     fun knobHidDevice(displayUuid: String): Map<String, Any?> =
-        hidDeviceEntry(KNOB_HID_UID, "xcertplay Knob", knobDescriptor, displayUuid)
+        hidDeviceEntry(KNOB_HID_UID, "xcertplay Knob", if (knobBasic) knobBasicDescriptor else knobDescriptor, displayUuid)
 
     fun mediaHidDevice(displayUuid: String): Map<String, Any?> =
         hidDeviceEntry(MEDIA_HID_UID, "xcertplay Media", mediaDescriptor, displayUuid)
@@ -54,6 +74,12 @@ object AirPlayHid {
     }
 
     fun knobReport(state: AirPlayKnobState): ByteArray {
+        if (knobBasic) {
+            return byteArrayOf(
+                ((if (state.select) 0x01 else 0) or (if (state.home) 0x02 else 0) or (if (state.back) 0x04 else 0)).toByte(),
+                clampAxis(state.wheel),
+            )
+        }
         val report = ByteArray(4)
         report[0] = (
             (if (state.select) 0x01 else 0) or
@@ -76,10 +102,11 @@ object AirPlayHid {
         descriptor: ByteArray,
         displayUuid: String,
     ): Map<String, Any?> = linkedMapOf(
-        "hidProductID" to 1L,
+        // 部品ごとに分けるときは、機器の番号の末尾(1 タッチ / 2 ダイヤル / 3 メディア / 4 電話)を使う
+        "hidProductID" to if (distinctIds) (uid - TOUCH_HID_UID + 1).toLong() else 1L,
         "hidVendorID" to 2L,
         "hidCountryCode" to 0L,
-        "uuid" to uid.toString(16),
+        "uuid" to uidString(uid),
         "name" to name,
         "displayUUID" to displayUuid,
         "hidDescriptor" to descriptor,
@@ -110,6 +137,16 @@ object AirPlayHid {
         0x05, 0x01, 0x09, 0x01, 0xa1, 0x00,
         0x09, 0x30, 0x09, 0x31, 0x15, 0x81, 0x25, 0x7f, 0x75, 0x08, 0x95, 0x02, 0x81, 0x02, 0xc0,
         0x09, 0x38, 0x15, 0x81, 0x25, 0x7f, 0x75, 0x08, 0x95, 0x01, 0x81, 0x06, 0xc0,
+    )
+
+    /** 押す・ホーム・戻る・回すだけの形(Apple の受信機部品の HIDKnobBasicCreateDescriptor と同じ並び)。 */
+    private val knobBasicDescriptor = descriptor(
+        0x05, 0x01, 0x09, 0x08, 0xa1, 0x01,
+        0x05, 0x09, 0x09, 0x01, 0x15, 0x00, 0x25, 0x01, 0x75, 0x01, 0x95, 0x01, 0x81, 0x02,
+        0x05, 0x0c, 0x0a, 0x23, 0x02, 0x0a, 0x24, 0x02, 0x95, 0x02, 0x81, 0x02,
+        0x95, 0x05, 0x81, 0x01,
+        0x05, 0x01, 0x09, 0x38, 0x15, 0x81, 0x25, 0x7f, 0x75, 0x08, 0x95, 0x01, 0x81, 0x06,
+        0xc0,
     )
 
     private val mediaDescriptor = descriptor(

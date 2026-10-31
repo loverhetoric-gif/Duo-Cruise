@@ -66,7 +66,7 @@ class Iap2WirelessControlClient(
         stage = Iap2WirelessControlStage.AUTHENTICATED
         onProgress("iap2 authentication accepted")
 
-        for (subscription in Iap2WiredControlClient.subscriptions()) {
+        for (subscription in Iap2WiredControlClient.subscriptions(controlIdentification.routeGuidanceEnabled)) {
             sendDuringBringUp(subscription, bringUpDeadlineNanos)
         }
         stage = Iap2WirelessControlStage.SUBSCRIBED

@@ -9,6 +9,7 @@ import android.view.View;
 import android.widget.TextView;
 
 import com.yuki.duocruise.carplay.CarPlayPane;
+import com.yuki.duocruise.carplay.Route;
 import com.yuki.duocruise.main.tv.TvPane;
 
 /**
@@ -36,7 +37,17 @@ final class Panes {
                 @Override public void onAudio(String audioType, boolean active) {
                     DuoActivity.carAudio(audioType, active);
                 }
-            }));
+
+                /** ナビの案内(Duo Cruise Unlimited Edition だけ。リリース版では届かない)。 */
+                @Override public void onRoute(Route route) {
+                    DuoActivity.carRoute(route);
+                }
+
+                /** 映像が届き始めた/止まった。つながるまでの演出を出し入れする。 */
+                @Override public void onStream(boolean active) {
+                    DuoActivity.stateChanged();
+                }
+            }, BuildConfig.UNLIMITED, Store.rightHand(a)));
         } catch (Throwable t) {
             DuoLog.error("CarPlay の部品を作れません: " + DuoLog.why(t));
             return new Broken(a, "CarPlay", DuoLog.why(t));
@@ -69,13 +80,28 @@ final class Panes {
         @Override public boolean onGenericMotion(MotionEvent e) { return p.onGenericMotion(e); }
         @Override public String status() { return p.status(); }
         @Override public String command(String cmd) {
-            return "car-wifi-reset".equals(cmd) ? p.resetWifiPass() : null;
+            if ("car-wifi-reset".equals(cmd)) return p.resetWifiPass();
+            if ("car-maps".equals(cmd)) return p.requestMaps("遠くからの指示");
+            if (cmd.startsWith("car-area")) return p.setAreas(cmd);
+            if (cmd.startsWith("car-knobcfg")) return p.setKnobConfig(cmd);
+            if (cmd.startsWith("car-knob") || cmd.startsWith("car-hidid")) return p.setKnobTest(cmd);
+            if (cmd.startsWith("car-input")) {
+                try { return p.setPrimaryInput(Integer.parseInt(cmd.substring(9).trim())); }
+                catch (NumberFormatException e) { return p.setPrimaryInput(-1); }
+            }
+            return null;
         }
         @Override public void scroll(float dx, float dy) { p.scroll(dx, dy); }
         @Override public void scrollEnd() { p.scrollEnd(); }
+        @Override public void fitWidth(int px) { p.fitWidth(px); }
         /** OTTO の Wi-Fi のパスワードを入力中のときだけ使う。 */
         @Override public void typeText(String text) { p.typeText(text); }
         @Override public void typeKey(int keyCode) { p.typeKey(keyCode); }
+        @Override public boolean streaming() { return p.getStreaming(); }
+        @Override public String displayText() { return p.displayText(); }
+        @Override public String wifiSsid() { return p.wifiSsid(); }
+        @Override public boolean hasWifiPass() { return p.hasWifiPass(); }
+        @Override public void editWifi(boolean ssid) { p.editWifi(ssid); }
         @Override public String name() { return "CarPlay"; }
         @Override public boolean real() { return true; }
     }

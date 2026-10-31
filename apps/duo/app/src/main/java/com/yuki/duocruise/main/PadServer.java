@@ -158,8 +158,11 @@ final class PadServer {
             int[] wh = sink.screen();
             send(out, "i " + wh[0] + " " + wh[1]);
             send(out, state);
+            if (!layout.isEmpty()) send(out, layout);
             send(out, bt);
             send(out, modeMsg);
+            send(out, menu);
+            send(out, target);
             BufferedReader in = new BufferedReader(new InputStreamReader(c.getInputStream(), StandardCharsets.UTF_8));
             PadPlayout po = new PadPlayout();
             playouts.add(po);
@@ -208,6 +211,15 @@ final class PadServer {
     }
 
     /** 操作している側が変わった(メインスレッドから)。iPhone の縁の光と左右の印に使う。 */
+    /** 画面の並び(Duo Slate の画面の縮図用)。「l 1画面 入れ替え 操作側 YouTube%」。 */
+    private volatile String layout = "";
+
+    void setLayout(String s) {
+        if (s.equals(layout)) return;
+        layout = s;
+        broadcast(s);
+    }
+
     void setState(String s) {
         if (s.equals(state)) return;
         state = s;
@@ -228,6 +240,32 @@ final class PadServer {
         if (s.equals(modeMsg)) return;
         modeMsg = s;
         broadcast(s);
+    }
+
+    /** 操作中のウィンドウのアプリ名(メインスレッドから)。Duo Slate の右上に出す。名前は固定しない(対応アプリが増える)。 */
+    private volatile String target = "tn ";
+    void setTargetName(String name) {
+        String s = "tn " + (name == null ? "" : name);
+        if (s.equals(target)) return;
+        target = s;
+        broadcast(s);
+    }
+
+    /** 設定メニューを開いた/閉じた(メインスレッドから)。Duo Slate をメニュー操作モードに切り替える合図。 */
+    private volatile String menu = "mn 0";
+    void setMenu(boolean open) {
+        String s = open ? "mn 1" : "mn 0";
+        if (s.equals(menu)) return;
+        menu = s;
+        broadcast(s);
+    }
+
+    /**
+     * 曲がる方向の光(Duo Cruise Unlimited Edition)。Duo Slate の縁の、曲がる側を一瞬灯す合図。
+     * 「t L FFC24F 55」= 左・色・強さ(%)。その瞬間だけの合図なので、あとからつないだ端末には送らない。
+     */
+    void turn(String side, int color, int level) {
+        broadcast(String.format(java.util.Locale.ROOT, "t %s %06X %d", side, color & 0xFFFFFF, level));
     }
 
     private void broadcast(String s) {

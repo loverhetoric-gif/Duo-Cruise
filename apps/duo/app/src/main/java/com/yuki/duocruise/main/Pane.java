@@ -23,6 +23,8 @@ interface Pane {
     String status();
     /** 記録シートの指示(例「tv-status」)。結果の1行を返す。扱わない部品は null。 */
     String command(String cmd);
+    /** CarPlay: 枠がこの幅に落ち着く(描く範囲を選ぶ)。 */
+    default void fitWidth(int px) {}
     /** 音量を下げる(1＝そのまま、0.2＝小さく、0＝消す)。音を出す部品だけが使う。 */
     default void duck(float level) {}
     /** 電話・Siri の間は止め(on)、終わったら止める前の状態に戻す(off)。音を出す部品だけが使う。 */
@@ -34,6 +36,15 @@ interface Pane {
     default void scroll(float dx, float dy) {}
     /** スクロールが終わった(たまりを捨てる)。 */
     default void scrollEnd() {}
+    /** 映像が届いているか(CarPlay だけ。つながるまでの演出に使う)。 */
+    default boolean streaming() { return true; }
+    /** 枠に出す、利用者向けの今の様子の文(CarPlay だけ)。 */
+    default String displayText() { return ""; }
+    /** CarPlay 用の Wi-Fi(この機器のアクセスポイント)の名前。CarPlay の部品だけが使う。 */
+    default String wifiSsid() { return null; }
+    default boolean hasWifiPass() { return false; }
+    /** CarPlay 用の Wi-Fi の名前(ssid=true)かパスワードを入れ直す。 */
+    default void editWifi(boolean ssid) {}
     /** 「CarPlay」「YouTube」。 */
     String name();
     /** 本物の部品なら true、仮の部品なら false。 */

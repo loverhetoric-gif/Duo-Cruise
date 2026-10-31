@@ -29,7 +29,7 @@ final class GuideView extends View {
     private static final int[][] PAGES = {
         { R.string.g1_t, R.string.g1_b },
         { R.string.g2_t, R.string.g2_b },
-        { R.string.g3_t, R.string.g3_r1, R.string.g3_r2, R.string.g3_r3, R.string.g3_r4, R.string.g3_r5, R.string.g3_r6 },
+        { R.string.g3_t, R.string.g3_r1, R.string.g3_r2, R.string.g3_r3, R.string.g3_r4, R.string.g3_r5, R.string.g3_r6, R.string.g3_r7 },
         { R.string.g4_t, R.string.g4_b },
     };
     /** ロゴと同じ差し色(暖色 → 寒色)。 */
@@ -223,7 +223,10 @@ final class GuideView extends View {
         String head = Tx.s(pg[0]);
         String[] lines = text.toString().split("\n");
         float left = 68 * dp + dx;
+        // 行が多いページは、画面の高さに収まるまで行の間を詰める
         float lineH = body.getTextSize() * 1.75f;
+        if (lines.length > 1) lineH = Math.max(body.getTextSize() * 1.3f, Math.min(lineH,
+                (h * 0.86f - title.getTextSize() - 30 * dp - body.getTextSize()) / (lines.length - 1)));
         float blockH = title.getTextSize() + 30 * dp + (lines.length - 1) * lineH + body.getTextSize();
         float y = (h - blockH) / 2f + title.getTextSize() * 0.86f;
         title.setAlpha(Math.round(255 * a));

@@ -9,7 +9,9 @@
     <string name="cp_starting">CarPlay を開始しています</string>
     <string name="cp_stopped">CarPlay は停止しています</string>
     <string name="cp_preparing">CarPlay を準備しています</string>
-    <string name="cp_wifi_ask">OTTO の Wi-Fi「%1$s」のパスワードを\nDuo Slate のキーボードで入力し、Return を押してください\n%2$s</string>
+    <string name="cp_wifi_ask">この機器の Wi-Fi アクセスポイント「%1$s」のパスワードを\nDuo Slate のキーボードで入力し、Return を押してください\n%2$s</string>
+    <string name="cp_ssid_ask">この機器の Wi-Fi アクセスポイントの名前(SSID)を\nDuo Slate のキーボードで入力し、Return を押してください\n%1$s</string>
+    <string name="cp_ssid_len">名前は 1〜32 文字(半角)です。もう一度入力してください\n%s</string>
     <string name="cp_wifi_len">パスワードは 8〜63 文字です。もう一度入力してください\n%s</string>
     <string name="cp_empty">（まだ何も入力されていません）</string>
     <string name="cp_count">（%d 文字）</string>

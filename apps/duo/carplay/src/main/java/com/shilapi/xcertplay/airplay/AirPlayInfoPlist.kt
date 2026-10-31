@@ -55,8 +55,8 @@ object AirPlayInfoPlist {
             info["uiContextLastOnDisplayURLs"] = emptyList<String>()
             info["uiContextNowOnDisplayURLs"] = listOfNotNull(config.main.initialUrl, cluster.initialUrl)
         }
-        info["hidDevices"] = listOf(
-            AirPlayHid.touchHidDevice(config.main.widthPixels, config.main.heightPixels, MAIN_UUID),
+        info["hidDevices"] = listOfNotNull(
+            if (AirPlayHid.withTouch) AirPlayHid.touchHidDevice(config.main.widthPixels, config.main.heightPixels, MAIN_UUID) else null,
             AirPlayHid.knobHidDevice(MAIN_UUID),
             AirPlayHid.mediaHidDevice(MAIN_UUID),
             AirPlayHid.telephonyHidDevice(MAIN_UUID),
@@ -136,7 +136,7 @@ object AirPlayInfoPlist {
             "heightPixelsMax" to display.heightPixels,
             "widthPhysical" to widthPhysical,
             "heightPhysical" to heightPhysical,
-            "features" to (DISPLAY_FEATURE_HIGH_FIDELITY_TOUCH or DISPLAY_FEATURE_KNOBS),
+            "features" to AirPlayHid.displayFeatures, // 元は DISPLAY_FEATURE_HIGH_FIDELITY_TOUCH or DISPLAY_FEATURE_KNOBS
             "primaryInputDevice" to display.primaryInputDevice,
         )
 
@@ -183,7 +183,7 @@ object AirPlayInfoPlist {
             "originYPixels" to 0,
             "viewAreaTransitionControl" to 0,
             "viewAreaStatusBarEdge" to 0,
-            "viewAreaSupportsFocusTransfer" to true,
+            "viewAreaSupportsFocusTransfer" to AirPlayHid.focusTransfer,
             "safeArea" to linkedMapOf(
                 "widthPixels" to (area.widthPixels - safe.left - safe.right),
                 "heightPixels" to (area.heightPixels - safe.top - safe.bottom),
@@ -208,7 +208,7 @@ object AirPlayInfoPlist {
             "originYPixels" to view.top,
             "viewAreaTransitionControl" to 0,
             "viewAreaStatusBarEdge" to 0,
-            "viewAreaSupportsFocusTransfer" to true,
+            "viewAreaSupportsFocusTransfer" to AirPlayHid.focusTransfer,
         )
         val safe = display.safeArea ?: AirPlayInsets()
         val safeArea = linkedMapOf<String, Any?>(
@@ -258,7 +258,7 @@ internal object AirPlayDisplayControlFactory {
             val requested = strings(value)
             val supported = linkedSetOf("viewAreas")
             // ナビ開始でマップを前面に出す(フォーカス移動)。これが無いと音声とバーだけで、地図が全面に出なかった(2026-10-28 実機)
-            supported += "focusTransfer"
+            if (AirPlayHid.focusTransfer) supported += "focusTransfer"
             if (config.hevc) supported += "hevc"
             if (eventPortAvailable) {
                 supported += "iAPChannel"

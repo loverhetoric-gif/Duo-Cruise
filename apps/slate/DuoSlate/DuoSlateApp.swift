@@ -29,6 +29,7 @@ struct PadScreen: View {
     @ObservedObject var link: PadLink
     @AppStorage("sensitivity") private var sensitivity = 1.0
     @AppStorage("acceleration") private var acceleration = 1.0
+    @AppStorage("autoSpeed") private var autoSpeed = true
     @AppStorage("theme") private var theme = 0
     /// 面の色とネオンの配色(昼・夜それぞれ)。設定で選ぶ。
     @AppStorage("dayTone") private var dayTone = PadTone.white.rawValue
@@ -38,6 +39,11 @@ struct PadScreen: View {
     @Environment(\.colorScheme) private var scheme
     @State private var typing = false
     @State private var settings = false
+    /// 画面の縮図を出しているか。触らずに 6 秒で消える。
+    @State private var mapShown = false
+    @State private var mapTouchedAt = Date()
+    /// ネオンの発光の強さ(設定。1＝標準)。
+    @AppStorage("neonLevel") private var neonLevel = 1.0
     /// 指が触れている場所(画面の座標)と、その光の強さ。
     @State private var touch: CGPoint?
     @State private var touchGlow = 0.0
@@ -63,6 +69,11 @@ struct PadScreen: View {
         // 時計・ステータスバーと下のホームバーの高さは GeometryReader で受け取る
         // (描くたびに UIKit の窓から直接読むと、SwiftUI の描き直しが止まるため)
         GeometryReader { geo in content(geo.safeAreaInsets) }
+            .onAppear {
+                #if DEBUG
+                if ProcessInfo.processInfo.environment["DUO_AUDIT"] == "1" { print("[AUDIT] " + DuoAudit.run()) }
+                #endif
+            }
     }
 
     private var connected: Bool {
@@ -73,14 +84,47 @@ struct PadScreen: View {
         if case .connected = link.state { return true }; return false
     }
 
+    /// メニュー操作モードを出すか(つながっていて、Duo Cruise が設定を開いている)。
+    private var menuMode: Bool {
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["DUO_MENU"] == "1" { return true }
+        #endif
+        return link.menuOpen && connected
+    }
+
+    /// 操作対象が YouTube のとき(フリックで操作)。アプリ名は箱から受けるので固定しない。
+    private var youtubeMode: Bool {
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["DUO_YT"] == "1" { return true }
+        #endif
+        return connected && !link.menuOpen && link.targetApp == "YouTube"
+    }
+
     private func content(_ ins: EdgeInsets) -> some View {
         ZStack {
             c.surface
-            Surface(sensitivity: sensitivity, acceleration: acceleration, screenWidth: link.screen.width,
-                    send: { link.send($0) }, onTouch: touched)
+            if menuMode {
+                // メニューを開いている間は、タッチパッドに代えてメニュー操作モードへ
+                FlickPad(c: c, level: neonLevel, profile: .menu, send: { link.send($0) })
+                    .transition(.opacity) // 丸のネオンがふっと浮かぶ演出は FlickPad 側(appear)で
+            } else if youtubeMode {
+                // 操作対象が YouTube のときは、二本指でなく丸のフリック(上下左右＋決定＋戻る)で
+                FlickPad(c: c, level: neonLevel, profile: .youtube, send: { link.send($0) })
+                    .transition(.opacity)
+            } else {
+                Surface(sensitivity: sensitivity, acceleration: acceleration, screen: link.screen, autoTune: autoSpeed,
+                        send: { link.send($0) }, onTouch: touched)
+                    .transition(.opacity)
+            }
             Lights(c: c, night: night, connected: connected, target: link.target,
-                   touch: touch, touchGlow: touchGlow, notice: notice)
+                   touch: touch, touchGlow: touchGlow, notice: notice, level: neonLevel)
                 .allowsHitTesting(false)
+            if mapShown && connected && !link.menuOpen {
+                LayoutMap(c: c, layout: link.layout, aspect: link.screen.width / max(1, link.screen.height),
+                          send: { link.send($0) }, touched: { mapTouchedAt = Date() })
+                    .padding(.horizontal, 28)
+                    .transition(.opacity.combined(with: .scale(scale: 0.94)))
+            }
             VStack {
                 // 角の丸みの内側に収める(横向きでは上の余白が 0 になるため、角の丸みから下げる)
                 HStack(alignment: .center) { settingLabel; Spacer(); statusLabel }
@@ -88,16 +132,20 @@ struct PadScreen: View {
                     .padding(.trailing, max(ins.trailing, Screen.cornerRadius * 0.45))
                     .padding(.leading, max(ins.leading, Screen.cornerRadius * 0.45))
                 Spacer()
-                HStack(spacing: 8) {
-                    key("arrow.uturn.backward") { link.send("k b") }
-                    key("house") { link.send("k h") }
-                    key("square.on.square") { link.send("k r") }
-                        .simultaneousGesture(LongPressGesture(minimumDuration: 0.5).onEnded { _ in link.send("k m") }) // 長押しで設定メニュー
-                    key(typing ? "keyboard.chevron.compact.down" : "keyboard") { typing.toggle() }
+                if !menuMode { // メニュー操作モード中は下のツールバーを隠し、操作に集中できるように
+                    HStack(spacing: 8) {
+                        key("arrow.uturn.backward") { link.send("k b") }
+                        key("house") { link.send("k h") }
+                        // 押す＝タスク、長押し＝設定メニュー(長押しのあとはタスクを送らない)
+                        HoldKey(icon: "square.on.square", c: c, tap: { link.send("k r") }, hold: { link.send("k m") })
+                        key(mapShown ? "rectangle.split.2x1.fill" : "rectangle.split.2x1") { toggleMap() }
+                        key(typing ? "keyboard.chevron.compact.down" : "keyboard") { typing.toggle() }
+                    }
+                    .frame(height: 50)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, max(ins.bottom, 12) + 4)
+                    .transition(.opacity)
                 }
-                .frame(height: 50)
-                .padding(.horizontal, 16)
-                .padding(.bottom, max(ins.bottom, 12) + 4)
             }
             KeyField(active: $typing) { link.send($0) }
                 .frame(width: 1, height: 1).opacity(0.01)
@@ -109,10 +157,28 @@ struct PadScreen: View {
         }
         .onChange(of: link.bluetoothUps) { _, _ in notice = Notice(kind: .bluetooth) }
         .onChange(of: link.switches) { _, _ in notice = Notice(kind: .switched) }
+        .onChange(of: link.turns) { _, _ in
+            notice = Notice(kind: .turn, side: link.turnSide, tint: link.turnColor, level: link.turnLevel)
+        }
         .sheet(isPresented: $settings) {
             SettingsSheet(sensitivity: $sensitivity, acceleration: $acceleration, theme: $theme,
-                          dayTone: $dayTone, nightTone: $nightTone, dayNeon: $dayNeon, nightNeon: $nightNeon)
+                          dayTone: $dayTone, nightTone: $nightTone, dayNeon: $dayNeon, nightNeon: $nightNeon,
+                          neonLevel: $neonLevel)
         }
+        .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { now in
+            #if DEBUG
+            // 確認用: 環境変数 DUO_MAP=1 で、画面の縮図を出したままにする
+            if ProcessInfo.processInfo.environment["DUO_MAP"] == "1" { if !mapShown { mapShown = true }; return }
+            #endif
+            if mapShown && now.timeIntervalSince(mapTouchedAt) > 6 {
+                withAnimation(.easeOut(duration: 0.3)) { mapShown = false }
+            }
+        }
+    }
+
+    private func toggleMap() {
+        mapTouchedAt = Date()
+        withAnimation(.spring(response: 0.42, dampingFraction: 0.75)) { mapShown.toggle() }
     }
 
     private func touched(_ p: CGPoint?) {
@@ -124,10 +190,10 @@ struct PadScreen: View {
         }
     }
 
-    /// 左上: 小さな SETTING。押すと設定。
+    /// 左上: 小さな Setting。押すと設定。
     private var settingLabel: some View {
         Button { settings = true } label: {
-            Text("SETTING")
+            Text("Setting")
                 .font(.system(size: 11, weight: .semibold))
                 .kerning(1.6)
                 .foregroundStyle(c.icon.opacity(c.dark ? 0.9 : 0.85))
@@ -140,7 +206,7 @@ struct PadScreen: View {
     /// 右上(ステータスバーのすぐ下): 縁の光と同じ色・同じ動きの文字だけ。押すと設定。
     private var statusLabel: some View {
         Button { settings = true } label: {
-            StatusText(c: c, connected: connected, notice: notice)
+            StatusText(c: c, connected: connected, notice: notice, target: link.targetApp)
                 .padding(.vertical, 8).padding(.horizontal, 4)
         }
         .buttonStyle(.plain)
@@ -172,14 +238,16 @@ struct PadScreen: View {
 
 /// UIKit のタッチパッド面を SwiftUI に置く。
 struct Surface: UIViewRepresentable {
-    var sensitivity: Double, acceleration: Double, screenWidth: Double
+    var sensitivity: Double, acceleration: Double, screen: CGSize, autoTune: Bool
     var send: (String) -> Void
     var onTouch: (CGPoint?) -> Void
     func makeUIView(context: Context) -> PadSurface { PadSurface(frame: .zero) }
     func updateUIView(_ v: PadSurface, context: Context) {
         v.sensitivity = sensitivity
         v.acceleration = acceleration
-        v.screenWidth = screenWidth
+        v.screenWidth = screen.width
+        v.screenHeight = screen.height
+        v.autoTune = autoTune
         v.send = send
         v.onTouch = onTouch
     }
@@ -230,26 +298,38 @@ struct SettingsSheet: View {
     @EnvironmentObject var link: PadLink
     @Binding var sensitivity: Double
     @Binding var acceleration: Double
+    @AppStorage("autoSpeed") private var autoSpeed = true
+    /// 今の向きのパッドの大きさ(画面全体で近似)。設定に出す自動の値のため。
+    private var padSize: CGSize {
+        (UIApplication.shared.connectedScenes.first as? UIWindowScene)?.screen.bounds.size ?? .zero
+    }
     @Binding var theme: Int
     @Binding var dayTone: String
     @Binding var nightTone: String
     @Binding var dayNeon: String
     @Binding var nightNeon: String
+    @Binding var neonLevel: Double
     @State private var host = UserDefaults.standard.string(forKey: "host") ?? ""
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
             Form {
-                Section("動きの速さ") {
+                Section {
+                    Toggle("画面に合わせて自動で調整", isOn: $autoSpeed)
+                    let tune = CursorTune.auto(link.screen, pad: padSize)
                     VStack(alignment: .leading) {
-                        Text("感度 \(String(format: "%.1f", sensitivity))")
-                        Slider(value: $sensitivity, in: 0.3...3, step: 0.1)
+                        Text("感度 \(String(format: "%.1f", autoSpeed ? tune.sensitivity : sensitivity))")
+                        Slider(value: autoSpeed ? .constant(tune.sensitivity) : $sensitivity, in: 0.3...3, step: 0.1)
                     }
+                    .disabled(autoSpeed)
                     VStack(alignment: .leading) {
-                        Text("加速 \(String(format: "%.1f", acceleration))(0＝加速なし)")
-                        Slider(value: $acceleration, in: 0...3, step: 0.1)
+                        Text("加速 \(String(format: "%.1f", autoSpeed ? tune.acceleration : acceleration))(0＝加速なし)")
+                        Slider(value: autoSpeed ? .constant(tune.acceleration) : $acceleration, in: 0...CursorTune.maxAccel, step: 0.1)
                     }
+                    .disabled(autoSpeed)
+                } header: { Text("動きの速さ") } footer: {
+                    if autoSpeed { Text("画面の解像度 \(Int(link.screen.width))×\(Int(link.screen.height)) と、iPhone の向きに合わせています") }
                 }
                 Section("ダークモード") {
                     Picker("ダークモード", selection: $theme) {
@@ -264,6 +344,10 @@ struct SettingsSheet: View {
                 Section("ネオンの配色") {
                     NeonRow(title: String(localized: "ライト"), dark: false, selection: $dayNeon)
                     NeonRow(title: String(localized: "ダーク"), dark: true, selection: $nightNeon)
+                    VStack(alignment: .leading) {
+                        Text("発光の強さ \(String(format: "%d%%", Int((neonLevel * 100).rounded())))")
+                        Slider(value: $neonLevel, in: 0.4...1.6, step: 0.05)
+                    }
                 }
                 Section {
                     TextField("空欄のままで大丈夫です(例 192.168.43.1)", text: $host)
@@ -289,6 +373,33 @@ struct SettingsSheet: View {
         }
     }
 }
+/// 押すと tap、長押しで hold。長押しのあと指を離しても tap は送らない(タスクと設定メニューが同時に出ていた)。
+struct HoldKey: View {
+    let icon: String
+    let c: Palette
+    var tap: () -> Void
+    var hold: () -> Void
+    @State private var held = false
+
+    var body: some View {
+        Button {
+            if held { held = false; return }
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            tap()
+        } label: {
+            Image(systemName: icon).font(.system(size: 22, weight: .light))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(KeyStyle(c: c))
+        .simultaneousGesture(LongPressGesture(minimumDuration: 0.5).onEnded { _ in
+            held = true
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            hold()
+        })
+    }
+}
+
 /// 面の色を選ぶ行: 小さな色見本を並べ、選んだものに輪を付ける。
 struct ToneRow: View {
     let title: String

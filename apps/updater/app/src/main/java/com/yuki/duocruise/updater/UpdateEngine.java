@@ -158,16 +158,50 @@ final class UpdateEngine {
 
     private static String now() { return new SimpleDateFormat("MM/dd HH:mm", Locale.JAPAN).format(new Date()); }
 
+    /** 確かめる間隔(合図の直後、20 秒後、60 秒後)。 */
+    private static final long[] RETRY_MS = {0, 20_000, 40_000};
+    private static final java.util.concurrent.atomic.AtomicBoolean realtimeBusy = new java.util.concurrent.atomic.AtomicBoolean();
+
+    /**
+     * 新しい版ができた合図を受けたときの確認(リアルタイムの更新)。呼んだスレッドで最後まで動く。
+     * 合図は更新アプリ自身(PushListener)と Duo Cruise の中継(CheckReceiver)の両方から届くので、
+     * 確認中に届いた分は捨てる。公開の直後は GitHub の一覧に新しい版がまだ出ないことがある(10-29 に 1 回)ため、
+     * 何も入らなければ少し待って確かめ直す。結果はすぐ記録シートへ送る。
+     * @param from 合図の届き方(記録用)
+     */
+    static int checkRealtime(Context c, String from) {
+        if (!realtimeBusy.compareAndSet(false, true)) {
+            UpdLog.add("新しい版の合図(" + from + ")を受けました。すでに確認中なので、そちらに任せます");
+            return 0;
+        }
+        try {
+            UpdLog.add("新しい版の合図(" + from + ")を受けました。今すぐ確認します");
+            int n = 0;
+            for (long wait : RETRY_MS) {
+                if (wait > 0) {
+                    UpdLog.add("新しい版がまだ見えないので、" + wait / 1000 + " 秒後に確かめ直します");
+                    Remote.kick();
+                    Thread.sleep(wait);
+                }
+                n = checkAndInstall(c, false);
+                if (n > 0) break;
+            }
+            Remote.own("log", "リアルタイム更新: " + lastResult + "(開始 " + n + " 件)");
+            return n;
+        } catch (InterruptedException e) {
+            return 0;
+        } finally {
+            realtimeBusy.set(false);
+            Remote.kick();
+        }
+    }
+
     /** 確認して、新しいものを入れる。入れ始めた数を返す。 */
     static int checkAndInstall(Context c, boolean includeMissing) { return checkAndInstall(c, includeMissing, false); }
 
-    /** OTTO を起動してから、本体を入れ替えてよい時間。これを過ぎた定期確認では本体を入れ替えない。 */
-    static final long BOOT_WINDOW_MS = 10 * 60 * 1000;
-
     /**
-     * periodic=true は 15 分ごとの定期確認。このときは、OTTO の起動直後(BOOT_WINDOW_MS 以内)を除き、
-     * Duo Cruise 本体を入れ替えない。入れ替えると本体が強制終了され、運転中の CarPlay・YouTube が止まる
-     * (2026-10-27、テスト版を出すたびに本体が落ち続けた)。本体は次に OTTO を起動したときに入れる。
+     * periodic=true は 15 分ごとの定期確認。新しい版があれば、Duo Cruise 本体も含めてその場で入れ替える
+     * (2026-10-29 本人: 更新は停車中の検証で行うもの。起動直後にしか入れ替えない制限は外した)。
      */
     static int checkAndInstall(Context c, boolean includeMissing, boolean periodic) {
         synchronized (LOCK) {
@@ -185,15 +219,17 @@ final class UpdateEngine {
                         UpdLog.add(it.label + ": 最新です (v" + it.installed + ")");
                         continue;
                     }
-                    if (periodic && it.pkg.equals("com.yuki.duocruise.main")
-                            && android.os.SystemClock.elapsedRealtime() > BOOT_WINDOW_MS) {
-                        UpdLog.add(it.label + ": v" + it.versionCode + " があります。使用中に落とさないよう、次に OTTO を起動したときに入れます");
-                        continue;
-                    }
                     UpdLog.add(it.label + ": v" + it.installed + " → v" + it.versionCode + " を取得します");
+                    long t0 = System.currentTimeMillis();
                     File f = download(c, it);
-                    UpdLog.add(it.label + ": 取得・照合OK。インストールします");
-                    install(c, f, it);
+                    UpdLog.add(it.label + ": 取得・照合OK(" + (f.length() / 1024) + " KB、"
+                            + (System.currentTimeMillis() - t0) / 1000 + " 秒)。インストールします");
+                    try {
+                        install(c, f, it);
+                    } catch (Exception e) {
+                        throw new Exception(it.label + " v" + it.versionCode + " のインストールを始められません: " + e.getMessage(), e);
+                    }
+                    UpdLog.add(it.label + ": v" + it.versionCode + " のインストールを始めました(結果は続けて届きます)");
                     started++;
                 }
                 UpdLog.add("確認を終了しました(インストール開始 " + started + " 件)");
@@ -260,12 +296,29 @@ final class UpdateEngine {
         return f;
     }
 
-    private static void install(Context c, File f, Item it) throws Exception {
+    /**
+     * このアプリが作ったまま残っているインストールのセッションを捨てる。
+     * 確認の画面で止まった・途中で落ちたセッションは閉じられずに残り、50 個たまると
+     * 「Too many active sessions」で何も入れられなくなる(2026-10-29 車で発生)。
+     */
+    static int abandonLeftovers(Context c) {
         PackageInstaller pi = c.getPackageManager().getPackageInstaller();
+        int n = 0;
+        for (PackageInstaller.SessionInfo si : pi.getMySessions()) {
+            try { pi.abandonSession(si.getSessionId()); n++; } catch (Exception ignored) {}
+        }
+        if (n > 0) UpdLog.add("残っていたインストールのセッションを " + n + " 個片付けました");
+        return n;
+    }
+
+    private static synchronized void install(Context c, File f, Item it) throws Exception {
+        PackageInstaller pi = c.getPackageManager().getPackageInstaller();
+        abandonLeftovers(c);
         PackageInstaller.SessionParams p = new PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL);
         p.setAppPackageName(it.pkg);
         if (Build.VERSION.SDK_INT >= 31) p.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED);
         int id = pi.createSession(p);
+        boolean committed = false;
         try (PackageInstaller.Session s = pi.openSession(id)) {
             try (InputStream in = new FileInputStream(f); OutputStream out = s.openWrite("base.apk", 0, f.length())) {
                 byte[] buf = new byte[65536]; int n;
@@ -276,6 +329,9 @@ final class UpdateEngine {
             Intent i = new Intent(c, InstallReceiver.class).setAction(ACTION).putExtra("label", it.label);
             PendingIntent pend = PendingIntent.getBroadcast(c, id, i, PendingIntent.FLAG_MUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
             s.commit(pend.getIntentSender());
+            committed = true;
+        } finally {
+            if (!committed) try { pi.abandonSession(id); } catch (Exception ignored) {}
         }
     }
 }

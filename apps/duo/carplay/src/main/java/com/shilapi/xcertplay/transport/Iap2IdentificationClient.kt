@@ -56,6 +56,11 @@ data class Iap2IdentificationConfig(
     val gpsLocationEnabled: Boolean = true,
     val vehicleSpeedEnabled: Boolean = false,
     val vehicleStatusCapabilities: Set<Int> = emptySet(),
+    /**
+     * Duo Cruise Unlimited Edition: ナビの案内(曲がり角・距離・到着)を受け取る画面として名乗る
+     * (識別情報の項目 30 RouteGuidanceDisplayComponent)。iPhone に断られたら、外して名乗り直す。
+     */
+    val routeGuidanceEnabled: Boolean = false,
     /** USB-IF identity used by StartHID; defaults match this app's existing AirPlay HID identity. */
     val hidVendorIdentifier: Int = 2,
     val hidProductIdentifier: Int = 1,
@@ -142,14 +147,22 @@ class Iap2IdentificationClient(private val session: Iap2Session) {
             throw IphoneUsbException.TimedOut("Timed out waiting for iAP2 control session readiness")
         }
 
+        var current = config
         while (true) {
             val frame = session.recv(remainingMillis(deadlineNanos))
                 ?: throw IphoneUsbException.TimedOut("Timed out waiting for iAP2 identification")
             when (frame.messageId) {
-                START_IDENTIFICATION -> session.send(identificationInformation(config), remainingMillis(deadlineNanos))
+                START_IDENTIFICATION -> session.send(identificationInformation(current), remainingMillis(deadlineNanos))
                 IDENTIFICATION_ACCEPTED -> return
                 IDENTIFICATION_REJECTED -> {
                     val rejected = Iap2BodyReader.of(frame).list().mapTo(LinkedHashSet()) { it.id }
+                    // ナビの案内の受け口(任意の項目)だけを断られたら、それを外して名乗り直す。CarPlay そのものは止めない
+                    if (current.routeGuidanceEnabled && rejected.isNotEmpty() && rejected.all { it == ROUTE_GUIDANCE_DISPLAY_COMPONENT }) {
+                        android.util.Log.w("DuoCarPlay", "ナビの案内の受け口を断られたので、外して名乗り直します")
+                        current = current.copy(routeGuidanceEnabled = false)
+                        session.send(identificationInformation(current), remainingMillis(deadlineNanos))
+                        continue
+                    }
                     throw Iap2IdentificationException.Rejected(rejected, frame.payload)
                 }
                 else -> throw Iap2IdentificationException.UnexpectedMessage(frame.messageId)
@@ -162,6 +175,9 @@ class Iap2IdentificationClient(private val session: Iap2Session) {
         const val IDENTIFICATION_INFORMATION = 0x1d01
         const val IDENTIFICATION_ACCEPTED = 0x1d02
         const val IDENTIFICATION_REJECTED = 0x1d03
+        /** 識別情報の項目 30: ナビの案内を受け取る画面(RouteGuidanceDisplayComponent)。 */
+        const val ROUTE_GUIDANCE_DISPLAY_COMPONENT = 30
+        const val ROUTE_GUIDANCE_COMPONENT_ID = 0
 
         private const val DEFAULT_TIMEOUT_MILLIS = 10_000L
         private const val MAXIMUM_TIMEOUT_MILLIS = 5 * 60 * 1_000L
@@ -266,6 +282,20 @@ class Iap2IdentificationClient(private val session: Iap2Session) {
                         u16(3, 1)
                         void(4)
                         void(5)
+                    }
+                }
+                if (config.routeGuidanceEnabled) {
+                    // 項目の番号は LIVI(f-io/LIVI, GPL-3.0)の iap2-csm と同じ。長さの上限も同じ値
+                    group(ROUTE_GUIDANCE_DISPLAY_COMPONENT) {
+                        u16(0, ROUTE_GUIDANCE_COMPONENT_ID)
+                        string(1, config.name)
+                        u16(2, 128) // 今いる道路の名前
+                        u16(3, 128) // 目的地の名前
+                        u16(4, 128) // 曲がった先の道路の名前
+                        u16(5, 128) // 曲がり方の説明
+                        u16(6, 50)  // 覚えておける曲がり角の数
+                        u16(7, 128) // 車線の説明
+                        u16(8, 50)  // 覚えておける車線の案内の数
                     }
                 }
             }

@@ -22,7 +22,11 @@ public class InstallReceiver extends BroadcastReceiver {
             UpdLog.add(label + ": 確認画面を開きます(自動で押します)");
             try { c.startActivity(confirm); } catch (Exception e) { notifyUser(c, label, confirm); }
         } else if (st == PackageInstaller.STATUS_SUCCESS) {
-            UpdLog.add(label + ": インストール成功");
+            String pkg = i.getStringExtra(PackageInstaller.EXTRA_PACKAGE_NAME);
+            String ver = "";
+            try { if (pkg != null) ver = " v" + c.getPackageManager().getPackageInfo(pkg, 0).getLongVersionCode(); } catch (Exception ignored) {}
+            UpdLog.add(label + ": インストール成功" + ver);
+            Remote.kick();
             // 本体は入れ替えで閉じるので、すぐ開き直す(ホームが別のアプリでも、CarPlay・YouTube が戻るように)
             if ("com.yuki.duocruise.main".equals(i.getStringExtra(PackageInstaller.EXTRA_PACKAGE_NAME))) {
                 try {

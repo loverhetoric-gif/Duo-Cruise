@@ -15,7 +15,13 @@ Duo Cruise の左枠に iPhone の CarPlay を映す部品。担当 B。
 - `orchestration/CarPlayController.kt`：`/dev/i2c-N` の時も、0x10/0x11 のうち証明書を持つ番地を選ぶ（CH341 と同じ方法）。`config.mfiI2cAddress` を指定した時は、その番地だけを使う
 - `orchestration/CarPlayRuntimeConfig.kt`：`mfiI2cAddress` を追加
 - `AirPlayPersistence.kt`：xcertplay の `common` から、識別情報とペアリング情報の保存だけを抜き出した
-- 新しく追加：`com.yuki.duocruise.carplay`（CarPlayPane・CarPlayKeyMap・MfiProbe・DuoRecord・CarPlayNetworkCheck）
+- 新しく追加：`com.yuki.duocruise.carplay`（CarPlayPane・CarPlayKeyMap・MfiProbe・DuoRecord・CarPlayNetworkCheck・RouteGuidance）
+- ナビの案内(Duo Cruise Unlimited Edition だけ。`CarPlayPane` の `routeGuidance` が true のとき):
+  - `transport/Iap2IdentificationClient.kt`：識別情報に RouteGuidanceDisplayComponent(項目 30)を足す。断られたら外して名乗り直す
+  - `iap2/catalog/Iap2Endpoint.kt`：識別情報の項目 30 の形を足す
+  - `iap2/message/Iap2Messages.kt`：StartRouteGuidanceUpdates に受け口 0 と申し込みの項目を入れる
+  - `orchestration/CarPlayController.kt`：0x5201/0x5202 を `onRouteGuidance` へ渡す
+  - 項目の番号は LIVI(https://github.com/f-io/LIVI, GPL-3.0)の iap2-csm に合わせた
 
 ## 使い方（C の DuoActivity から）
 

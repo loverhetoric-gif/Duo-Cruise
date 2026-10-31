@@ -23,12 +23,12 @@ public final class PanesLogicTest {
     public static void main(String[] a) {
         geometry();
         single();
-        grid(1480, 416, 7, "割り当て 1480×416(動作4つ)");
-        grid(740, 416, 7, "割り当て 740×416(動作4つ)");
-        grid(1480, 416, 8, "主ページ 1480×416");
-        grid(740, 416, 8, "主ページ 740×416");
-        grid(1480, 416, 6, "割り当て 1480×416");
-        grid(740, 416, 6, "割り当て 740×416");
+        grid(1480, 480, 7, "割り当て 1480×480(動作4つ)");
+        grid(740, 480, 7, "割り当て 740×480(動作4つ)");
+        grid(1480, 480, 8, "主ページ 1480×480");
+        grid(740, 480, 8, "主ページ 740×480");
+        grid(1480, 480, 6, "割り当て 1480×480");
+        grid(740, 480, 6, "割り当て 740×480");
         grid(740, 392, 8, "主ページ 740×392(ステータスバーが残った場合)");
         grid(1480, 480, 8, "主ページ 1480×480");
         navigation();
@@ -44,7 +44,7 @@ public final class PanesLogicTest {
         int[] t = SplitGeometry.single(1480, 480, true), c = SplitGeometry.single(1480, 480, false), o = SplitGeometry.offscreen(1480, 480);
         ok(t[0] == 0 && t[2] == 1480 && t[3] == 480, "1画面 YouTube は横いっぱい");
         ok(c[0] == 370 && c[2] == 1110 && c[3] == 480, "1画面 CarPlay は 740 幅のまま真ん中");
-        ok(o[0] == 1480 && o[2] - o[0] == 740, "出さない側は画面の外、大きさは半分のまま");
+        ok(o[0] == 1480 && o[2] - o[0] == 1480, "出さない側は画面の外、大きさは画面と同じ");
         int[] c7 = SplitGeometry.single(741, 480, false);
         ok(c7[0] >= 0 && c7[2] <= 741, "奇数幅でもはみ出さない");
     }
@@ -82,15 +82,15 @@ public final class PanesLogicTest {
     }
 
     static void geometry() {
-        int[] c = SplitGeometry.car(1480, 416, false, 50), t = SplitGeometry.tv(1480, 416, false, 50);
-        ok(c[0] == 0 && c[2] == 740 && c[3] == 416, "CarPlay 左 740×416");
-        ok(t[0] == 740 && t[2] == 1480 && t[3] == 416, "YouTube 右 740×416");
-        int[] cs = SplitGeometry.car(1480, 416, true, 50), ts = SplitGeometry.tv(1480, 416, true, 50);
+        int[] c = SplitGeometry.car(1480, 480, false, 50), t = SplitGeometry.tv(1480, 480, false, 50);
+        ok(c[0] == 0 && c[2] == 740 && c[3] == 480, "CarPlay 左 740×480");
+        ok(t[0] == 740 && t[2] == 1480 && t[3] == 480, "YouTube 右 740×480");
+        int[] cs = SplitGeometry.car(1480, 480, true, 50), ts = SplitGeometry.tv(1480, 480, true, 50);
         ok(cs[0] == 740 && ts[0] == 0, "入れ替えで左右が逆");
-        int[] o1 = SplitGeometry.half(1481, 416, 0), o2 = SplitGeometry.half(1481, 416, 1);
+        int[] o1 = SplitGeometry.half(1481, 480, 0), o2 = SplitGeometry.half(1481, 480, 1);
         ok(o1[2] == o2[0] && o2[2] == 1481, "奇数幅でも隙間・重なりなし");
         ok(SplitGeometry.tvOn(SplitGeometry.SIDE_RIGHT, false) && SplitGeometry.tvOn(SplitGeometry.SIDE_LEFT, true), "YouTube の側");
-        int[] ph = SplitGeometry.panel(1480, 416, true, SplitGeometry.SIDE_RIGHT);
+        int[] ph = SplitGeometry.panel(1480, 480, true, SplitGeometry.SIDE_RIGHT);
         ok(ph[0] == 740 && ph[2] == 1480, "操作盤(半分)は操作側の半分");
     }
 
@@ -113,7 +113,7 @@ public final class PanesLogicTest {
 
     static void navigation() {
         for (int[] wn : new int[][]{{1480, 8}, {740, 8}, {1480, 6}, {740, 6}, {740, 5}}) {
-            PanelGrid g = PanelGrid.compute(wn[0], 416, wn[1], 1f, 0);
+            PanelGrid g = PanelGrid.compute(wn[0], 480, wn[1], 1f, 0);
             for (int dir : new int[]{PanelGrid.RIGHT, PanelGrid.LEFT, PanelGrid.DOWN, PanelGrid.UP, PanelGrid.NEXT}) {
                 boolean[] seen = new boolean[wn[1]];
                 int i = 0;
@@ -123,7 +123,7 @@ public final class PanesLogicTest {
                 ok(all && i == 0, wn[0] + "幅 " + wn[1] + "個 向き" + dir + ": 全部を一巡して元に戻る");
             }
         }
-        PanelGrid g = PanelGrid.compute(740, 416, 8, 1f, 0); // 2列×4段
+        PanelGrid g = PanelGrid.compute(740, 480, 8, 1f, 0); // 2列×4段
         ok(g.move(0, PanelGrid.DOWN) == 2, "740: 下に倒すと真下");
         ok(g.move(0, PanelGrid.RIGHT) == 1, "740: 右に回すと隣");
         ok(g.move(6, PanelGrid.DOWN) == 1, "740: 左列の下端から次の列の上へ");
