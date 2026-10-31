@@ -719,6 +719,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         mapEngaged = true;
         applyLayout();
         showMode("corner", R.string.mode_corner, R.string.mode_corner_cap, Store.neonTurn(this));
+        Trace.clipHold(); // コーナーは通過するまでクリップを止めない(自動停止を取り消す)
         main.removeCallbacks(mapRelease); // 戻すのは、曲がり角を通過して plan.map が外れてから(applyRoute)
         DuoLog.log("曲がり角の案内: CarPlay を全画面にし、YouTube を小窓にしました");
     }
@@ -730,7 +731,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         applyLayout();
         DuoLog.log("曲がり角の案内: 元の表示に戻しました");
         Trace.event("corner-end", "");
-        main.postDelayed(() -> Trace.shot("corner-end"), Motion.MS + 250);
+        Trace.clipStop(); // 通過して戻ったので、数秒だけ残してクリップを止める
     }
 
     /** 到着: 地図をやめ、YouTube を全画面にする(次のルートが始まるまで)。 */
@@ -850,10 +851,9 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         String cap = "";
         if (capRes != 0 && !Store.modeSeen(this, key)) { cap = Tx.s(capRes); Store.setModeSeen(this, key); }
         root.showMode(Tx.s(nameRes), cap, color, true);
-        // 記録: このモードに切り替わった瞬間と、動きが落ち着いた後の2枚(配置とタイミングの検証用)
+        // 記録: このモードに切り替わった瞬間を動画クリップに(配置とタイミングの検証用。数秒で自動停止)
         Trace.event("mode", key);
-        Trace.shot("mode:" + key);
-        main.postDelayed(() -> Trace.shot("mode:" + key + ":settled"), Motion.MS + 250);
+        Trace.clip("mode:" + key);
     }
     private boolean isDay, alertDucked;
     private final Runnable alertUnduck = () -> { alertDucked = false; applyDuck(); };
@@ -1093,7 +1093,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         root.splitLine(false, null, null);
         animateYt(targetYt());
         DuoLog.log("分割比の調整: " + (keep ? "決定 " + splitYtText() : "取り消し"));
-        if (keep) { Trace.event("split", splitYtText()); main.postDelayed(() -> Trace.shot("split"), Motion.MS + 250); }
+        if (keep) { Trace.event("split", splitYtText()); Trace.clip("split"); }
     }
 
     /** 境目の両側に、左右それぞれの中身と割合を出す。 */
@@ -1144,7 +1144,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         focusActive();
         DuoLog.log("表示: " + (Store.single(this) ? "1画面 " + active().name() : "2画面"));
         Trace.event("single", Store.single(this) ? "1画面 " + active().name() : "2画面");
-        main.postDelayed(() -> Trace.shot("single"), Motion.MS + 250);
+        Trace.clip("single");
     }
 
     @Override public void swap() {
@@ -1156,7 +1156,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         focusActive();
         DuoLog.log("入れ替え: " + layoutText());
         Trace.event("swap", layoutText());
-        main.postDelayed(() -> Trace.shot("swap"), Motion.MS + 250);
+        Trace.clip("swap");
     }
 
     void togglePanel() {
@@ -1615,19 +1615,19 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         String a = cmd.length() > 5 ? cmd.substring(5).trim() : "";
         switch (a) {
             case "": case "status":
-                return "走行の記録: " + (Trace.on() ? "オン" : "オフ") + (Trace.shots() ? "・スクショあり" : "") + " / " + Trace.where();
+                return "走行の記録: " + (Trace.on() ? "オン" : "オフ") + (Trace.shots() ? "・録画あり" : "") + " / " + Trace.where();
             case "on":
                 Trace.setOn(this, true); TraceStats.start();
-                return "走行の記録を始めました" + (Trace.shots() ? "" : "(全画面スクショも要るなら trace shots)");
+                return "走行の記録を始めました" + (Trace.shots() ? "" : "(全画面録画も要るなら trace shots)");
             case "off":
                 Trace.setOn(this, false); TraceStats.stop(); ShotService.disable(this);
                 return "走行の記録を止めました";
             case "shots": case "shots on":
                 enableShots();
-                return "画面に出た許可で「開始」を押すと、全画面スクショ込みで記録します";
+                return "画面に出た許可で「開始」を押すと、切り替えの瞬間を全画面録画します";
             case "shots off":
                 Trace.setShots(this, false); ShotService.disable(this);
-                return "スクショを止めました(記録は続きます)";
+                return "録画を止めました(記録は続きます)";
             case "pull":
                 return Trace.where();
             default:

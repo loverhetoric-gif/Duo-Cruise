@@ -34,14 +34,12 @@ final class Trace {
     private static Handler io;                 // 専用スレッド。書き込みは全部ここで
     private static volatile boolean on;
     private static volatile boolean shots;     // スクショも撮るか
-    private static File dir, shotDir, file;
+    private static File dir, clips, file;
     private static Writer out;
-    private static long lastShotMs;            // スクショの連発を防ぐ
 
     private static final SimpleDateFormat STAMP = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS", Locale.ROOT);
     private static final SimpleDateFormat NAME = new SimpleDateFormat("yyyyMMdd-HHmmss", Locale.ROOT);
     private static final long KEEP_MS = 7L * 24 * 60 * 60 * 1000; // 1週間で古いものは消す
-    private static final long SHOT_GAP_MS = 350;                  // スクショの最短間隔
 
     private Trace() {}
 
@@ -77,9 +75,9 @@ final class Trace {
     private static void open() {
         try {
             dir = new File(app.getExternalFilesDir(null), "trace");
-            shotDir = new File(dir, "shots");
+            clips = new File(dir, "clips");
             //noinspection ResultOfMethodCallIgnored
-            shotDir.mkdirs();
+            clips.mkdirs();
             prune();
             file = new File(dir, NAME.format(new Date()) + ".jsonl");
             out = new FileWriter(file, true);
@@ -131,25 +129,43 @@ final class Trace {
         io.post(() -> line("{\"t\":\"" + stamp + "\",\"up\":" + up + ",\"ev\":\"stat\"," + body + "}"));
     }
 
-    /** いまの全画面を1枚撮る(スクショがオンのときだけ)。reason は撮った理由(mode:corner など)。 */
-    static void shot(String reason) {
-        if (!on || !shots || io == null) return;
-        long now = SystemClock.elapsedRealtime();
-        if (now - lastShotMs < SHOT_GAP_MS) return;
-        lastShotMs = now;
-        ShotService.grab(reason);
+    /** 切り替えの瞬間を動画クリップに収める(録画がオンのときだけ)。reason は理由(mode:corner など)。 */
+    static void clip(String reason) {
+        if (!on || !shots) return;
+        ShotService.clip(reason, ShotService.SETTLE_MS);
     }
 
-    /** ShotService が撮り終えたら呼ぶ(スレッドは問わない)。file は shots/ からの相対名。 */
-    static void shotSaved(String relFile, String reason) {
+    /** いま録っているクリップの自動停止を取り消し、通過まで保持する(コーナー)。 */
+    static void clipHold() {
+        if (!on || !shots) return;
+        ShotService.clipHold();
+    }
+
+    /** いま録っているクリップを数秒後に止める(コーナーを通過して戻ったとき)。 */
+    static void clipStop() {
+        if (!on || !shots) return;
+        ShotService.clipStop(ShotService.SETTLE_MS);
+    }
+
+    /** クリップの中の印(同じクリップに複数の切り替えが入るので、どこで何が起きたかを残す)。ShotService から。 */
+    static void clipMark(String reason) {
         if (io == null) return;
         final long up = SystemClock.elapsedRealtime();
         final String stamp = STAMP.format(new Date());
-        io.post(() -> line("{\"t\":\"" + stamp + "\",\"up\":" + up + ",\"ev\":\"shot\",\"file\":\""
-                + esc(relFile) + "\",\"reason\":\"" + esc(reason) + "\"" + ctxOrEmpty() + "}"));
+        io.post(() -> line("{\"t\":\"" + stamp + "\",\"up\":" + up + ",\"ev\":\"clip-mark\",\"reason\":\""
+                + esc(reason) + "\"" + ctxOrEmpty() + "}"));
     }
 
-    static File shotDir() { return shotDir; }
+    /** クリップが1本できたら呼ぶ(ShotService から)。file は trace/ からの相対名、dur はミリ秒。 */
+    static void clipSaved(String relFile, String reason, long durMs) {
+        if (io == null) return;
+        final long up = SystemClock.elapsedRealtime();
+        final String stamp = STAMP.format(new Date());
+        io.post(() -> line("{\"t\":\"" + stamp + "\",\"up\":" + up + ",\"ev\":\"clip\",\"file\":\""
+                + esc(relFile) + "\",\"reason\":\"" + esc(reason) + "\",\"durMs\":" + durMs + ctxOrEmpty() + "}"));
+    }
+
+    static File clipDir() { return clips; }
 
     /** 吸い出し方を一言で返す(記録シートの指示 trace pull の結果用)。 */
     static String where() {
@@ -176,7 +192,7 @@ final class Trace {
     /** 1週間より古い走行ファイルとスクショを消す。 */
     private static void prune() {
         long cut = System.currentTimeMillis() - KEEP_MS;
-        for (File d : new File[]{dir, shotDir}) {
+        for (File d : new File[]{dir, clips}) {
             File[] fs = d.listFiles();
             if (fs == null) continue;
             for (File f : fs) if (f.isFile() && f.lastModified() < cut) //noinspection ResultOfMethodCallIgnored
