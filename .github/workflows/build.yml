@@ -83,6 +83,8 @@ jobs:
         working-directory: apps/duo
         env:
           DUO_PUSH_TOPIC: ${{ secrets.DUO_PUSH_TOPIC }}
+          DUO_UPLOAD_URL: ${{ secrets.DUO_UPLOAD_URL }}
+          DUO_UPLOAD_TOKEN: ${{ secrets.DUO_UPLOAD_TOKEN }}
         run: |
           echo "sdk.dir=$ANDROID_HOME" > local.properties
           if [ -f gradlew ]; then

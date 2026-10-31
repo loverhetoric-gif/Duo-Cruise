@@ -138,14 +138,16 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         Trace.init(this, this::traceSnapshot);
         if (Store.traceOn(this)) {
             TraceStats.start();
-            if (Store.traceShots(this)) DuoLog.log("走行の記録: スクショは、次に画面で許可するまで止まっています(trace shots)");
+            if (Store.traceShots(this)) DuoLog.log("走行の記録: 録画は、次に画面で許可するまで止まっています(trace shots)");
         }
+        Uploader.sweep(this); // 前回までの走行で貯まった記録を、SIM でアップロード(送り先が設定されていれば)
         drive = new DriveWatch(this, new DriveWatch.Listener() {
             @Override public void driveState(int s) {
                 int was = driveState;
                 driveState = s;
                 DuoLog.log("運転の見張り: " + (s == DriveWatch.PARKED ? "駐車" : s == DriveWatch.STOPPED ? "停止" : "走行"));
                 Trace.event("drive", s == DriveWatch.PARKED ? "parked" : s == DriveWatch.STOPPED ? "stopped" : "moving");
+                if (s == DriveWatch.PARKED) Uploader.sweep(this0()); // 駐車したら、貯まった記録をまとめて送る
                 if (s == DriveWatch.MOVING) driveHeld = false; // 走り出したら、止まったとき/駐車の自動を再開
                 if (!Store.single(this0())) animateYt(targetYt());
                 modeForDrive(was, s);
@@ -1628,10 +1630,13 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
             case "shots off":
                 Trace.setShots(this, false); ShotService.disable(this);
                 return "録画を止めました(記録は続きます)";
+            case "send":
+                Uploader.sweep(this);
+                return Uploader.enabled() ? "アップロードを試みます(閉じたファイルを SIM で送信)" : "アップロードの送り先が未設定です(CI の秘密 DUO_UPLOAD_URL/TOKEN)";
             case "pull":
                 return Trace.where();
             default:
-                return "trace の使い方: on / off / shots / shots off / pull";
+                return "trace の使い方: on / off / shots / shots off / send / pull";
         }
     }
 

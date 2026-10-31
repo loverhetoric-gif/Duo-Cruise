@@ -167,6 +167,9 @@ final class Trace {
 
     static File clipDir() { return clips; }
 
+    /** いま書き込み中の走行ファイルの名前(アップロードで送信中にしないよう避ける)。無ければ null。 */
+    static String activeName() { File f = file; return f == null ? null : f.getName(); }
+
     /** 吸い出し方を一言で返す(記録シートの指示 trace pull の結果用)。 */
     static String where() {
         if (dir == null) return "まだ記録していません";
