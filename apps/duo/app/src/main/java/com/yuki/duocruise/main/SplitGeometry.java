@@ -32,6 +32,16 @@ final class SplitGeometry {
         return pct;
     }
 
+    /**
+     * YouTube(16:9)が黒枠なしでちょうど収まる、YouTube の幅の割合(%)。
+     * 高さ h の 16:9 の幅は h*16/9。これより広いと左右に、狭いと上下に黒枠が出る。
+     * 画面ごとに計算するので、別の車の解像度でも黒枠の出ない比率になる。
+     */
+    static int fit169Pct(int w, int h) {
+        if (w <= 0 || h <= 0) return 58;
+        return clampYt(Math.round(h * 16f / 9f / w * 100f));
+    }
+
     /** 画面上の左半分(side=0)か右半分(side=1)。50:50。操作盤などで使う。 */
     static int[] half(int w, int h, int side) {
         int mid = w / 2;

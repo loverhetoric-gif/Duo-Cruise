@@ -128,6 +128,8 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         setContentView(stage);
         setupInsets();
         applyLayout();
+        android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
+        ytFit = SplitGeometry.fit169Pct(dm.widthPixels, dm.heightPixels); // この画面で YouTube が 16:9(黒枠なし)になる割合
 
         askPermissions();
         // CarPlay は開いたら自動で始め、失敗・切断したら見張りがつなぎ直す
@@ -626,10 +628,11 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         if (demoYt >= 0) return demoYt;
         if (navEngaged) return Store.navYt(this);
         if (!driveHeld) { // 手で分割比を変えたら、次に走り出すまで自動を止める(家では常に停車のため)
-            if (driveState == DriveWatch.PARKED && Store.parkOn(this)) return 100;
-            if (driveState >= DriveWatch.STOPPED && Store.stopOn(this)) return Store.stopYt(this);
+            // 停止・駐車は YouTube を 16:9(黒枠なし)でいちばん大きく。全画面(100)は 3:1 で左右に黒枠が出るため使わない
+            if (driveState == DriveWatch.PARKED && Store.parkOn(this)) return ytFit;
+            if (driveState >= DriveWatch.STOPPED && Store.stopOn(this)) return ytFit;
         }
-        if (straightEngaged) return Store.straightYt(this);
+        if (straightEngaged) return ytFit; // 一本道(クルーズ)も 16:9 まで
         if (arriveEngaged) return 100;
         return Store.splitYt(this);
     }
@@ -641,8 +644,6 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     private boolean mapEngaged, arriveEngaged, turnDucked;
     /** 一本道(次の曲がり角が遠い)なので YouTube を大きくしている。 */
     private boolean straightEngaged;
-    /** この曲がり角では小窓をもう出した(曲がり角を過ぎるまで出し直さない)。 */
-    private boolean pipSpent;
 
     private final Runnable mapRelease = this::mapRelease;
 
@@ -681,10 +682,12 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         updateHint();
         boolean want = plan.map && Store.mapFront(this);
         if (want) {
-            if (!mapEngaged && !pipSpent) engageMap();
-        } else {
-            pipSpent = false;
-            if (mapEngaged && (route == null || !Store.mapFront(this))) mapRelease();
+            main.removeCallbacks(mapRelease); // 曲がり角に近づいている間は戻す予約を取り消し、0m まで保持
+            if (!mapEngaged) engageMap();
+        } else if (mapEngaged) {
+            // 曲がり角を通過した(残り距離が地図の距離より伸びた)。通過後、数秒だけ残してから元に戻す
+            main.removeCallbacks(mapRelease);
+            main.postDelayed(mapRelease, Math.max(1000, Store.mapHoldMs(this)));
         }
         boolean duck = plan.duck && Store.turnDuck(this);
         if (duck != turnDucked) { turnDucked = duck; applyDuck(); }
@@ -712,13 +715,11 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
      * 1 画面で CarPlay を出しているときは、もう地図が見えているので何もしない。
      */
     private void engageMap() {
-        pipSpent = true;
-        if (Store.single(this) && active() == car) return;
+        if (Store.single(this) && active() == car) return; // 1画面で CarPlay 表示中は、もう地図が見えている
         mapEngaged = true;
         applyLayout();
         showMode("corner", R.string.mode_corner, R.string.mode_corner_cap, Store.neonTurn(this));
-        main.removeCallbacks(mapRelease);
-        main.postDelayed(mapRelease, Math.max(1000, Store.mapHoldMs(this)));
+        main.removeCallbacks(mapRelease); // 戻すのは、曲がり角を通過して plan.map が外れてから(applyRoute)
         DuoLog.log("曲がり角の案内: CarPlay を全画面にし、YouTube を小窓にしました");
     }
 
@@ -823,6 +824,8 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     // ───────── 運転中の自動の切り替え(止まった・駐車・昼のネオン・Y!カーナビの警告) ─────────
     private DriveWatch drive;
     private int driveState = DriveWatch.MOVING;
+    /** この画面で YouTube が 16:9(黒枠なし)になる幅の割合(%)。停止・駐車・クルーズの上げ先。onCreate で計算。 */
+    private int ytFit = 58;
     /** 手で分割比を変えた後は、次に走り出すまで「止まったら/駐車したら」の自動を止める。 */
     private boolean driveHeld;
     /** 手で分割比を決めた印(停車中なら、自動に戻されないよう保つ)。 */
