@@ -132,11 +132,18 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         askPermissions();
         // CarPlay は開いたら自動で始め、失敗・切断したら見張りがつなぎ直す
         startCar("開いたので自動で");
+        // 走行の記録(Unlimited Edition・本人の検証用)。オンなら GPS の各点・切り替え・CPU/メモリを貯める
+        Trace.init(this, this::traceSnapshot);
+        if (Store.traceOn(this)) {
+            TraceStats.start();
+            if (Store.traceShots(this)) DuoLog.log("走行の記録: スクショは、次に画面で許可するまで止まっています(trace shots)");
+        }
         drive = new DriveWatch(this, new DriveWatch.Listener() {
             @Override public void driveState(int s) {
                 int was = driveState;
                 driveState = s;
                 DuoLog.log("運転の見張り: " + (s == DriveWatch.PARKED ? "駐車" : s == DriveWatch.STOPPED ? "停止" : "走行"));
+                Trace.event("drive", s == DriveWatch.PARKED ? "parked" : s == DriveWatch.STOPPED ? "stopped" : "moving");
                 if (s == DriveWatch.MOVING) driveHeld = false; // 走り出したら、止まったとき/駐車の自動を再開
                 if (!Store.single(this0())) animateYt(targetYt());
                 modeForDrive(was, s);
@@ -281,6 +288,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         if ("demo".equals(k)) startDemo();
         if ("demo-stop".equals(k)) stopDemo();
         if ("uiaudit".equals(k) && root != null) for (String ln : root.auditAll().split("\n")) DuoLog.log(ln);
+        if (k != null && (k.equals("trace") || k.startsWith("trace "))) DuoLog.log("adb: " + command(k));
         if (root != null) root.requestApplyInsets();
     }
 
@@ -313,6 +321,8 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         main.removeCallbacksAndMessages(null);
         if (instant != null) instant.stop();
         if (drive != null) drive.stop();
+        TraceStats.stop();
+        ShotService.disable(this);
 
         try { car.destroy(); } catch (Throwable t) { DuoLog.error("CarPlay の終了で失敗: " + DuoLog.why(t)); }
         try { tv.destroy(); } catch (Throwable t) { DuoLog.error("YouTube の終了で失敗: " + DuoLog.why(t)); }
@@ -718,6 +728,8 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         mapEngaged = false;
         applyLayout();
         DuoLog.log("曲がり角の案内: 元の表示に戻しました");
+        Trace.event("corner-end", "");
+        main.postDelayed(() -> Trace.shot("corner-end"), Motion.MS + 250);
     }
 
     /** 到着: 地図をやめ、YouTube を全画面にする(次のルートが始まるまで)。 */
@@ -835,6 +847,10 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         String cap = "";
         if (capRes != 0 && !Store.modeSeen(this, key)) { cap = Tx.s(capRes); Store.setModeSeen(this, key); }
         root.showMode(Tx.s(nameRes), cap, color, true);
+        // 記録: このモードに切り替わった瞬間と、動きが落ち着いた後の2枚(配置とタイミングの検証用)
+        Trace.event("mode", key);
+        Trace.shot("mode:" + key);
+        main.postDelayed(() -> Trace.shot("mode:" + key + ":settled"), Motion.MS + 250);
     }
     private boolean isDay, alertDucked;
     private final Runnable alertUnduck = () -> { alertDucked = false; applyDuck(); };
@@ -1074,6 +1090,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         root.splitLine(false, null, null);
         animateYt(targetYt());
         DuoLog.log("分割比の調整: " + (keep ? "決定 " + splitYtText() : "取り消し"));
+        if (keep) { Trace.event("split", splitYtText()); main.postDelayed(() -> Trace.shot("split"), Motion.MS + 250); }
     }
 
     /** 境目の両側に、左右それぞれの中身と割合を出す。 */
@@ -1123,6 +1140,8 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         if (!Store.single(this)) animateYt(targetYt()); // 2画面へ戻すとき、手動の比率で出す
         focusActive();
         DuoLog.log("表示: " + (Store.single(this) ? "1画面 " + active().name() : "2画面"));
+        Trace.event("single", Store.single(this) ? "1画面 " + active().name() : "2画面");
+        main.postDelayed(() -> Trace.shot("single"), Motion.MS + 250);
     }
 
     @Override public void swap() {
@@ -1133,6 +1152,8 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         relayout();
         focusActive();
         DuoLog.log("入れ替え: " + layoutText());
+        Trace.event("swap", layoutText());
+        main.postDelayed(() -> Trace.shot("swap"), Motion.MS + 250);
     }
 
     void togglePanel() {
@@ -1539,11 +1560,84 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     }
 
     /** 指示ブロードキャストから(メインスレッドで呼ぶ)。結果の1行を返す。 */
+    // ───────── 走行の記録(Trace) ─────────
+
+    /** いまの状態を JSON の断片で返す(記録の各行に添える)。Trace のスレッドから呼ばれる。 */
+    private String traceSnapshot() {
+        Route r = route;
+        int side = Store.side(this);
+        int yt = curYt < 0 ? Store.splitYt(this) : curYt;
+        String ds = driveState == DriveWatch.PARKED ? "parked" : driveState == DriveWatch.STOPPED ? "stopped" : "moving";
+        return "\"drive\":\"" + ds + "\",\"day\":" + (isDay ? 1 : 0)
+                + ",\"yt\":" + yt
+                + ",\"single\":" + (Store.single(this) ? 1 : 0)
+                + ",\"side\":\"" + (side == SplitGeometry.SIDE_LEFT ? "L" : "R") + "\""
+                + ",\"swap\":" + (Store.swapped(this) ? 1 : 0)
+                + ",\"map\":" + (mapEngaged ? 1 : 0)
+                + ",\"arr\":" + (arriveEngaged ? 1 : 0)
+                + ",\"str\":" + (straightEngaged ? 1 : 0)
+                + ",\"nav\":" + (navEngaged ? 1 : 0)
+                + ",\"held\":" + (driveHeld ? 1 : 0)
+                + ",\"conn\":" + (lastConn ? 1 : 0)
+                + ",\"turnM\":" + (r == null ? -1 : r.distanceToTurnM);
+    }
+
+    private static final int REQ_SHOT = 0xD0C;
+
+    /** 全画面スクショの許可画面を出す(本人が画面で「開始」を押す)。 */
+    private void enableShots() {
+        try {
+            android.media.projection.MediaProjectionManager mpm =
+                    (android.media.projection.MediaProjectionManager) getSystemService(MEDIA_PROJECTION_SERVICE);
+            startActivityForResult(mpm.createScreenCaptureIntent(), REQ_SHOT);
+        } catch (Throwable t) { DuoLog.error("画面の撮影の許可画面を出せません: " + DuoLog.why(t)); }
+    }
+
+    @Override protected void onActivityResult(int req, int res, Intent data) {
+        super.onActivityResult(req, res, data);
+        if (req != REQ_SHOT) return;
+        if (res == RESULT_OK && data != null) {
+            android.util.DisplayMetrics m = getResources().getDisplayMetrics();
+            ShotService.enable(this, res, data, m.widthPixels, m.heightPixels, m.densityDpi);
+            Trace.setShots(this, true);
+            if (!Trace.on()) { Trace.setOn(this, true); TraceStats.start(); }
+            DuoLog.log("走行の記録: 画面の撮影を許可しました");
+        } else {
+            DuoLog.log("走行の記録: 画面の撮影は許可されませんでした");
+        }
+    }
+
+    /** 記録シートの指示 / adb から: trace on / off / shots / shots off / pull。 */
+    private String traceCommand(String cmd) {
+        String a = cmd.length() > 5 ? cmd.substring(5).trim() : "";
+        switch (a) {
+            case "": case "status":
+                return "走行の記録: " + (Trace.on() ? "オン" : "オフ") + (Trace.shots() ? "・スクショあり" : "") + " / " + Trace.where();
+            case "on":
+                Trace.setOn(this, true); TraceStats.start();
+                return "走行の記録を始めました" + (Trace.shots() ? "" : "(全画面スクショも要るなら trace shots)");
+            case "off":
+                Trace.setOn(this, false); TraceStats.stop(); ShotService.disable(this);
+                return "走行の記録を止めました";
+            case "shots": case "shots on":
+                enableShots();
+                return "画面に出た許可で「開始」を押すと、全画面スクショ込みで記録します";
+            case "shots off":
+                Trace.setShots(this, false); ShotService.disable(this);
+                return "スクショを止めました(記録は続きます)";
+            case "pull":
+                return Trace.where();
+            default:
+                return "trace の使い方: on / off / shots / shots off / pull";
+        }
+    }
+
     String command(String cmd) {
         if (cmd.startsWith("tv-")) {
             String r = tv.command(cmd);
             return r == null ? "YouTube の部品は「" + cmd + "」を扱いません" : r;
         }
+        if (cmd.equals("trace") || cmd.startsWith("trace ")) return traceCommand(cmd);
         switch (cmd) {
             case "state": return stateText();
             case "swap": swap(); return "入れ替えました: " + layoutText();

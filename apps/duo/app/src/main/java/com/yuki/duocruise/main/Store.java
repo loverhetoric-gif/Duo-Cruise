@@ -205,4 +205,12 @@ final class Store {
     /** 距離の設定の範囲(50〜2000 m)。 */
     static final int DIST_MIN = 50, DIST_MAX = 2000;
     static int clampDist(int v) { return Math.max(DIST_MIN, Math.min(DIST_MAX, v)); }
+
+    // ───────── 走行の記録(Unlimited Edition・本人の検証用。Trace) ─────────
+    /** 走行の記録を取るか(次の起動でも続く)。 */
+    static boolean traceOn(Context c) { return p(c).getBoolean("traceOn", false); }
+    static void setTraceOn(Context c, boolean v) { p(c).edit().putBoolean("traceOn", v).apply(); }
+    /** 記録に全画面スクショも含めるか(画面の許可が要る)。 */
+    static boolean traceShots(Context c) { return p(c).getBoolean("traceShots", false); }
+    static void setTraceShots(Context c, boolean v) { p(c).edit().putBoolean("traceShots", v).apply(); }
 }

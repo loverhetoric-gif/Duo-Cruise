@@ -66,6 +66,7 @@ final class DriveWatch implements LocationListener {
     int state() { return state; }
 
     @Override public void onLocationChanged(Location loc) {
+        Trace.gps(loc); // 経路の記録(走行の記録がオンのときだけ)
         lat = loc.getLatitude();
         lon = loc.getLongitude();
         float kmh;
