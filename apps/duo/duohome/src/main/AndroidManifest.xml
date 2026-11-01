@@ -7,8 +7,12 @@
     <uses-permission android:name="android.permission.BLUETOOTH" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
-    <!-- 他アプリ(DuoCruise/設定/Claude)を起動できるか調べる -->
+    <!-- ランチャーとして、起動できるアプリ(と設定・自作アプリ)を見えるようにする -->
     <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
         <package android:name="com.yuki.duocruise.main" />
         <package android:name="com.anthropic.claude" />
         <package android:name="com.android.settings" />

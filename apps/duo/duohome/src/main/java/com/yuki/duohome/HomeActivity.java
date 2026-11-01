@@ -1,8 +1,9 @@
 package com.yuki.duohome;
 
 import android.app.Activity;
-import android.bluetooth.BluetoothAdapter;
 import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.graphics.drawable.Drawable;
 import android.net.Uri;
 import android.net.wifi.WifiManager;
 import android.os.Bundle;
@@ -16,23 +17,29 @@ import android.view.WindowManager;
 import android.widget.Toast;
 
 import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
- * 箱のホーム(ランチャー)。Duo Cruise / CarPlay / Claude / 設定 だけを出し、接続トグルを表に出す。
- * トグルは機器が許す範囲で切り替え、無理なら該当の設定パネルを開く(最低でも1タップで届く)。
+ * 箱のホーム(ランチャー)。実アプリのアイコンを均一の器で並べる。
+ * 並べる物は「車で使うアプリ＋自作アプリ＋設定」。入っていない物は飛ばす。
+ * コマンダー(回転/決定)・Duo Slate・タップで操作。
  */
 public final class HomeActivity extends Activity implements HomeView.Listener {
-    private static final String DUO = "com.yuki.duocruise.main";
-    private static final String CLAUDE = "com.anthropic.claude";
+    private static final String DUO = "com.yuki.duocruise.main", CLAUDE = "com.anthropic.claude", SETTINGS = "#settings";
+
+    // 並べる候補(上から順。入っていない物は出さない)。SETTINGS は特別枠。
+    private static final String[] CANDIDATES = {
+            DUO, "com.google.android.apps.maps", "com.google.android.youtube",
+            "com.apple.android.music", "com.netflix.mediaclient", "com.android.chrome",
+            CLAUDE, SETTINGS,
+    };
 
     private HomeView view;
+    private final List<String> actions = new ArrayList<>();
     private final Handler main = new Handler(Looper.getMainLooper());
     private final Runnable tick = new Runnable() {
-        @Override public void run() {
-            refreshStates();
-            view.invalidate();           // 時計も更新
-            main.postDelayed(this, 1000);
-        }
+        @Override public void run() { refreshStates(); view.invalidate(); main.postDelayed(this, 1000); }
     };
 
     @Override protected void onCreate(Bundle b) {
@@ -40,26 +47,59 @@ public final class HomeActivity extends Activity implements HomeView.Listener {
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         view = new HomeView(this, this);
         view.setSystemUiVisibility(View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_FULLSCREEN
-                | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
+                | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
         setContentView(view);
+        buildItems();
     }
 
-    @Override protected void onResume() {
-        super.onResume();
-        main.removeCallbacks(tick);
-        main.post(tick);
+    private void buildItems() {
+        PackageManager pm = getPackageManager();
+        List<String> labels = new ArrayList<>();
+        List<Drawable> icons = new ArrayList<>();
+        actions.clear();
+        for (String c : CANDIDATES) {
+            try {
+                if (SETTINGS.equals(c)) {
+                    labels.add("設定");
+                    icons.add(pm.getApplicationIcon("com.android.settings"));
+                    actions.add(SETTINGS);
+                } else {
+                    if (pm.getLaunchIntentForPackage(c) == null) continue; // 入っていない
+                    labels.add(pm.getApplicationLabel(pm.getApplicationInfo(c, 0)).toString());
+                    icons.add(pm.getApplicationIcon(c));
+                    actions.add(c);
+                }
+            } catch (Throwable ignored) { }
+        }
+        view.setItems(labels.toArray(new String[0]), icons.toArray(new Drawable[0]));
     }
 
-    @Override protected void onPause() {
-        main.removeCallbacks(tick);
-        super.onPause();
+    @Override protected void onResume() { super.onResume(); main.removeCallbacks(tick); main.post(tick); }
+    @Override protected void onPause() { main.removeCallbacks(tick); super.onPause(); }
+    @Override public void onBackPressed() { /* ホームでは抜けない */ }
+
+    // ───────── 起動 ─────────
+    @Override public void onSelect(int i) {
+        if (i < 0 || i >= actions.size()) return;
+        String a = actions.get(i);
+        if (SETTINGS.equals(a)) { open(new Intent(Settings.ACTION_SETTINGS)); return; }
+        Intent it = getPackageManager().getLaunchIntentForPackage(a);
+        if (it == null) { // 未インストール(Claude 等) → Play へ
+            try { open(new Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=" + a))); }
+            catch (Exception e) { open(new Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=" + a))); }
+            return;
+        }
+        if (DUO.equals(a)) it.putExtra("duohome", true);
+        it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        open(it);
     }
 
-    @Override public void onBackPressed() { /* ホームでは戻るで抜けない */ }
+    private void open(Intent i) {
+        try { i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK); startActivity(i); }
+        catch (Exception e) { toast("開けませんでした"); }
+    }
 
-    // ───────── コマンダー(物理コントローラ) ─────────
-    /** ダイヤルを回す＝選択を動かす(スクロール)。機器により回転はこのイベントで届く。 */
+    // ───────── コマンダー / パッド ─────────
     @Override public boolean dispatchGenericMotionEvent(MotionEvent e) {
         if (e.getActionMasked() == MotionEvent.ACTION_SCROLL) {
             float v = e.getAxisValue(MotionEvent.AXIS_SCROLL);
@@ -70,121 +110,51 @@ public final class HomeActivity extends Activity implements HomeView.Listener {
         return super.dispatchGenericMotionEvent(e);
     }
 
-    /** ボタン: 上下左右=選択移動、中央/決定=実行、戻る=無視。音量・電源などはシステムへ。 */
     @Override public boolean dispatchKeyEvent(KeyEvent e) {
         int code = e.getKeyCode();
-        boolean handled;
         switch (code) {
-            case KeyEvent.KEYCODE_DPAD_UP: case KeyEvent.KEYCODE_DPAD_LEFT:
-            case KeyEvent.KEYCODE_DPAD_DOWN: case KeyEvent.KEYCODE_DPAD_RIGHT:
+            case KeyEvent.KEYCODE_DPAD_RIGHT: case KeyEvent.KEYCODE_DPAD_DOWN:
+            case KeyEvent.KEYCODE_DPAD_LEFT: case KeyEvent.KEYCODE_DPAD_UP:
             case KeyEvent.KEYCODE_DPAD_CENTER: case KeyEvent.KEYCODE_ENTER:
             case KeyEvent.KEYCODE_NUMPAD_ENTER: case KeyEvent.KEYCODE_BUTTON_A:
-            case KeyEvent.KEYCODE_BACK:
-                handled = true; break;
-            default:
-                return super.dispatchKeyEvent(e); // 音量・電源などはいつもどおりシステムへ
+            case KeyEvent.KEYCODE_BACK: break;
+            default: return super.dispatchKeyEvent(e); // 音量・電源はシステムへ
         }
         if (e.getAction() == KeyEvent.ACTION_DOWN) {
             switch (code) {
-                case KeyEvent.KEYCODE_DPAD_UP: case KeyEvent.KEYCODE_DPAD_LEFT: view.move(-1); break;
-                case KeyEvent.KEYCODE_DPAD_DOWN: case KeyEvent.KEYCODE_DPAD_RIGHT: view.move(1); break;
+                case KeyEvent.KEYCODE_DPAD_RIGHT: case KeyEvent.KEYCODE_DPAD_DOWN: view.move(1); break;
+                case KeyEvent.KEYCODE_DPAD_LEFT: case KeyEvent.KEYCODE_DPAD_UP: view.move(-1); break;
                 case KeyEvent.KEYCODE_DPAD_CENTER: case KeyEvent.KEYCODE_ENTER:
                 case KeyEvent.KEYCODE_NUMPAD_ENTER: case KeyEvent.KEYCODE_BUTTON_A:
                     if (e.getRepeatCount() == 0) view.activate(); break;
-                case KeyEvent.KEYCODE_BACK: view.back(); break; // 設定ページならホームへ、ホームでは無視
-                default: break;
+                default: break; // BACK はホームなので無視
             }
         }
-        return handled;
+        return true;
     }
 
-    // ───────── タイル ─────────
-    @Override public void onTile(int i) {
-        switch (i) {
-            case 0: launch(DUO, null); break;       // Duo Cruise
-            case 1: launchOrStore(CLAUDE); break;   // Claude
-        }
-    }
-
-    @Override public void onAndroidSettings() { open(new Intent(Settings.ACTION_SETTINGS)); }
-
-    private void launch(String pkg, String extra) {
-        Intent i = getPackageManager().getLaunchIntentForPackage(pkg);
-        if (i == null) { toast(pkg + " が見つかりません"); return; }
-        if (extra != null) i.putExtra(extra, true);
-        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        open(i);
-    }
-
-    private void launchOrStore(String pkg) {
-        Intent i = getPackageManager().getLaunchIntentForPackage(pkg);
-        if (i != null) { i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK); open(i); return; }
-        // 未インストール → Play を開く
-        try { open(new Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=" + pkg))); }
-        catch (Exception e) { open(new Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=" + pkg))); }
-    }
-
-    // ───────── トグル ─────────
-    @Override public void onToggle(int i) {
-        switch (i) {
-            case 0: openHotspotSettings(); break;
-            case 1: openWifiPanel(); break;
-            case 2: openBluetoothSettings(); break;
-        }
-    }
-
-    private void openWifiPanel() {
-        try { open(new Intent(Settings.Panel.ACTION_WIFI)); }
-        catch (Exception e) { open(new Intent(Settings.ACTION_WIFI_SETTINGS)); }
-    }
-
-    private void openHotspotSettings() {
-        Intent i = new Intent(Intent.ACTION_MAIN).setClassName("com.android.settings", "com.android.settings.TetherSettings");
-        if (getPackageManager().resolveActivity(i, 0) != null) { open(i); return; }
-        try { open(new Intent("android.settings.WIRELESS_SETTINGS")); }
-        catch (Exception e) { open(new Intent(Settings.ACTION_SETTINGS)); }
-    }
-
-    private void openBluetoothSettings() {
-        try { open(new Intent(Settings.ACTION_BLUETOOTH_SETTINGS)); }
-        catch (Exception e) { open(new Intent(Settings.ACTION_SETTINGS)); }
-    }
-
-    private void open(Intent i) {
-        try { i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK); startActivity(i); }
-        catch (Exception e) { toast("開けませんでした"); }
-    }
-
-    // ───────── 状態読み取り ─────────
+    // ───────── 接続状態(上部の点) ─────────
     private void refreshStates() {
         view.setToggle(0, readApState());
         view.setToggle(1, readWifiState());
         view.setToggle(2, readBtState());
     }
-
     private int readWifiState() {
-        try {
-            WifiManager wm = (WifiManager) getApplicationContext().getSystemService(WIFI_SERVICE);
-            return wm.isWifiEnabled() ? 1 : 0;
-        } catch (Throwable t) { return -1; }
+        try { return ((WifiManager) getApplicationContext().getSystemService(WIFI_SERVICE)).isWifiEnabled() ? 1 : 0; }
+        catch (Throwable t) { return -1; }
     }
-
-    /** アクセスポイント(テザリング)の状態。公開APIが無いのでリフレクションで。取れなければ不明(-1)。 */
     private int readApState() {
         try {
             WifiManager wm = (WifiManager) getApplicationContext().getSystemService(WIFI_SERVICE);
-            Method m = wm.getClass().getDeclaredMethod("isWifiApEnabled");
-            m.setAccessible(true);
+            Method m = wm.getClass().getDeclaredMethod("isWifiApEnabled"); m.setAccessible(true);
             Object r = m.invoke(wm);
             return (r instanceof Boolean && (Boolean) r) ? 1 : 0;
         } catch (Throwable t) { return -1; }
     }
-
     private int readBtState() {
         try {
-            BluetoothAdapter a = BluetoothAdapter.getDefaultAdapter();
-            if (a == null) return -1;
-            return a.isEnabled() ? 1 : 0;
+            android.bluetooth.BluetoothAdapter a = android.bluetooth.BluetoothAdapter.getDefaultAdapter();
+            return a == null ? -1 : (a.isEnabled() ? 1 : 0);
         } catch (Throwable t) { return -1; }
     }
 
