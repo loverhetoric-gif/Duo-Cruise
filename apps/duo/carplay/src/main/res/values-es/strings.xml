@@ -9,7 +9,9 @@
     <string name="cp_starting">Iniciando CarPlay</string>
     <string name="cp_stopped">CarPlay está detenido</string>
     <string name="cp_preparing">Preparando CarPlay</string>
-    <string name="cp_wifi_ask">Escribe la contraseña de la Wi-Fi de OTTO «%1$s»\ncon el teclado de Duo Slate y pulsa Intro\n%2$s</string>
+    <string name="cp_wifi_ask">Escribe la contraseña del punto de acceso Wi-Fi «%1$s» de este dispositivo\ncon el teclado de Duo Slate y pulsa Intro\n%2$s</string>
+    <string name="cp_ssid_ask">Escribe el nombre (SSID) del punto de acceso Wi-Fi de este dispositivo\ncon el teclado de Duo Slate y pulsa Intro\n%1$s</string>
+    <string name="cp_ssid_len">El nombre debe tener de 1 a 32 caracteres. Inténtalo de nuevo\n%s</string>
     <string name="cp_wifi_len">La contraseña debe tener 8–63 caracteres. Inténtalo de nuevo\n%s</string>
     <string name="cp_empty">(aún no has escrito nada)</string>
     <string name="cp_count">(%d caracteres)</string>

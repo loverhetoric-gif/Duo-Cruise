@@ -1,0 +1,18 @@
+plugins { alias(libs.plugins.android.application) }
+def vcode = (project.findProperty('vc') ?: '1').toString().toInteger()
+android {
+    namespace = 'com.yuki.duohome'
+    compileSdk = 37
+    defaultConfig {
+        applicationId = "com.yuki.duohome"
+        minSdk = 28
+        targetSdk = 33
+        versionCode = vcode
+        versionName = "0.1." + vcode
+    }
+    buildFeatures { buildConfig = true }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+}

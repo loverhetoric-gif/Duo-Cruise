@@ -144,6 +144,24 @@ object Iap2Endpoints {
                     field(5, "isEnabled", Iap2WireType.VOID),
                 ),
             ),
+            // Duo Cruise Unlimited Edition: ナビの案内を受け取る画面。番号は LIVI(f-io/LIVI, GPL-3.0)の iap2-csm と同じ
+            field(
+                30,
+                "RouteGuidanceDisplayComponent",
+                Iap2WireType.GROUP,
+                repeatable = true,
+                children = listOf(
+                    field(0, "componentID", Iap2WireType.U16, required = true),
+                    field(1, "name", Iap2WireType.STRING, required = true),
+                    field(2, "maxCurrentRoadNameLength", Iap2WireType.U16),
+                    field(3, "maxDestinationNameLength", Iap2WireType.U16),
+                    field(4, "maxAfterManeuverRoadNameLength", Iap2WireType.U16),
+                    field(5, "maxManeuverDescriptionLength", Iap2WireType.U16),
+                    field(6, "maxGuidanceManeuverStorageCapacity", Iap2WireType.U16),
+                    field(7, "maxLaneGuidanceDescriptionLength", Iap2WireType.U16),
+                    field(8, "maxLaneGuidanceStorageCapacity", Iap2WireType.U16),
+                ),
+            ),
         ),
     )
     val IDENTIFICATION_ACCEPTED = endpoint(

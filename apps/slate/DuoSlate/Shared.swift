@@ -56,6 +56,70 @@ enum Screen {
 /// ・普段: アイコンは光の色で、周りにうっすら光がにじむ(夜)。昼は濃いめの灰で読みやすく
 /// ・押した瞬間: 光が強まり、少し沈む。離すとゆっくり戻る
 /// タッチパッドの面の色(昼・夜それぞれ 3 つ)。最初の 1 つが元の色。
+/// カーソルの感度と加速を、つないだ Duo Cruise の画面(px)と、今のパッドの大きさ(pt)から決める。
+/// 快適の基準は 2 つ:
+/// 1. ゆっくり動かすと細かく合わせられる。指先の細かさは一定なので、1480×480 で合わせた
+///    1pt＝1.6px を基準に、画面の対角の px 数の √ で少しだけ増減する(大きな画面ほど少し速く)。
+/// 2. ひと払い(パッドの半分・最大 200pt を 0.16 秒)で、画面の端から端まで届く。縦と横の厳しい方に合わせる。
+///    指の速さは山なりに変わるので、その動きを実際に足し合わせて、届く加速を逆算する。
+///    iPhone を縦・横に向けるとパッドの形が変わるので、そのたびに計算し直す。
+/// pad が nil(Mac。macOS が加速を済ませている)なら、感度だけ。
+enum CursorTune {
+    static let slowBase = 1.6
+    /// 加速が最大になる指の速さ(pt/ms)と、その時の伸び。
+    static let fastSpeed = 2.5, fastK = 1.4
+    static let maxAccel = 5.0
+
+    static func auto(_ screen: CGSize, pad: CGSize? = nil) -> (sensitivity: Double, acceleration: Double) {
+        let f = hypot(Double(screen.width), Double(screen.height)) / hypot(1480.0, 480.0)
+        let sens = round1(min(3, max(0.3, f.squareRoot())))
+        guard let pad, pad.width > 50, pad.height > 50 else { return (sens, 1) }
+        var need = 0.0
+        for (px, pt) in [(Double(screen.width), Double(pad.width)), (Double(screen.height), Double(pad.height))] {
+            let dist = min(pt * 0.5, 200)
+            var lo = 0.0, hi = maxAccel
+            for _ in 0..<24 {
+                let m = (lo + hi) / 2
+                if flick(dist, 0.16, (sens, m)) < px { lo = m } else { hi = m }
+            }
+            need = max(need, hi)
+        }
+        return (sens, round1(need))
+    }
+
+    /// 指を dist pt、秒数 time で払った時(なめらかに加速して止まる動き)に、カーソルが進む px。PadSurface と同じ計算。
+    static func flick(_ dist: Double, _ time: Double, _ t: (sensitivity: Double, acceleration: Double)) -> Double {
+        let dt = 1000.0 / 240, n = Int(time * 1000 / dt)
+        var out = 0.0, sp = 0.0, prev = 0.0
+        for i in 1...max(n, 1) {
+            let u = Double(i) / Double(n)
+            let x = dist * (10 * pow(u, 3) - 15 * pow(u, 4) + 6 * pow(u, 5))
+            let d = x - prev; prev = x
+            sp = follow(sp, d / dt, dt)
+            out += d * gain(sp, t)
+        }
+        return out
+    }
+
+    /// 指の速さの追い方。速くなる時は 12ms で追いつき(払い始めからすぐ伸びる)、
+    /// 遅くなる時は 4ms で落とす(ボタンの手前で減速したら、すぐ細かくなる＝飛び越えない)。
+    static func follow(_ smooth: Double, _ speed: Double, _ dtMs: Double) -> Double {
+        smooth + (speed - smooth) * min(1, dtMs / (speed > smooth ? 12 : 4))
+    }
+
+    /// 指の速さ(pt/ms)での 1pt あたりの px。
+    /// ② 0.02 以下は標準の半分、0.25 で標準へなめらかに戻り、そこから先が加速(払うほど遠くへ)。
+    /// 加速は 1.5 乗: 中くらいの速さ(ボタンへ寄せる時)は控えめ、速く払う時ほど大きく伸びる。
+    static func gain(_ speed: Double, _ t: (sensitivity: Double, acceleration: Double)) -> Double {
+        func smooth(_ x: Double) -> Double { let c = min(1, max(0, x)); return c * c * (3 - 2 * c) }
+        let precise = 0.5 + 0.5 * smooth((speed - 0.02) / 0.23)
+        let u = min(max(speed - 0.25, 0), fastSpeed) / fastSpeed
+        let fast = t.acceleration * fastSpeed * fastK * pow(u, 1.5)
+        return slowBase * t.sensitivity * precise * (1 + fast)
+    }
+    private static func round1(_ v: Double) -> Double { (v * 10).rounded() / 10 }
+}
+
 enum PadTone: String, CaseIterable, Identifiable {
     case white, paper, mist      // 昼
     case black, sumi, slate      // 夜
@@ -157,9 +221,14 @@ struct KeyStyle: ButtonStyle {
 /// 知らせる出来事。色は「完了・切断の合図」で、普段は白。
 /// - duo: Duo Cruise とつながった(青)  - bluetooth: CarPlay の Bluetooth がつながった(緑)
 /// - lost: 切れた(赤。切れている間はうっすら赤が残る)  - switched: 操作する側を切り替えた(白)
+/// - turn: 曲がり角が近づいた(Duo Cruise Unlimited Edition。曲がる側の縁だけ、Duo Cruise で選んだ色で)
 struct Notice: Equatable {
-    enum Kind { case duo, bluetooth, lost, switched }
+    enum Kind { case duo, bluetooth, lost, switched, turn }
     let kind: Kind
+    /// turn のときの、曲がる側("L"/"R")・色・強さ(0〜1)。
+    var side: String? = nil
+    var tint: Color? = nil
+    var level: Double = 1
     let at = Date()
 
     /// Siri のように、近い色を何色か混ぜる(どれも少し白寄り。濃い色は外側の細い線だけに出る)。
@@ -173,6 +242,7 @@ struct Notice: Equatable {
             // 切断: アイコンの朱(オレンジ寄り)と分けるため、青みのある深い赤 1 色
             case .lost: return [rgb(0.80, 0.04, 0.22), rgb(0.76, 0.02, 0.26), rgb(0.80, 0.04, 0.22), rgb(0.84, 0.06, 0.24)]
             case .switched: return c.flow
+            case .turn: let t = tint ?? .orange; return [t, t, t, t]
             }
         }
         switch kind {
@@ -180,6 +250,7 @@ struct Notice: Equatable {
         case .bluetooth: return [rgb(0.46, 0.93, 0.74), rgb(0.36, 0.82, 0.78), rgb(0.72, 0.94, 0.50), rgb(0.70, 1.0, 0.86)]
         case .lost: return [rgb(1.0, 0.52, 0.48), rgb(1.0, 0.46, 0.62), rgb(1.0, 0.64, 0.48), rgb(1.0, 0.72, 0.74)]
         case .switched: return [c.glow, c.glow.opacity(0.7), c.glow, c.glow.opacity(0.8)]
+        case .turn: let t = tint ?? .orange; return [t, t.opacity(0.85), t, t.opacity(0.9)]
         }
     }
     var label: String {
@@ -187,7 +258,7 @@ struct Notice: Equatable {
         case .duo: return "Duo Cruise"
         case .bluetooth: return "Bluetooth"
         case .lost: return String(localized: "未接続")
-        case .switched: return "Duo Cruise"
+        case .switched, .turn: return "Duo Cruise"
         }
     }
     /// 知らせる長さ(秒)。広がる 0.35 秒 → 縁で流れる → ゆっくり消える。
@@ -211,6 +282,8 @@ struct StatusText: View {
     let c: Palette
     let connected: Bool
     let notice: Notice?
+    /// 操作中のウィンドウのアプリ名(つながっている間、「Duo Cruise」と1秒ごとに交互に出す)。
+    var target: String = ""
 
     var body: some View {
         TimelineView(.animation) { ctx in
@@ -219,7 +292,10 @@ struct StatusText: View {
             let active = env > 0.02 ? notice : nil
             let base: Color = connected ? c.glow : Notice(kind: .lost).colors(c)[0]
             let color = active?.colors(c)[0] ?? base
-            let text = active?.label ?? (connected ? "Duo Cruise" : String(localized: "未接続"))
+            // つながっていてターゲットがあるときは、「Duo Cruise」とアプリ名を3秒ごとにゆっくり入れ替える
+            let flip = Int(ctx.date.timeIntervalSinceReferenceDate / 3) % 2 == 1
+            let connText = (connected && !target.isEmpty && flip) ? target : "Duo Cruise"
+            let text = active?.label ?? (connected ? connText : String(localized: "未接続"))
             let level = active != nil ? 0.55 + 0.45 * env : (connected ? 0.55 : 0.45 + 0.2 * sin(ctx.date.timeIntervalSinceReferenceDate * 1.6))
             Text(text)
                 .font(.system(size: 12, weight: .semibold))
@@ -235,8 +311,8 @@ struct StatusText: View {
                 }
                 .shadow(color: color.opacity(0.5 * level), radius: 6)
                 .id(text)
-                .transition(.opacity.combined(with: .scale(scale: 0.94)).combined(with: .offset(y: 3)))
-                .animation(.easeInOut(duration: 0.4), value: text)
+                .transition(.opacity) // 柔らかく、ふわっと溶けるように入れ替える(拡大・ずれは付けない)
+                .animation(.easeInOut(duration: 0.9), value: text)
         }
     }
 }
@@ -255,17 +331,18 @@ struct Lights: View {
     let touch: CGPoint?
     let touchGlow: Double
     let notice: Notice?
-    static let inset: CGFloat = 4
-
+    /// 発光の強さ(設定。1＝標準)。
+    var level: Double = 1
     var body: some View {
         GeometryReader { geo in
             let size = geo.size
-            let shape = RoundedRectangle(cornerRadius: max(Screen.cornerRadius - Self.inset, 20), style: .continuous)
+            // 縁の線は引かない。光の帯はディスプレイの端そのもの(画面と同じ角の丸み)に沿わせ、端から内側へ発光させる
+            // (帯の外側半分は画面の外に出るので、いちばん明るい所が画面の端にくる)
+            let shape = RoundedRectangle(cornerRadius: Screen.cornerRadius, style: .continuous)
             TimelineView(.animation) { ctx in
                 let t = ctx.date.timeIntervalSinceReferenceDate
-                let dim = night ? 0.75 : 1.0
+                let dim = (night ? 0.75 : 1.0) * level
                 ZStack {
-                    shape.stroke(c.edge, lineWidth: 1)
                     if connected {
                         // 普段: 白い光。操作している側の半分を強く
                         band(shape, c.flow, spin: t * 8, strength: 0.55 * dim)
@@ -286,19 +363,21 @@ struct Lights: View {
                         let env = Envelope.at(e)
                         if env.edge > 0 || env.wash > 0 {
                             let cols = n.colors(c)
-                            // 面全体が一瞬染まる
+                            let mask: AnyView = n.kind == .switched ? AnyView(sideMask)
+                                : n.kind == .turn ? AnyView(turnMask(n.side ?? "L")) : AnyView(Color.white)
+                            // 面全体が一瞬染まる(曲がる方向の合図は、その側だけ)
                             Rectangle()
                                 .fill(AngularGradient(colors: cols + [cols[0]], center: .center, angle: .degrees(e * 60)))
                                 .drawingGroup()
-                                .opacity(0.22 * env.wash * dim)
+                                .opacity(0.22 * env.wash * dim * n.level)
                                 .blur(radius: 30)
-                            // 縁で流れる(切り替えのときは、操作している側を強く)
-                            band(shape, cols, spin: e * 90, strength: env.edge * dim)
-                                .mask(n.kind == .switched ? AnyView(sideMask) : AnyView(Color.white))
+                                .mask(mask)
+                            // 縁で流れる(切り替えのときは操作している側を強く、曲がる方向の合図はその側だけ)
+                            band(shape, cols, spin: e * 90, strength: env.edge * dim * n.level)
+                                .mask(mask)
                         }
                     }
                 }
-                .padding(Self.inset)
             }
         }
         .ignoresSafeArea()
@@ -312,6 +391,15 @@ struct Lights: View {
         return LinearGradient(stops: [
             .init(color: .white.opacity(l), location: 0), .init(color: .white.opacity(l), location: 0.38),
             .init(color: .white.opacity(r), location: 0.62), .init(color: .white.opacity(r), location: 1)],
+            startPoint: .leading, endPoint: .trailing)
+    }
+
+    /// 曲がる側だけを残す(反対側は消す)。真ん中はなめらかにつなぐ。
+    private func turnMask(_ side: String) -> some View {
+        let (l, r): (Double, Double) = side == "L" ? (1, 0) : (0, 1)
+        return LinearGradient(stops: [
+            .init(color: .white.opacity(l), location: 0), .init(color: .white.opacity(l), location: 0.3),
+            .init(color: .white.opacity(r), location: 0.7), .init(color: .white.opacity(r), location: 1)],
             startPoint: .leading, endPoint: .trailing)
     }
 

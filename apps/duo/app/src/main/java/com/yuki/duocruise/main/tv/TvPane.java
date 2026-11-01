@@ -127,6 +127,18 @@ public final class TvPane {
                 return true;
             default: break;
         }
+        // 再生中の戻る: TV 版は操作の表示(再生バー)が出ていると 1 回目は表示を消すだけで、戻らなかった(2026-10-29)。
+        // Esc を送り、まだ再生の画面(#/watch)なら 0.45 秒おきに最大 3 回まで送り直す(1 回の戻るで一覧へ)
+        if (e.getKeyCode() == KeyEvent.KEYCODE_BACK) {
+            if (e.getAction() == KeyEvent.ACTION_UP) {
+                if (!web.hasFocus()) web.requestFocus();
+                web.evaluateJavascript("location.href", h -> {
+                    escape();
+                    if (h != null && h.contains("/watch")) leaveWatch(3);
+                });
+            }
+            return true;
+        }
         KeyEvent k = translate(e);
         if (k == null) return false;
         if (!web.hasFocus()) web.requestFocus();
@@ -145,6 +157,25 @@ public final class TvPane {
         KeyEvent[] keys = map.getEvents(text.toCharArray());
         if (keys != null) { for (KeyEvent k : keys) web.dispatchKeyEvent(k); return; }
         web.dispatchKeyEvent(new KeyEvent(SystemClock.uptimeMillis(), text, android.view.KeyCharacterMap.VIRTUAL_KEYBOARD, 0));
+    }
+
+    /** 再生の画面から出るまで、間をあけて Esc を送り直す(残り n 回)。 */
+    private void leaveWatch(int n) {
+        if (n <= 0) return;
+        main.postDelayed(() -> {
+            if (web == null || destroyed) return;
+            web.evaluateJavascript("location.href", h -> {
+                if (h != null && h.contains("/watch")) { escape(); leaveWatch(n - 1); }
+            });
+        }, 450);
+    }
+
+    /** Esc を 1 回(TV 版の「戻る」)。 */
+    private void escape() {
+        if (web == null || destroyed) return;
+        long t = SystemClock.uptimeMillis();
+        web.dispatchKeyEvent(new KeyEvent(t, t, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ESCAPE, 0));
+        web.dispatchKeyEvent(new KeyEvent(t, SystemClock.uptimeMillis(), KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ESCAPE, 0));
     }
 
     /** タッチパッドからの1つのキー(消す・改行など)を、そのままページへ渡す。 */

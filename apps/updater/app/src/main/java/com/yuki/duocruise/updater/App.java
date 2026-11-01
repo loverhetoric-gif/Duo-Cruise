@@ -8,5 +8,8 @@ public class App extends Application {
         super.onCreate();
         Remote.init(this);
         UpdLog.init(this);
+        PushListener.start(this);
+        // 前の版が溜め込んだインストールのセッションを、起きたらすぐ片付ける(溜まると何も入れられない)
+        new Thread(() -> { try { UpdateEngine.abandonLeftovers(this); } catch (Exception ignored) {} }, "duo-cleanup").start();
     }
 }

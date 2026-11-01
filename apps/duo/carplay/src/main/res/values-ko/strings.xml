@@ -9,7 +9,9 @@
     <string name="cp_starting">CarPlay를 시작하는 중</string>
     <string name="cp_stopped">CarPlay가 정지되었습니다</string>
     <string name="cp_preparing">CarPlay를 준비하는 중</string>
-    <string name="cp_wifi_ask">Duo Slate 키보드로 OTTO Wi-Fi ‘%1$s’의 비밀번호를\n입력한 뒤 Return을 누르세요\n%2$s</string>
+    <string name="cp_wifi_ask">Duo Slate 키보드로 이 기기의 Wi-Fi 핫스폿 ‘%1$s’의 비밀번호를\n입력한 뒤 Return을 누르세요\n%2$s</string>
+    <string name="cp_ssid_ask">Duo Slate 키보드로 이 기기의 Wi-Fi 핫스폿 이름(SSID)을\n입력한 뒤 Return을 누르세요\n%1$s</string>
+    <string name="cp_ssid_len">이름은 1–32자여야 합니다. 다시 입력하세요\n%s</string>
     <string name="cp_wifi_len">비밀번호는 8–63자여야 합니다. 다시 입력하세요\n%s</string>
     <string name="cp_empty">(아직 입력하지 않았습니다)</string>
     <string name="cp_count">(%d자)</string>

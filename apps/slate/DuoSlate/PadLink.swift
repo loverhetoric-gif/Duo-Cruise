@@ -1,6 +1,7 @@
 import Foundation
 import Network
 import QuartzCore
+import SwiftUI
 
 /// OTTO の Duo Cruise とのつながり。
 ///
@@ -19,14 +20,28 @@ final class PadLink: ObservableObject {
     @Published private(set) var screen = CGSize(width: 1480, height: 480)
     /// Duo Cruise で操作している側("L"＝左、"R"＝右、"F"＝1画面、""＝まだ分からない)。
     @Published private(set) var target = ""
+    #if os(iOS)
+    /// Duo Cruise の画面の並び(画面の縮図に使う)。
+    @Published private(set) var layout = DuoLayout()
+    #endif
     /// 操作している側が変わるたびに1つ増える(縁を光らせる合図)。
     @Published private(set) var switches = 0
     /// CarPlay の Bluetooth が iPhone とつながっているか(OTTO が知らせる)。
     @Published private(set) var bluetooth = false
     /// 今どちらのモードか: "duo"(Duo Cruise の中) / "generic"(ホーム等)。背景の色に使う。
     @Published private(set) var mode = "duo"
+    /// Duo Cruise で設定メニューを開いているか(メニュー操作モードに切り替える)。
+    @Published private(set) var menuOpen = false
+    /// 操作中のウィンドウのアプリ名(右上に出す。固定しない＝対応アプリが増えても出せる)。
+    @Published private(set) var targetApp = ""
     /// Bluetooth がつながるたびに1つ増える(縁を緑に灯す合図)。
     @Published private(set) var bluetoothUps = 0
+    /// 曲がる方向の合図が届くたびに1つ増える(Duo Cruise Unlimited Edition。縁の曲がる側を灯す合図)。
+    @Published private(set) var turns = 0
+    /// 最後に届いた曲がる方向の合図: 側("L"/"R")・色・強さ(0〜1。Duo Cruise の設定の % を 55% = 1 として)。
+    private(set) var turnSide = "L"
+    private(set) var turnColor = Color(red: 1.0, green: 0.76, blue: 0.31)
+    private(set) var turnLevel = 1.0
 
     static let port: UInt16 = 47800
     private let queue = DispatchQueue(label: "duoslate.link", qos: .userInteractive)
@@ -170,6 +185,8 @@ final class PadLink: ObservableObject {
 
     private func drop(_ why: String) {
         conn?.cancel(); conn = nil
+        menuOpen = false
+        targetApp = ""
         guard !stopped else { return }
         state = .failed(why)
         reconnects += 1
@@ -212,8 +229,25 @@ final class PadLink: ObservableObject {
                 bluetooth = on
             } else if k == "i", p.count > 2, let w = Double(p[1]), let h = Double(p[2]) {
                 screen = CGSize(width: w, height: h)
+            } else if k == "l", p.count > 4 {
+                #if os(iOS)
+                layout = DuoLayout(single: p[1] == "1", swapped: p[2] == "1", side: String(p[3]), yt: Int(p[4]) ?? 50)
+                #endif
             } else if k == "g", p.count > 1 {
                 mode = String(p[1])
+            } else if k == "mn", p.count > 1 {
+                withAnimation(.spring(response: 0.5, dampingFraction: 0.78)) { menuOpen = p[1] == "1" }
+            } else if k == "tn" {
+                targetApp = p.count > 1 ? p.dropFirst().joined(separator: " ") : ""
+            } else if k == "t", p.count > 1 {
+                // 「t L FFC24F 55」: 曲がる側・色・強さ(%)
+                turnSide = String(p[1])
+                if p.count > 2, let v = UInt32(p[2], radix: 16) {
+                    turnColor = Color(red: Double((v >> 16) & 0xFF) / 255, green: Double((v >> 8) & 0xFF) / 255,
+                                      blue: Double(v & 0xFF) / 255)
+                }
+                if p.count > 3, let lv = Double(p[3]) { turnLevel = min(1, max(0, lv / 55)) }
+                turns += 1
             }
         }
     }

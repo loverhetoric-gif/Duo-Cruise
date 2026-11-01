@@ -51,7 +51,8 @@ final class Remote {
     private static final int BATCH_ITEMS = 100;
     private static final int BATCH_BYTES = 600 * 1024;
     /** 指示を取りに行く間隔。 */
-    static final long POLL_MS = 3 * 60 * 1000L;
+    /** 指示を取りに行く間隔。30 秒(updater:check で、ほぼすぐ更新できるように。2026-10-29)。 */
+    static final long POLL_MS = 30 * 1000L;
     private static final long FLUSH_DELAY_MS = 20 * 1000L;
 
     private static Context app;
@@ -83,7 +84,7 @@ final class Remote {
         handler.postDelayed(Remote::tick, 10 * 1000L);
     }
 
-    /** 3分ごと:送る → 指示を取りに行く → 次を予約。 */
+    /** 30 秒ごと:送る → 指示を取りに行く → 次を予約。 */
     private static void tick() {
         try { flushNow(); } catch (Throwable e) { Log.w("DUOUPD", "flush", e); }
         try { pollNow(); } catch (Throwable e) { Log.w("DUOUPD", "poll", e); }

@@ -16,6 +16,8 @@ android {
         versionCode vcode
         versionName "0.1." + vcode
         buildConfigField "String", "LOG_URL", "\"" + logUrl.replace('"', '') + "\""
+        // リアルタイムの更新の合図の口(ntfy.sh)。CI の秘密 DUO_PUSH_TOPIC から入る(Duo Cruise と同じ)。手元のビルドでは空(使わない)
+        buildConfigField "String", "PUSH_TOPIC", "\"" + (System.getenv('DUO_PUSH_TOPIC') ?: '').replace('"', '') + "\""
     }
     buildFeatures { buildConfig true }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }

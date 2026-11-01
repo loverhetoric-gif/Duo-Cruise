@@ -24,6 +24,7 @@ import java.util.regex.Pattern;
 /**
  * 記録シートの「指示」から来る診断。受け付けるのは決まった一覧だけ(任意のコマンドは実行しない)。
  *   updater:state / updater:packages / updater:check / updater:test-channel on|off / updater:screenshot
+ *   updater:multiplay-log … 機器の CarPlay(MultiPlay)の部品の記録(logcat)を送る(要 READ_LOGS。adb で許可する)
  *   com.yuki.duocruise.main:〜 … 本体へブロードキャスト(キー記録は 2026-10-27 に片付けた)で渡すだけ
  * 結果は kind=result で記録に返す。
  */
@@ -48,7 +49,39 @@ final class Diag {
         });
     }
 
-    private static void exec(Context c, String cmd, int row) {
+    /**
+     * MultiPlay の CarPlay を受け持つ機器の部品の記録の名前(tag)。アプリの中からは他のプログラムの番号(PID)が
+     * 見えないため、名前で絞る(2026-10-29 機器で確認: lylinkservice・com.ap.play は carlife などで出す)。
+     */
+    private static final String[] MULTIPLAY_TAGS = {"carlife", "lylinkservice", "jlylink", "iAP2Client", "iAP2", "lyscrservice"};
+    /** 1 回に送る上限(記録シートの 10 行ぶん)。 */
+    private static final int MULTIPLAY_LOG_MAX = 300_000;
+
+    /**
+     * MultiPlay の CarPlay の部品が出した記録(logcat)を、新しい方から上限まで集める。
+     * コマンダーが Duo Cruise の CarPlay に効かない件(2026-10-29)で、MultiPlay がダイヤルを
+     * iPhone にどう伝えているか(hid_des など)を比べるため。読むには READ_LOGS が要る(adb で pm grant)。
+     */
+    private static String multiPlayLog() throws Exception {
+        StringBuilder cmd = new StringBuilder("logcat -d -b all -v threadtime -s");
+        for (String tag : MULTIPLAY_TAGS) cmd.append(' ').append(tag).append(":V");
+        String log = run(cmd.toString());
+        if (log.length() > MULTIPLAY_LOG_MAX) return "…(古い分は省略)\n" + log.substring(log.length() - MULTIPLAY_LOG_MAX);
+        return log.isEmpty() ? "(MultiPlay の記録はありません。READ_LOGS が無いか、記録が流れて消えた)" : log;
+    }
+
+    private static String run(String command) throws Exception {
+        Process p = Runtime.getRuntime().exec(command);
+        StringBuilder b = new StringBuilder();
+        try (java.io.BufferedReader r = new java.io.BufferedReader(new java.io.InputStreamReader(p.getInputStream()))) {
+            String line;
+            while ((line = r.readLine()) != null) b.append(line).append('\n');
+        }
+        p.waitFor();
+        return b.toString();
+    }
+
+    private static void exec(Context c, String cmd, int row) throws Exception {
         int colon = cmd.indexOf(':');
         String target = colon > 0 ? cmd.substring(0, colon).trim() : "";
         String arg = colon > 0 ? cmd.substring(colon + 1).trim() : "";
@@ -81,6 +114,16 @@ final class Diag {
                     Remote.result(cmd + " → アプリの一覧を送りました(" + parts + " 件に分割)", row);
                     return;
                 }
+                case "multiplay-log": {
+                    String all = multiPlayLog();
+                    int parts = 0;
+                    for (int i = 0; i < all.length(); i += 30000, parts++) {
+                        Remote.add("state", all.substring(i, Math.min(all.length(), i + 30000)),
+                                BuildConfig.APPLICATION_ID, String.valueOf(BuildConfig.VERSION_CODE), row, 0);
+                    }
+                    Remote.result(cmd + " → MultiPlay の記録を送りました(" + all.length() + " 文字、" + parts + " 件に分割)", row);
+                    return;
+                }
                 case "screenshot":
                     ConfirmClickService.screenshot(c, row, cmd);
                     return;
@@ -88,7 +131,7 @@ final class Diag {
                     ConfirmClickService.confirmNow(c, row, cmd);
                     return;
                 default:
-                    Remote.result(cmd + " → 受け付けない指示です(updater:state / packages / check / test-channel on|off / screenshot / confirm)", row);
+                    Remote.result(cmd + " → 受け付けない指示です(updater:state / packages / check / test-channel on|off / screenshot / confirm / multiplay-log)", row);
                     return;
             }
         }

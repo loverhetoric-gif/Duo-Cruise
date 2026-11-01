@@ -11,3 +11,5 @@ rootProject.name = "duo-main"
 include ':app'
 // 自作 CarPlay(xcertplay の shared を取り込んだもの。GPL-3.0)
 include ':carplay'
+// DuoHome: 箱のホーム(ランチャー)。DuoCruise・CarPlay・Claude・設定だけ出し、接続トグルを表に出す
+include ':duohome'

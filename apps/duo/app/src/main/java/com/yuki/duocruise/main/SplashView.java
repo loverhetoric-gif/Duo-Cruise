@@ -25,10 +25,14 @@ import android.view.animation.LinearInterpolator;
  *   同時に切り替えると途中で濁るので、必ずこの時間差にする
  * ・起動音「ブルーム」を同時に鳴らす(音の中で 0.5 秒から鳴り始める)。設定で切れる
  * ・「アニメーションを減らす」がオンなら動かさず、色付き版をそのまま出す(音も鳴らさない)
- * 演出の後は、面ごと 0.4 秒で消えて、そのまま 2 画面になる。
+ * 演出の後は、面ごと 0.7 秒で滲みながら消える(ぼかしを強めつつ透明に)。同時に、後ろのメイン画面が
+ * 滲んだところから澄んで現れる(DuoActivity が受け持つ。CarPlay の枠では、同じシンボルの
+ * 「つながるまでの演出」が始まっているので、起動演出が地続きで続いて見える)。
  */
 final class SplashView extends View {
-    static final long ANIM_MS = 2900, FADE_MS = 400, STILL_MS = 1200;
+    static final long ANIM_MS = 2900, FADE_MS = 700, STILL_MS = 1200;
+    /** 消えるときの、いちばん強いぼかし(dp)。 */
+    static final float BLUR_DP = 28;
 
     private final boolean night, still;
     private final Bitmap monoSym, colSym, monoLogo, colLogo;
@@ -63,22 +67,34 @@ final class SplashView extends View {
      * 時間は ValueAnimator に任せず自分で測る(「アニメーションを減らす」で ValueAnimator が 0 秒になっても、
      * 色付き版を見せる時間を保つため)。
      */
-    void play(boolean withSound, Runnable done) {
+    void play(boolean withSound, Runnable fading, Runnable done) {
         if (withSound && !still) startSound();
         final long total = (still ? STILL_MS : ANIM_MS) + FADE_MS;
         final long start = android.os.SystemClock.uptimeMillis();
+        final float dp = getResources().getDisplayMetrics().density;
         postOnAnimation(new Runnable() {
+            boolean announced;
             @Override public void run() {
                 long e = android.os.SystemClock.uptimeMillis() - start;
                 t = still ? ANIM_MS : Math.min(ANIM_MS, e);
                 long fadeFrom = total - FADE_MS;
-                setAlpha(e <= fadeFrom ? 1f : 1f - ease((e - fadeFrom) / (float) FADE_MS));
+                float f = e <= fadeFrom ? 0f : ease((e - fadeFrom) / (float) FADE_MS);
+                if (f > 0 && !announced) { announced = true; if (fading != null) fading.run(); }
+                setAlpha(1f - f);
+                // 滲んで消える(動きを減らす設定のときは、ぼかさず透明にするだけ)
+                if (!still && android.os.Build.VERSION.SDK_INT >= 31) {
+                    float r = BLUR_DP * dp * f;
+                    setRenderEffect(r < 0.5f ? null : android.graphics.RenderEffect.createBlurEffect(r, r, android.graphics.Shader.TileMode.CLAMP));
+                }
                 invalidate();
                 if (e < total) postOnAnimation(this);
-                else { releaseSound(); done.run(); }
+                else { setRenderEffect(null); releaseSound(); done.run(); }
             }
         });
     }
+
+    /** 動きを減らす設定か(メイン画面の現れ方も合わせる)。 */
+    boolean still() { return still; }
 
     private void startSound() {
         try {

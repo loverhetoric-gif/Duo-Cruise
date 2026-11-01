@@ -32,6 +32,7 @@ import com.shilapi.xcertplay.airplay.PairingStore
 import com.shilapi.xcertplay.iap2.message.Iap2HidMessages
 import com.shilapi.xcertplay.iap2.message.Iap2MediaRemoteCommand
 import com.shilapi.xcertplay.iap2.message.Iap2NowPlayingAccumulator
+import com.shilapi.xcertplay.iap2.message.Iap2NowPlayingState
 import com.shilapi.xcertplay.iap2.session.Iap2FileTransferReceiver
 import com.shilapi.xcertplay.iap2.session.Iap2Session
 import com.shilapi.xcertplay.iap2.wire.Iap2Frame
@@ -153,6 +154,10 @@ class CarPlayController(
     private val clearPairRecord: () -> Unit = {},
     private val locationProvider: Iap2LocationProvider? = null,
     private val vehicleStatusProvider: com.shilapi.xcertplay.transport.VehicleStatusProvider? = null,
+    /** Duo Cruise: ナビの案内(0x5201/0x5202)を受け取った。iAP2 の受信スレッドで呼ばれる。 */
+    private val onRouteGuidance: (Iap2Frame) -> Unit = {},
+    /** Duo Cruise: 再生中の情報(アプリの名前・再生状態など)が変わった。iAP2 の受信スレッドで呼ばれる。 */
+    private val onNowPlaying: (Iap2NowPlayingState) -> Unit = {},
 ) : Closeable {
     init {
         require(!config.locationReportingEnabled || locationProvider != null) {
@@ -405,9 +410,19 @@ class CarPlayController(
     }
 
     private fun onIap2Incoming(frame: Iap2Frame) {
+        if (frame.messageId == ROUTE_GUIDANCE_UPDATE || frame.messageId == ROUTE_GUIDANCE_MANEUVER_UPDATE) {
+            try {
+                onRouteGuidance(frame)
+            } catch (error: RuntimeException) {
+                debugLog("Could not handle iAP2 route guidance", error)
+            }
+            return
+        }
         if (frame.messageId != NOW_PLAYING_UPDATE) return
         try {
-            CarPlayMediaSessionBridge.publish(this, nowPlaying.update(frame))
+            val state = nowPlaying.update(frame)
+            CarPlayMediaSessionBridge.publish(this, state)
+            onNowPlaying(state)
         } catch (error: RuntimeException) {
             debugLog("Could not decode iAP2 NowPlayingUpdate", error)
         }
@@ -2053,6 +2068,8 @@ class CarPlayController(
         /** DFS の確認(CAC)は 60 秒。少し余裕を足す。 */
         private const val DFS_CAC_WAIT_MILLIS = 65_000L
         private const val NOW_PLAYING_UPDATE = 0x5001
+        private const val ROUTE_GUIDANCE_UPDATE = 0x5201
+        private const val ROUTE_GUIDANCE_MANEUVER_UPDATE = 0x5202
         private const val MEDIA_REMOTE_SEND_TIMEOUT_MILLIS = 2_000L
         private const val HID_REPORT_HOLD_MILLIS = 50L
         private const val IAP2_IPHONE_UUID = "00000000-deca-fade-deca-deafdecacafe"

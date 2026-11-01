@@ -3,11 +3,17 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- 運転の見張り(止まった・駐車)と、日の出・日の入り -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <!-- TV 版 YouTube(D の tv/DialServer): iPhone から自動で見つけてもらう(DIAL/SSDP) -->
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <!-- 記録の送信(宣言は更新アプリ。署名が同じアプリだけ) -->
     <uses-permission android:name="com.yuki.duocruise.permission.LOG" />
+    <!-- 走行の記録の全画面スクショ(MediaProjection の前面サービス。本人が画面で一度「開始」を押して許す) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <!-- 「OTTO のホームを開く」でホームアプリを探すため -->
     <queries>
         <intent>
@@ -51,6 +57,20 @@
             </intent-filter>
             <meta-data android:name="android.accessibilityservice" android:resource="@xml/pane_service" />
         </service>
+        <!-- Y!カーナビの知らせ(通知へのアクセスの許可が要る) -->
+        <service
+            android:name=".NaviAlertListener"
+            android:exported="true"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+        <!-- 走行の記録: 全画面スクショ(MediaProjection)。本人が画面で許したときだけ動く -->
+        <service
+            android:name=".ShotService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
         <!-- 記録シートの「指示」の受け口(送れるのは同じ署名の更新アプリだけ) -->
         <receiver
             android:name=".CommandReceiver"
