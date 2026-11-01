@@ -41,7 +41,8 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     private boolean carOn;
     /** 次につなぎ直すまでの待ち時間(ms)。失敗が続くほど延ばし、つながったら戻す。 */
     private long carRetryMs = CAR_RETRY_MIN_MS;
-    private static final long CAR_RETRY_MIN_MS = 10_000, CAR_RETRY_MAX_MS = 300_000, CAR_WATCH_MS = 5_000;
+    // 車では「繋がらないまま分単位待つ」のが致命的なので、待ちの上限は短く(最長 30 秒で必ずつなぎ直しを試す)
+    private static final long CAR_RETRY_MIN_MS = 10_000, CAR_RETRY_MAX_MS = 30_000, CAR_WATCH_MS = 5_000;
     /** CarPlay の見張り。失敗・切断で止まっていたら、待ってから作り直してつなぎ直す。 */
     private final Runnable carWatch = new Runnable() {
         private long stoppedSince;
@@ -148,7 +149,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
                 DuoLog.log("運転の見張り: " + (s == DriveWatch.PARKED ? "駐車" : s == DriveWatch.STOPPED ? "停止" : "走行"));
                 Trace.event("drive", s == DriveWatch.PARKED ? "parked" : s == DriveWatch.STOPPED ? "stopped" : "moving");
                 if (s == DriveWatch.PARKED) Uploader.sweep(this0()); // 駐車したら、貯まった記録をまとめて送る
-                if (s == DriveWatch.MOVING) driveHeld = false; // 走り出したら、止まったとき/駐車の自動を再開
+                if (s == DriveWatch.MOVING) { driveHeld = false; carRetryMs = CAR_RETRY_MIN_MS; } // 走り出したら、自動を再開し、CarPlay の再接続も即リトライへ戻す
                 if (!Store.single(this0())) animateYt(targetYt());
                 modeForDrive(was, s);
             }
@@ -646,6 +647,12 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     private boolean mapEngaged, arriveEngaged, turnDucked;
     /** 一本道(次の曲がり角が遠い)なので YouTube を大きくしている。 */
     private boolean straightEngaged;
+    /** コーナーで地図を前に出した対象の曲がり角の番号。番号が進んだ＝その曲がり角を通過した。 */
+    private int cornerTurnIndex = -1;
+    /** 通過後、次の曲がり角がこの距離より近ければ1本のコーナーとして続ける(連続カーブでバタつかせない)。 */
+    private static final int CORNER_CHAIN_M = 150;
+    /** 通過して(または案内終了で)地図を戻すまでの余韻。 */
+    private static final long CORNER_TAIL_MS = 2000;
 
     private final Runnable mapRelease = this::mapRelease;
 
@@ -682,14 +689,26 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     /** 設定が変わった・案内が届いたときに、表示・地図・音量を今の設定に合わせる。 */
     private void applyRoute() {
         updateHint();
-        boolean want = plan.map && Store.mapFront(this);
-        if (want) {
-            main.removeCallbacks(mapRelease); // 曲がり角に近づいている間は戻す予約を取り消し、0m まで保持
-            if (!mapEngaged) engageMap();
+        boolean mapOn = Store.mapFront(this);
+        Route r = route;
+        boolean guiding = r != null && r.getGuiding();
+        long dist = r == null ? -1 : r.distanceToTurnM;
+        int idx = r == null ? -1 : r.turnIndex;
+        if (mapOn && guiding && dist >= 0) {
+            if (!mapEngaged) {
+                if (dist <= Store.mapDist(this)) engageMap();     // 曲がり角に接近 → 地図を前へ
+            } else if (idx != cornerTurnIndex) {
+                // 出していた曲がり角を通過した(番号が進んだ)
+                main.removeCallbacks(mapRelease);
+                if (dist <= CORNER_CHAIN_M) cornerTurnIndex = idx; // 次の曲がり角も近い → 1本として継続
+                else main.postDelayed(mapRelease, CORNER_TAIL_MS); // 次は遠い → 余韻を残して解除
+            } else {
+                main.removeCallbacks(mapRelease); // まだその曲がり角へ接近中 → 0m まで保持
+            }
         } else if (mapEngaged) {
-            // 曲がり角を通過した(残り距離が地図の距離より伸びた)。通過後、数秒だけ残してから元に戻す
+            // 案内終了 / 地図フロント OFF → 余韻を残して戻す
             main.removeCallbacks(mapRelease);
-            main.postDelayed(mapRelease, Math.max(1000, Store.mapHoldMs(this)));
+            main.postDelayed(mapRelease, CORNER_TAIL_MS);
         }
         boolean duck = plan.duck && Store.turnDuck(this);
         if (duck != turnDucked) { turnDucked = duck; applyDuck(); }
@@ -700,7 +719,8 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         if (!BuildConfig.UNLIMITED || root == null) return;
         int mode = Store.hintMode(this);
         Route r = route;
-        boolean show = r != null && plan.hint && mode != 0 && (mode == 2 || !root.carVisible())
+        // CarPlay が見えている間は、DuoCruise の案内板を出さない(CarPlay 自身の矢印と二重になるため)
+        boolean show = r != null && plan.hint && mode != 0 && !root.carVisible()
                 && (panel == null || panel.getVisibility() != View.VISIBLE) && !guiding();
         root.turnHint(show, r == null ? 0 : r.getTurn(), r == null ? null : r.exitAngle,
                 r == null ? -1 : r.drivingSide, r == null ? null : distanceText(r), r == null ? null : r.onto);
@@ -719,6 +739,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     private void engageMap() {
         if (Store.single(this) && active() == car) return; // 1画面で CarPlay 表示中は、もう地図が見えている
         mapEngaged = true;
+        cornerTurnIndex = route == null ? -1 : route.turnIndex; // この曲がり角を対象に(通過で番号が進む)
         applyLayout();
         showMode("corner", R.string.mode_corner, R.string.mode_corner_cap, Store.neonTurn(this));
         Trace.clipHold(); // コーナーは通過するまでクリップを止めない(自動停止を取り消す)
@@ -730,6 +751,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         main.removeCallbacks(mapRelease);
         if (!mapEngaged) return;
         mapEngaged = false;
+        cornerTurnIndex = -1;
         applyLayout();
         DuoLog.log("曲がり角の案内: 元の表示に戻しました");
         Trace.event("corner-end", "");
