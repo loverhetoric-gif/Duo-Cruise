@@ -304,6 +304,10 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
             getIntent().removeExtra("openMenu");
             main.post(() -> openMenu());
         }
+        if (getIntent() != null && getIntent().getBooleanExtra("duohome_carplay", false)) {
+            getIntent().removeExtra("duohome_carplay");
+            main.post(this::showCarPlaySingle); // DuoHome の CarPlay タイルから: CarPlay を単独表示で開く
+        }
         DuoLog.listener = () -> { if (panel.getVisibility() == View.VISIBLE) panel.refresh(); };
         car.resume();
         tv.resume();
@@ -1170,6 +1174,19 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         DuoLog.log("表示: " + (Store.single(this) ? "1画面 " + active().name() : "2画面"));
         Trace.event("single", Store.single(this) ? "1画面 " + active().name() : "2画面");
         Trace.clip("single");
+    }
+
+    /** DuoHome の CarPlay タイルから: CarPlay を1画面(単独)で開く。 */
+    private void showCarPlaySingle() {
+        Store.setSingle(this, true);
+        // 1画面で CarPlay が見えるよう、操作側が YouTube 側なら CarPlay 側へ寄せる
+        if (SplitGeometry.tvOn(Store.side(this), Store.swapped(this)))
+            Store.setSide(this, Store.side(this) == SplitGeometry.SIDE_LEFT ? SplitGeometry.SIDE_RIGHT : SplitGeometry.SIDE_LEFT);
+        holdByHand();
+        relayout();
+        focusActive();
+        if (!carOn) startCar("DuoHome の CarPlay から");
+        DuoLog.log("DuoHome: CarPlay を単独表示にしました");
     }
 
     @Override public void swap() {
