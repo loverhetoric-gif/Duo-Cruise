@@ -12,7 +12,7 @@ import com.shilapi.xcertplay.iap2.wire.Iap2Frame
  * どちらも「変わった所だけ」が届くので、[RouteGuidanceAccumulator] で積み重ねて今の姿にする。
  * 数が分からない項目は -1、文字が分からない項目は null。
  */
-class Route(
+class Route @JvmOverloads constructor(
     /** 0=ルートなし 1=案内中 2=到着 3=読み込み中 4=現在地の確認中 5=ルートの再検索中 6=ルートへ向かう途中。-1=まだ知らせがない。 */
     @JvmField val state: Int,
     /** 次の曲がり角までの距離(m)。 */
@@ -36,6 +36,8 @@ class Route(
     @JvmField val distanceRemainingM: Long,
     /** 案内しているアプリの名前(例「マップ」)。 */
     @JvmField val source: String?,
+    /** 診断: 0x5201 の生フィールド一覧(ETA 等の在り処を特定するため。ルート開始の数回だけ非 null)。 */
+    @JvmField val debug: String? = null,
 ) {
     /** 案内の途中か(ルートがあって、到着していない)。 */
     val guiding: Boolean get() = state == 1 || state == 5 || state == 6
@@ -125,11 +127,16 @@ class RouteGuidanceAccumulator {
     private var remaining = -1L
     private var source: String? = null
     private val maneuvers = LinkedHashMap<Int, Maneuver>()
+    // 診断: ルート開始から数回だけ 0x5201 の生フィールドを書き出す(ETA 等の在り処を特定するため)
+    private var dumpArmed = true
+    private var dumpLeft = 0
+    private var dump: String? = null
 
     /** 1 つの知らせを取り込み、今の姿を返す。読めない知らせなら null。 */
     @Synchronized
     fun update(frame: Iap2Frame): Route? {
         val body = try { Iap2Messages.reader(frame) } catch (_: RuntimeException) { return null }
+        dump = null
         when (frame.messageId) {
             0x5201 -> {
                 read { body.optionalU8(1) }?.let { state = it }
@@ -147,6 +154,25 @@ class RouteGuidanceAccumulator {
                 read { body.optionalU32(7) }?.let { remaining = it }
                 read { body.optionalString(19) }?.let { source = it }
                 if (state == 0) { order = emptyList(); maneuvers.clear() } // ルートが消えたら曲がり角も忘れる
+                // 診断: ルートが消えたら次のルートで再アーム。案内に入ったら数回だけ全フィールドを書き出す
+                if (state == 0) dumpArmed = true
+                else if (dumpArmed && (state == 1 || state == 5 || state == 6)) { dumpArmed = false; dumpLeft = 3 }
+                if (dumpLeft > 0) {
+                    dumpLeft--
+                    val sb = StringBuilder("0x5201")
+                    for (id in 1..30) {
+                        if (read { body.has(id) } != true) continue
+                        val s = read { body.optionalString(id) }
+                        val u = read { body.optionalU32(id) }
+                        sb.append(" #").append(id).append('=')
+                        when {
+                            s != null -> sb.append('"').append(s).append('"')
+                            u != null -> sb.append(u)
+                            else -> sb.append('?')
+                        }
+                    }
+                    dump = sb.toString()
+                }
             }
             0x5202 -> {
                 val index = read { body.optionalU16(1) } ?: return null
@@ -170,6 +196,7 @@ class RouteGuidanceAccumulator {
     fun reset() {
         state = -1; distanceToTurn = -1; distanceText = null; order = emptyList()
         destination = null; remaining = -1; source = null; maneuvers.clear()
+        dumpArmed = true; dumpLeft = 0; dump = null
     }
 
     private fun snapshot(): Route {
@@ -189,6 +216,7 @@ class RouteGuidanceAccumulator {
             destination = destination,
             distanceRemainingM = remaining,
             source = source,
+            debug = dump,
         )
     }
 

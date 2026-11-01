@@ -665,6 +665,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     private void onRoute(Route r) {
         boolean wasGuiding = route != null && route.getGuiding();
         route = r;
+        if (r != null && r.debug != null) { DuoLog.log("NAV生: " + r.debug); Trace.event("nav-raw", r.debug); } // ETA 等の在り処を特定する診断
         if (r == null) plan.clear();
         else {
             plan.hintDist = Store.hintDist(this);
