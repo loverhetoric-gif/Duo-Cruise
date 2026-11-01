@@ -1,13 +1,9 @@
 package com.yuki.duohome;
 
 import android.content.Context;
-import android.graphics.BlurMaskFilter;
 import android.graphics.Canvas;
-import android.graphics.LinearGradient;
 import android.graphics.Paint;
-import android.graphics.RadialGradient;
 import android.graphics.RectF;
-import android.graphics.Shader;
 import android.graphics.Typeface;
 import android.view.MotionEvent;
 import android.view.View;
@@ -17,8 +13,9 @@ import java.util.Date;
 import java.util.Locale;
 
 /**
- * 箱のホーム。起動演出の延長 ―― 中心に呼吸する生きた光(オーブ)、行き先は周囲に最小限のネオンの印。
- *  ホーム: Duo Cruise / Claude / 設定(オーブの下に静かな3つの印)。
+ * 箱のホーム。一流の車載UIに倣う ―― フラット・高コントラスト・タイポグラフィ主役・縁のドック・差し色一点。
+ * 発光もぼかしもグラデも使わない。時計を大きな主役に、行き先は左の静かなドック、選択は細いアクセントのバーだけ。
+ *  ホーム: 左に Duo Cruise / Claude / 設定、右に時計。
  *  設定:   接続トグル(AP / Wi-Fi / Bluetooth)と Android の設定。
  */
 final class HomeView extends View {
@@ -30,28 +27,23 @@ final class HomeView extends View {
 
     static final String[] HOME = {"Duo Cruise", "Claude", "設定"};
     static final String[] SET_ROW = {"アクセスポイント", "Wi-Fi", "Bluetooth", "Android の設定を開く", "戻る"};
-    private static final int CYAN = 0x66E8FF, VIOLET = 0x8E7BFF;
+
+    private static final int BG = 0xFF0A0B0D, WHITE = 0xFFF2F4F7, DIM = 0xFF697079, ACCENT = 0xFF5CD6FF, HAIR = 0x16FFFFFF;
 
     private final Listener l;
-    private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final Paint glow = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final Paint text = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final RectF[] marks = new RectF[3];     // ホームの3つの印(当たり判定)
-    private final RectF[] rows = new RectF[5];       // 設定の行
-    private final SimpleDateFormat clock = new SimpleDateFormat("H:mm", Locale.JAPAN);
+    private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final RectF[] marks = new RectF[3];
+    private final RectF[] rows = new RectF[5];
+    private final SimpleDateFormat clock = new SimpleDateFormat("HH:mm", Locale.JAPAN);
+    private final SimpleDateFormat date = new SimpleDateFormat("M月d日 (EEE)", Locale.JAPAN);
+    private final Typeface thin = Typeface.create("sans-serif-light", Typeface.NORMAL);
+    private final Typeface reg = Typeface.create("sans-serif", Typeface.NORMAL);
 
     private final int[] toggleState = {-1, -1, -1};
     private int page = 0;
     private int selected = 0;
-    private final long t0 = System.nanoTime();
-    private float cx, cy, orbR;
 
-    HomeView(Context c, Listener l) {
-        super(c);
-        this.l = l;
-        setLayerType(LAYER_TYPE_SOFTWARE, null);
-        text.setTypeface(Typeface.create("sans-serif-light", Typeface.NORMAL));
-    }
+    HomeView(Context c, Listener l) { super(c); this.l = l; }
 
     void setToggle(int i, int state) { if (toggleState[i] != state) { toggleState[i] = state; invalidate(); } }
     int selected() { return selected; }
@@ -59,12 +51,12 @@ final class HomeView extends View {
     void move(int dir) { selected = (selected + (dir > 0 ? 1 : -1) + count()) % count(); invalidate(); }
     void activate() { dispatch(selected); }
     boolean back() { if (page == 1) { setPage(0); return true; } return false; }
-    private void setPage(int p) { page = p; selected = 0; invalidate(); }
+    private void setPage(int pg) { page = pg; selected = 0; invalidate(); }
 
     private void dispatch(int i) {
         if (page == 0) {
-            if (i == 2) setPage(1);       // 設定
-            else l.onTile(i);             // 0=Duo Cruise 1=Claude
+            if (i == 2) setPage(1);
+            else l.onTile(i);
         } else {
             switch (i) {
                 case 0: case 1: case 2: l.onToggle(i); break;
@@ -75,14 +67,15 @@ final class HomeView extends View {
     }
 
     @Override protected void onSizeChanged(int w, int h, int ow, int oh) {
-        cx = w * 0.5f;
-        cy = h * 0.4f;
-        orbR = h * 0.2f;
-        float my = cy + orbR + h * 0.24f, mw = w * 0.2f, mh = h * 0.16f;
-        float[] mx = {w * 0.3f, w * 0.5f, w * 0.7f};
-        for (int i = 0; i < 3; i++) marks[i] = new RectF(mx[i] - mw / 2, my - mh / 2, mx[i] + mw / 2, my + mh / 2);
-
-        float rTop = h * 0.26f, rH = h * 0.12f, rGap = h * 0.025f, side = w * 0.033f, rW = w - 2 * side;
+        // 左のドック(3項目、縦に中央寄せ)
+        float xL = w * 0.065f, itemH = h * 0.12f, gap = h * 0.055f, blockH = 3 * itemH + 2 * gap;
+        float startY = (h - blockH) / 2f, markW = w * 0.3f;
+        for (int i = 0; i < 3; i++) {
+            float y = startY + i * (itemH + gap);
+            marks[i] = new RectF(xL, y, xL + markW, y + itemH);
+        }
+        // 設定の行
+        float rTop = h * 0.26f, rH = h * 0.12f, rGap = h * 0.022f, side = w * 0.065f, rW = w - 2 * side;
         for (int i = 0; i < 5; i++) {
             float y = rTop + i * (rH + rGap);
             rows[i] = new RectF(side, y, side + rW, y + rH);
@@ -90,147 +83,96 @@ final class HomeView extends View {
     }
 
     @Override protected void onDraw(Canvas cv) {
-        int w = getWidth(), h = getHeight();
-        // 奥行きのある暗がり(中心をわずかに持ち上げる)
-        fill.setShader(new RadialGradient(cx, cy, Math.max(w, h) * 0.7f,
-                new int[]{0xFF0C1016, 0xFF06080C, 0xFF040509}, new float[]{0f, 0.6f, 1f}, Shader.TileMode.CLAMP));
-        cv.drawRect(0, 0, w, h, fill);
-        fill.setShader(null);
-
-        if (page == 0) drawHome(cv, w, h);
-        else drawSettings(cv, w, h);
+        cv.drawColor(BG);
+        if (page == 0) drawHome(cv); else drawSettings(cv);
     }
 
-    private void drawHome(Canvas cv, int w, int h) {
-        float ph = (System.nanoTime() - t0) / 1e9f;
-        float breathe = 0.5f + 0.5f * (float) Math.sin(ph * (2 * Math.PI / 4.2)); // 4.2秒で1呼吸
-        float hue = 0.5f + 0.5f * (float) Math.sin(ph * (2 * Math.PI / 13));        // ゆっくり色が流れる
-        int color = mix(CYAN, VIOLET, hue);
-        drawOrb(cv, cx, cy, orbR * (0.94f + 0.06f * breathe), color, breathe);
+    private void drawHome(Canvas cv) {
+        int w = getWidth(), h = getHeight();
 
-        // 時計(オーブの上・細く大きく、淡く発光)
-        text.setTextSize(h * 0.11f);
-        glowText(cv, clock.format(new Date()), cx, cy - orbR - h * 0.05f, 0xCCEAF2FF, Paint.Align.CENTER, 10f);
+        // 右: 時計(主役)と日付
+        float xR = w * 0.66f;
+        p.setTypeface(thin);
+        p.setColor(WHITE);
+        p.setTextAlign(Paint.Align.CENTER);
+        p.setLetterSpacing(0f);
+        p.setTextSize(h * 0.34f);
+        float clockY = h * 0.5f + p.getTextSize() * 0.35f;
+        cv.drawText(clock.format(new Date()), xR, clockY, p);
+        p.setTypeface(reg);
+        p.setColor(DIM);
+        p.setTextSize(h * 0.06f);
+        p.setLetterSpacing(0.18f);
+        cv.drawText(date.format(new Date()), xR, clockY + h * 0.17f, p);
+        p.setLetterSpacing(0f);
 
-        // 行き先(オーブの下・静かな印。選択だけ灯る)
+        // 左上: 小さな名乗り
+        p.setTextAlign(Paint.Align.LEFT);
+        p.setColor(DIM);
+        p.setTextSize(h * 0.045f);
+        p.setLetterSpacing(0.26f);
+        cv.drawText("DUO HOME", w * 0.065f, h * 0.13f, p);
+        p.setLetterSpacing(0f);
+
+        // 左: ドック(行き先)。選択だけ白＋細いアクセントのバー。
         for (int i = 0; i < 3; i++) {
             boolean sel = selected == i;
-            float mcx = marks[i].centerX(), mcy = marks[i].centerY();
-            int c = i == 2 ? 0xFFAEB8C6 : (color | 0xFF000000);
-            // 小さな光点
-            float dotY = mcy - h * 0.055f;
-            glow.setStyle(Paint.Style.FILL);
-            glow.setMaskFilter(new BlurMaskFilter(sel ? 14f : 5f, BlurMaskFilter.Blur.NORMAL));
-            glow.setColor((c & 0xFFFFFF) | (sel ? 0xCC000000 : 0x44000000));
-            cv.drawCircle(mcx, dotY, h * (sel ? 0.012f : 0.008f), glow);
-            glow.setMaskFilter(null);
-            glow.setColor((c & 0xFFFFFF) | 0xFF000000);
-            cv.drawCircle(mcx, dotY, h * (sel ? 0.009f : 0.006f), glow);
-            // ラベル
-            text.setTextSize(h * 0.062f);
-            glowText(cv, HOME[i], mcx, mcy + h * 0.025f,
-                    (c & 0xFFFFFF) | (sel ? 0xFF000000 : 0x77000000), Paint.Align.CENTER, sel ? 14f : 0f);
+            RectF r = marks[i];
+            if (sel) {
+                p.setColor(ACCENT);
+                cv.drawRect(r.left - w * 0.022f, r.centerY() - r.height() * 0.32f, r.left - w * 0.022f + 4f, r.centerY() + r.height() * 0.32f, p);
+            }
+            p.setTypeface(sel ? reg : thin);
+            p.setColor(sel ? WHITE : DIM);
+            p.setTextSize(h * 0.09f);
+            p.setTextAlign(Paint.Align.LEFT);
+            cv.drawText(HOME[i], r.left, r.centerY() + p.getTextSize() * 0.35f, p);
         }
-
-        if (page == 0) postInvalidateOnAnimation(); // 生きた光を動かし続ける
     }
 
-    /** 呼吸する生きた光。白い芯 → 色 → 闇へ、層を重ねてにじませる。 */
-    private void drawOrb(Canvas cv, float cx, float cy, float r, int color, float breathe) {
-        // 外側の大きなハロー
-        glow.setStyle(Paint.Style.FILL);
-        glow.setMaskFilter(new BlurMaskFilter(r * 0.9f, BlurMaskFilter.Blur.NORMAL));
-        glow.setColor((color & 0xFFFFFF) | (0x22000000 + (int) (0x1A * breathe) * 0x1000000));
-        cv.drawCircle(cx, cy, r * 1.05f, glow);
-        // 中間のにじみ
-        glow.setMaskFilter(new BlurMaskFilter(r * 0.35f, BlurMaskFilter.Blur.NORMAL));
-        glow.setColor((color & 0xFFFFFF) | 0x55000000);
-        cv.drawCircle(cx, cy, r * 0.8f, glow);
-        glow.setMaskFilter(null);
-        // 芯(放射グラデ: 白っぽい中心 → 色 → 透明)
-        fill.setShader(new RadialGradient(cx, cy, r,
-                new int[]{0xF2FFFFFF, (color & 0xFFFFFF) | 0xDD000000, (color & 0xFFFFFF) | 0x33000000, 0x00000000},
-                new float[]{0f, 0.35f, 0.72f, 1f}, Shader.TileMode.CLAMP));
-        cv.drawCircle(cx, cy, r, fill);
-        fill.setShader(null);
-    }
+    private void drawSettings(Canvas cv) {
+        int w = getWidth(), h = getHeight();
+        p.setTypeface(reg);
+        p.setTextAlign(Paint.Align.LEFT);
+        p.setColor(DIM);
+        p.setTextSize(h * 0.05f);
+        p.setLetterSpacing(0.2f);
+        cv.drawText("設定", w * 0.065f, h * 0.14f, p);
+        p.setLetterSpacing(0f);
+        p.setTypeface(thin);
+        p.setColor(WHITE);
+        p.setTextAlign(Paint.Align.RIGHT);
+        p.setTextSize(h * 0.09f);
+        cv.drawText(clock.format(new Date()), w * (1 - 0.065f), h * 0.145f, p);
 
-    private void drawSettings(Canvas cv, int w, int h) {
-        text.setTextSize(h * 0.044f);
-        glowText(cv, "設定", w * 0.033f, h * 0.12f, 0x99AEB8C6, Paint.Align.LEFT, 6f);
-        text.setTextSize(h * 0.075f);
-        glowText(cv, clock.format(new Date()), w * (1f - 0.033f), h * 0.125f, 0xE6EAF2FF, Paint.Align.RIGHT, 9f);
         for (int i = 0; i < 5; i++) drawRow(cv, rows[i], i, selected == i);
     }
 
     private void drawRow(Canvas cv, RectF r, int i, boolean sel) {
         boolean isToggle = i < 3;
         boolean on = isToggle && toggleState[i] == 1;
-        int base = isToggle ? (on ? 0xFF59E3B0 : 0xFF49535F) : (i == 4 ? 0xFF9AA7B8 : 0xFF7FB2FF);
-        int color = sel ? brighten(base) : base;
-        fill.setShader(new LinearGradient(0, r.top, 0, r.bottom,
-                (color & 0xFFFFFF) | (sel ? 0x22000000 : 0x10000000), 0x00000000, Shader.TileMode.CLAMP));
-        cv.drawRect(r, fill);
-        fill.setShader(null);
-        glow.setStyle(Paint.Style.STROKE);
-        glow.setStrokeWidth(sel ? 3f : 2f);
-        glow.setColor((color & 0xFFFFFF) | ((on || sel) ? 0x99000000 : 0x44000000));
-        glow.setMaskFilter(new BlurMaskFilter(sel ? 22f : (on ? 12f : 6f), BlurMaskFilter.Blur.NORMAL));
-        cv.drawRect(r, glow);
-        glow.setMaskFilter(null);
-
-        float padL = r.height() * 0.5f;
+        // 上辺の細いヘアライン(区切り)
+        p.setColor(HAIR);
+        cv.drawRect(r.left, r.top, r.right, r.top + 1f, p);
+        // 選択: 左に差し色のバー
+        if (sel) {
+            p.setColor(ACCENT);
+            cv.drawRect(r.left, r.centerY() - r.height() * 0.3f, r.left + 4f, r.centerY() + r.height() * 0.3f, p);
+        }
+        p.setTypeface(sel ? reg : thin);
+        p.setColor(sel ? WHITE : (on || !isToggle ? 0xFFBBC2CB : DIM));
+        p.setTextSize(r.height() * 0.34f);
+        p.setTextAlign(Paint.Align.LEFT);
+        cv.drawText(SET_ROW[i], r.left + r.height() * 0.5f, r.centerY() + p.getTextSize() * 0.35f, p);
+        // 右: 状態 / しるし
+        p.setTextAlign(Paint.Align.RIGHT);
         if (isToggle) {
-            float dotR = r.height() * 0.14f, dx = r.left + padL, dy = r.centerY();
-            glow.setStyle(Paint.Style.FILL);
-            glow.setMaskFilter(new BlurMaskFilter(on ? 16f : 6f, BlurMaskFilter.Blur.NORMAL));
-            glow.setColor((color & 0xFFFFFF) | (on ? 0xCC000000 : 0x55000000));
-            cv.drawCircle(dx, dy, dotR, glow);
-            glow.setMaskFilter(null);
-            glow.setColor((color & 0xFFFFFF) | 0xFF000000);
-            cv.drawCircle(dx, dy, dotR * (on ? 0.7f : 0.45f), glow);
-            text.setTextSize(r.height() * 0.32f);
-            text.setColor(on || sel ? 0xFFEAF2FF : 0xFF8A94A2);
-            text.setTextAlign(Paint.Align.LEFT);
-            cv.drawText(SET_ROW[i], dx + dotR + r.height() * 0.4f, r.centerY() + text.getTextSize() * 0.35f, text);
-            glowText(cv, toggleState[i] == -1 ? "—" : on ? "ON" : "OFF", r.right - r.height() * 0.4f,
-                    r.centerY() + text.getTextSize() * 0.35f, (color & 0xFFFFFF) | 0xFF000000, Paint.Align.RIGHT, on ? 10f : 0f);
+            p.setColor(on ? ACCENT : DIM);
+            cv.drawText(toggleState[i] == -1 ? "—" : on ? "ON" : "OFF", r.right, r.centerY() + p.getTextSize() * 0.35f, p);
         } else {
-            text.setTextSize(r.height() * 0.32f);
-            glowText(cv, SET_ROW[i], r.left + padL, r.centerY() + text.getTextSize() * 0.35f,
-                    (color & 0xFFFFFF) | 0xFF000000, Paint.Align.LEFT, sel ? 10f : 0f);
-            glowText(cv, i == 4 ? "‹" : "›", r.right - r.height() * 0.45f, r.centerY() + r.height() * 0.17f,
-                    (color & 0xFFFFFF) | 0xFF000000, Paint.Align.RIGHT, sel ? 10f : 0f);
+            p.setColor(sel ? WHITE : DIM);
+            cv.drawText(i == 4 ? "‹" : "›", r.right, r.centerY() + r.height() * 0.15f, p);
         }
-    }
-
-    // ───────── 部品 ─────────
-    private void glowText(Canvas cv, String s, float x, float y, int color, Paint.Align a, float blur) {
-        text.setTextAlign(a);
-        if (blur > 0) {
-            glow.setStyle(Paint.Style.FILL);
-            glow.setTextSize(text.getTextSize());
-            glow.setTypeface(text.getTypeface());
-            glow.setTextAlign(a);
-            glow.setColor((color & 0xFFFFFF) | 0x66000000);
-            glow.setMaskFilter(new BlurMaskFilter(blur, BlurMaskFilter.Blur.NORMAL));
-            cv.drawText(s, x, y, glow);
-            glow.setMaskFilter(null);
-        }
-        text.setColor(color);
-        cv.drawText(s, x, y, text);
-    }
-
-    private static int mix(int a, int b, float t) {
-        int ar = (a >> 16) & 0xFF, ag = (a >> 8) & 0xFF, ab = a & 0xFF;
-        int br = (b >> 16) & 0xFF, bg = (b >> 8) & 0xFF, bb = b & 0xFF;
-        int r = Math.round(ar + (br - ar) * t), g = Math.round(ag + (bg - ag) * t), bl = Math.round(ab + (bb - ab) * t);
-        return (r << 16) | (g << 8) | bl;
-    }
-
-    private static int brighten(int c) {
-        int r = Math.min(255, ((c >> 16) & 0xFF) + 40), g = Math.min(255, ((c >> 8) & 0xFF) + 40), b = Math.min(255, (c & 0xFF) + 40);
-        return 0xFF000000 | (r << 16) | (g << 8) | b;
     }
 
     @Override public boolean onTouchEvent(MotionEvent e) {
