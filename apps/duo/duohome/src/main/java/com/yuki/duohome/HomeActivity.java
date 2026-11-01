@@ -4,7 +4,6 @@ import android.app.Activity;
 import android.bluetooth.BluetoothAdapter;
 import android.content.Intent;
 import android.net.Uri;
-import android.graphics.drawable.Drawable;
 import android.net.wifi.WifiManager;
 import android.os.Bundle;
 import android.os.Handler;
@@ -44,22 +43,6 @@ public final class HomeActivity extends Activity implements HomeView.Listener {
                 | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_FULLSCREEN
                 | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
         setContentView(view);
-        loadIcons();
-    }
-
-    /** 実際のアプリのアイコンを読み込む。CarPlay はグリフ(null)、Claude は未インストールなら null(スパーク)。 */
-    private void loadIcons() {
-        Drawable[] ic = new Drawable[4];
-        ic[0] = iconOf(DUO);                       // Duo Cruise(あなたが作ったアイコン)
-        ic[1] = null;                              // CarPlay → ハンドルのグリフ
-        ic[2] = iconOf(CLAUDE);                    // Claude(入っていれば)
-        ic[3] = iconOf("com.android.settings");    // 設定
-        view.setIcons(ic);
-    }
-
-    private Drawable iconOf(String pkg) {
-        try { return getPackageManager().getApplicationIcon(pkg); }
-        catch (Throwable t) { return null; }
     }
 
     @Override protected void onResume() {
@@ -118,9 +101,8 @@ public final class HomeActivity extends Activity implements HomeView.Listener {
     // ───────── タイル ─────────
     @Override public void onTile(int i) {
         switch (i) {
-            case 0: launch(DUO, null); break;                 // Duo Cruise
-            case 1: launch(DUO, "duohome_carplay"); break;    // CarPlay(DuoCruise を CarPlay で)
-            case 2: launchOrStore(CLAUDE); break;             // Claude
+            case 0: launch(DUO, null); break;       // Duo Cruise
+            case 1: launchOrStore(CLAUDE); break;   // Claude
         }
     }
 
