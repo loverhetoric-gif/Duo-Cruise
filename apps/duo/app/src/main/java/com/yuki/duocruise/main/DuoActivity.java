@@ -526,7 +526,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     private void applyLayout() {
         if (curYt < 0) curYt = Store.splitYt(this);
         root.setSingle(Store.single(this));
-        root.setPip(mapEngaged, false); // 小窓は右下(本人の指示。案内の札から遠い側)
+        root.setPip(mapEngaged, true); // 小窓は左下(本人の指示)
         root.apply(Store.swapped(this), Store.side(this), Store.panelHalf(this), curYt);
         if (ytAnim == null || !ytAnim.isRunning()) fitCar(curYt);
         padLayoutState();
@@ -1569,8 +1569,22 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         }
         if (turnDucked) level = Math.min(level, Store.duckLevel(this) / 100f); // 曲がり角の手前(Unlimited Edition)
         if (alertDucked) level = Math.min(level, Store.duckLevel(this) / 100f); // Y!カーナビの警告
-        tv.duck(level);
+        fadeDuckTo(level); // 急に切り替えず、自然に上げ下げする
         tv.hold(call); // 電話・Siri の間は一時停止。終わったら、止める前に再生していれば再開
+    }
+
+    /** YouTube の音量を、目標までなめらかに上げ下げする(ナビ音声の重なりを自然に)。 */
+    private android.animation.ValueAnimator duckAnim;
+    private float curDuck = 1f;
+    private static final long DUCK_FADE_MS = 350;
+    private void fadeDuckTo(float target) {
+        if (duckAnim != null) duckAnim.cancel();
+        if (Math.abs(curDuck - target) < 0.02f) { curDuck = target; tv.duck(target); return; }
+        duckAnim = android.animation.ValueAnimator.ofFloat(curDuck, target);
+        duckAnim.setDuration(DUCK_FADE_MS);
+        duckAnim.setInterpolator(new android.view.animation.DecelerateInterpolator());
+        duckAnim.addUpdateListener(a -> { curDuck = (float) a.getAnimatedValue(); tv.duck(curDuck); });
+        duckAnim.start();
     }
 
     /** 状態が変わったら、少し待ってまとめて1回送る。 */
