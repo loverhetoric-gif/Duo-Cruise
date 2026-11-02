@@ -31,6 +31,9 @@ final class Panes {
                 /** 記録した内容。画面の記録にだけ出す(更新アプリへは CarPlayPane が送り済み)。 */
                 @Override public void onRecord(String kind, String text) {
                     DuoLog.local(kind, "CarPlay: " + text);
+                    // 切断の理由(失敗・通信エラー・取り合い)は logcat だと数十秒で流れて吸い出す頃に消える。
+                    // 永続の走行記録(Trace)にも残し、外での切断の原因を後から辿れるようにする。
+                    if ("error".equals(kind)) Trace.event("car-err", text);
                 }
 
                 /** CarPlay の音。ナビ・電話・Siri のときに YouTube の音量を下げる。 */

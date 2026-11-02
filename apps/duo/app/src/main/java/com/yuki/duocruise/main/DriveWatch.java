@@ -22,6 +22,8 @@ final class DriveWatch implements LocationListener {
     interface Listener {
         void driveState(int state);
         void daylight(boolean day);
+        /** 位置が更新された(航続距離の累積などに使う)。1 秒ごとに届く。 */
+        void location(Location loc);
     }
 
     private static final long STOP_MS = 3000, SUN_CHECK_MS = 5 * 60_000;
@@ -67,6 +69,7 @@ final class DriveWatch implements LocationListener {
 
     @Override public void onLocationChanged(Location loc) {
         Trace.gps(loc); // 経路の記録(走行の記録がオンのときだけ)
+        l.location(loc); // 航続距離の累積など(毎回)
         lat = loc.getLatitude();
         lon = loc.getLongitude();
         float kmh;
