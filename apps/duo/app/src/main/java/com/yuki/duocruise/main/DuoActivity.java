@@ -57,6 +57,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
             if (now - stoppedSince < carRetryMs) return;
             stoppedSince = 0;
             DuoLog.log("CarPlay をつなぎ直します(" + (carRetryMs / 1000) + " 秒待った。止まった理由: " + s + ")");
+            Trace.event("car-restart", (carRetryMs / 1000) + "s待ち " + s); // 重い全解放の再接続が走った瞬間(黒画面の長さの原因)
             carRetryMs = Math.min(carRetryMs * 2, CAR_RETRY_MAX_MS);
             restartCar();
         }
@@ -544,14 +545,37 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
 
     /** CarPlay の接続状態(前回値)。変化した瞬間だけ、メインビューを色で知らせる。 */
     private boolean lastConn;
+    /** つながった時刻(elapsedRealtime)。切れたとき、どれだけ保ったか(滞在時間)を記録するため。 */
+    private long connSince;
 
     /** 接続状態が変わったら、メインビューの縁を一瞬だけ光らせる(完了=青／不良=赤)。 */
     private void onConnChanged() {
         boolean conn = carOn() && carBluetooth(safeStatus(car));
         if (conn == lastConn) return;
         lastConn = conn;
+        // 切断の精密ログ: いつ・どれだけ保って・なぜ(状態文)・そのとき箱の Wi-Fi(STA)は何をしていたか。
+        // 外での「頻繁な切断」の原因(走査で無線を奪われる等)を、永続の走行記録から後で辿れるようにする。
+        long now = SystemClock.elapsedRealtime();
+        if (conn) {
+            connSince = now;
+            Trace.event("car-conn", "up | " + wifiSnap());
+        } else {
+            long dwellS = connSince > 0 ? (now - connSince) / 1000 : -1;
+            Trace.event("car-conn", "down " + dwellS + "s " + safeStatus(car) + " | " + wifiSnap());
+            connSince = 0;
+        }
         int which = conn ? 1 : 2;
         root.glow(dayColor(Store.neon(this, which)), dayLevel(Store.neonLevel(this, which) / 100f)); // 完了 / 不良(切断)。色・強さは設定可
+    }
+
+    /** 切断の瞬間の、箱の Wi-Fi 子機(STA)の様子。走査中(SCANNING)・未接続なら、無線の取り合いが疑わしい。 */
+    private String wifiSnap() {
+        try {
+            android.net.wifi.WifiManager wm = (android.net.wifi.WifiManager) getApplicationContext().getSystemService(WIFI_SERVICE);
+            android.net.wifi.WifiInfo i = wm.getConnectionInfo();
+            if (i == null) return "wifi?";
+            return "wifi " + i.getSSID() + " " + i.getFrequency() + "MHz rssi" + i.getRssi() + " " + i.getSupplicantState();
+        } catch (Throwable t) { return "wifi-err"; }
     }
 
     // ネオンの色・強さ(設定から RGB・強さを個別に変更)。which: 0=ターゲット切替 / 1=接続完了 / 2=接続不良。
