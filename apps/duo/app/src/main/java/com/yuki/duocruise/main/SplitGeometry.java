@@ -93,6 +93,16 @@ final class SplitGeometry {
     /** 1画面のときの、出す側の枠。どちらも横いっぱい(CarPlay は iPhone に画面全体の範囲で描かせる)。 */
     static int[] single(int w, int h, boolean tv) { return new int[]{0, 0, w, h}; }
 
+    /**
+     * YouTube を画面中央に 16:9 で全画面表示したときの枠(クルーズ・停車・駐車・案内)。
+     * 画面が 16:9 より横長なら左右に黒い余白が残り、そこへ情報レール(RailView)を出す。
+     */
+    static int[] centered169(int w, int h) {
+        int vw = Math.min(w, Math.round(h * 16f / 9f));
+        int x = (w - vw) / 2;
+        return new int[]{x, 0, x + vw, h};
+    }
+
     /** 曲がり角の小窓(YouTube)。幅は画面の 1/3、16:9。下の隅(left なら左下、普段は右下)。 */
     static int[] pip(int w, int h, boolean left) {
         int pw = Math.round(w / 3f), ph = Math.min(h, Math.round(pw * 9 / 16f)), m = 16;

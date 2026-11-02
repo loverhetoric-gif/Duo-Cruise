@@ -37,6 +37,10 @@ final class SplitRoot extends ViewGroup {
     private final SplitLine splitLine;
     /** 自動の切り替え(駐車・曲がり角など)で、端から出すモードの帯。 */
     private final ModeTag modeTag;
+    /** YouTube を中央 16:9 で全画面にしたとき、左右の黒余白へ出す情報レール(クルーズ・停車・駐車・案内)。 */
+    private final RailView railView;
+    /** 情報レールを出す(YouTube 中央全画面 + 余白レール)。apply の前に呼ぶ。 */
+    private boolean rails;
     View car, tv;
     /** タッチパッドのカーソル(いちばん上に置く)。 */
     View cursor;
@@ -70,7 +74,19 @@ final class SplitRoot extends ViewGroup {
         splitLine = new SplitLine(c);
         carLoader = new CarLoaderView(c);
         modeTag = new ModeTag(c);
+        railView = new RailView(c);
+        railView.setVisibility(GONE);
     }
+
+    /** 情報レールを出す/やめる(YouTube 中央全画面 + 左右余白のレール)。apply の前に呼ぶ。 */
+    void setRails(boolean v) {
+        if (rails == v) return;
+        rails = v;
+        railView.setVisibility(v ? VISIBLE : GONE);
+    }
+
+    /** 情報レールに出す値を渡す(行き先・目的地まで・到着・航続・進行度・標識)。 */
+    void setRailData(RailView.Data d) { railView.set(d); }
 
     /** モードの帯を端から出す(駐車・曲がり角などの自動の切り替え)。メニュー表示中は出さない。 */
     void showMode(String label, String caption, int color, boolean fromLeft) {
@@ -87,6 +103,7 @@ final class SplitRoot extends ViewGroup {
         panel = p;
         addView(car);
         addView(tv);
+        addView(railView);
         addView(carLoader);
         addView(frame);
         addView(hint);
@@ -114,6 +131,7 @@ final class SplitRoot extends ViewGroup {
 
     /** CarPlay(地図)が画面に見えているか。 */
     boolean carVisible() {
+        if (rails) return false; // レール中は YouTube を中央全画面にし、CarPlay は画面外
         if (pip) return true;
         if (single) return !tvShown();
         return ytPct < 98;
@@ -139,6 +157,7 @@ final class SplitRoot extends ViewGroup {
     private int[] carRect(int w, int h) { return carRect(w, h, ytPct); }
 
     private int[] carRect(int w, int h, int yt) {
+        if (rails) return SplitGeometry.offscreen(w, h); // レール中: CarPlay は画面外(YouTube 中央全画面)
         if (pip) return new int[]{0, 0, w, h};
         if (single) return tvShown() ? SplitGeometry.offscreen(w, h) : SplitGeometry.single(w, h, false);
         // YouTube が全画面に近いとき、CarPlay は幅0になり映像面が壊れるので、画面の外へ置く
@@ -148,6 +167,7 @@ final class SplitRoot extends ViewGroup {
     }
 
     private int[] tvRect(int w, int h) {
+        if (rails) return SplitGeometry.centered169(w, h); // レール中: YouTube を中央 16:9 全画面
         if (pip) return SplitGeometry.pip(w, h, pipLeft);
         if (single) return tvShown() ? SplitGeometry.single(w, h, true) : SplitGeometry.offscreen(w, h);
         if (ytPct >= 98) return SplitGeometry.single(w, h, true);
@@ -157,6 +177,7 @@ final class SplitRoot extends ViewGroup {
 
     /** 操作している枠(線と光を描く場所)。 */
     int[] activeRect(int w, int h) {
+        if (rails) return SplitGeometry.centered169(w, h); // レール中: 操作対象は中央の YouTube
         if (pip) return tvShown() ? SplitGeometry.pip(w, h, pipLeft) : new int[]{0, 0, w, h};
         if (single) return SplitGeometry.single(w, h, tvShown());
         if (ytPct >= 98) return SplitGeometry.single(w, h, tvShown());
@@ -393,6 +414,7 @@ final class SplitRoot extends ViewGroup {
         measureTo(car, c);
         measureTo(carLoader, c);
         measureTo(tv, v);
+        measureTo(railView, new int[]{0, 0, w, h});
         measureTo(frame, new int[]{0, 0, w, h});
         measureTo(turnGlow, new int[]{0, 0, w, h});
         measureTo(modeTag, new int[]{0, 0, w, h});
@@ -424,6 +446,7 @@ final class SplitRoot extends ViewGroup {
         layoutTo(car, c);
         layoutTo(carLoader, c);
         layoutTo(tv, v);
+        layoutTo(railView, new int[]{0, 0, w, h});
         layoutTo(frame, new int[]{0, 0, w, h});
         layoutTo(turnGlow, new int[]{0, 0, w, h});
         layoutTo(modeTag, new int[]{0, 0, w, h});

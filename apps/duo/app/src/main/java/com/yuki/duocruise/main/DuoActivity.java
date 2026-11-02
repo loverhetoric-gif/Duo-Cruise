@@ -155,6 +155,17 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
                 modeForDrive(was, s);
             }
             @Override public void daylight(boolean d) { isDay = d; DuoLog.log("運転の見張り: " + (d ? "昼" : "夜") + "になりました"); }
+            @Override public void location(android.location.Location loc) {
+                // 航続距離: 案内中だけ、前の位置からの距離を足していく(開始地点からの累積)
+                boolean guiding = route != null && route.getGuiding();
+                if (guiding) {
+                    if (cruiseLast != null) cruiseMeters += loc.distanceTo(cruiseLast);
+                    cruiseLast = loc;
+                } else {
+                    cruiseLast = null;
+                }
+                if (railsWanted()) pushRail(); // レール中は数値を小まめに更新
+            }
         });
         drive.start();
         instant = new InstantUpdate(this);
@@ -532,10 +543,62 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         if (curYt < 0) curYt = Store.splitYt(this);
         root.setSingle(Store.single(this));
         root.setPip(mapEngaged, true); // 小窓は左下(本人の指示)
+        root.setRails(railsWanted());  // クルーズ/停車/駐車/案内: YouTube を中央全画面にし、左右の余白へ情報レール
         root.apply(Store.swapped(this), Store.side(this), Store.panelHalf(this), curYt);
         if (ytAnim == null || !ytAnim.isRunning()) fitCar(curYt);
         padLayoutState();
         updateHint();
+        pushRail();
+    }
+
+    /**
+     * 情報レールを出す場面か。本人の決定: クルーズ(一本道)・停車・駐車・案内で、YouTube を中央 16:9 の
+     * 全画面にし、空いた左右の黒余白へ情報(時刻・行き先・目的地まで・到着・航続・進行度／標識)を並べる。
+     * 1画面・コーナー(小窓)・到着(全画面)・手動調整中は出さない。
+     */
+    private boolean railsWanted() {
+        if (Store.single(this) || mapEngaged || arriveEngaged || driveHeld) return false;
+        if (straightEngaged) return true;                                          // クルーズ(一本道)
+        if (driveState == DriveWatch.PARKED && Store.parkOn(this)) return true;     // 駐車
+        if (driveState >= DriveWatch.STOPPED && Store.stopOn(this)) return true;    // 停車
+        return false;
+    }
+
+    /** 情報レールに今の値を渡す(推測しない。案内から取れた分だけ。到着(ETA)は未特定なので「—」)。 */
+    private void pushRail() {
+        RailView.Data d = new RailView.Data();
+        Route r = route;
+        d.guiding = r != null && r.getGuiding();
+        if (d.guiding) {
+            d.dest = r.destination;
+            if (r.distanceRemainingM >= 0) d.remain = Store.distance(this, r.distanceRemainingM);
+            d.eta = "—"; // 到着時間: iAP2 のどのフィールドか未特定(nav-raw 診断で特定中)
+            if (cruiseMeters > 0) d.cruise = Store.distance(this, Math.round(cruiseMeters));
+            if (navStartRemainM > 0 && r.distanceRemainingM >= 0)
+                d.progress = Math.max(0f, Math.min(1f, (navStartRemainM - r.distanceRemainingM) / (float) navStartRemainM));
+            Integer ang = turnAngle(r.getTurn());
+            if (ang != null && r.distanceToTurnM >= 0) {
+                d.turnAngle = ang;
+                d.turnDist = distanceText(r);
+                d.onto = r.onto;
+            }
+        }
+        root.setRailData(d);
+    }
+
+    /** 標識の矢印の角度(度)。RouteGuidance の Turn の値から。なし/到着/ロータリー等は標識を出さない(null)。 */
+    private Integer turnAngle(int turn) {
+        switch (turn) {
+            case 1: return 0;      // 直進
+            case 2: return -45;    // 斜め左
+            case 3: return -90;    // 左折
+            case 4: return -135;   // 鋭い左
+            case 5: return 45;     // 斜め右
+            case 6: return 90;     // 右折
+            case 7: return 135;    // 鋭い右
+            case 8: return 180;    // U ターン
+            default: return null;
+        }
     }
 
     /** CarPlay の枠が落ち着く幅を伝え、iPhone に描く範囲を合わせてもらう(動く前に、行き先の幅で)。 */
@@ -675,6 +738,10 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     private boolean mapEngaged, arriveEngaged, turnDucked;
     /** 一本道(次の曲がり角が遠い)なので YouTube を大きくしている。 */
     private boolean straightEngaged;
+    /** 情報レール: 案内開始時の残り距離(進行度の分母)と、開始からの航続距離(GPS 累積)。 */
+    private long navStartRemainM = -1;
+    private double cruiseMeters;
+    private android.location.Location cruiseLast;
     /** コーナーで地図を前に出した対象の曲がり角の番号。番号が進んだ＝その曲がり角を通過した。 */
     private int cornerTurnIndex = -1;
     /** 通過後、次の曲がり角がこの距離より近ければ1本のコーナーとして続ける(連続カーブでバタつかせない)。 */
@@ -704,8 +771,16 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         }
         // 新しいルートが始まったら、到着後の全画面をやめる
         if (r != null && r.getGuiding() && !wasGuiding && arriveEngaged) { arriveEngaged = false; animateYt(targetYt()); }
+        // 案内が始まった瞬間: 進行度の基準(開始時の残り距離)と航続距離(GPS 累積)をリセット
+        if (r != null && r.getGuiding() && !wasGuiding) {
+            navStartRemainM = r.distanceRemainingM;
+            cruiseMeters = 0; cruiseLast = null;
+        } else if (r == null || !r.getGuiding()) {
+            navStartRemainM = -1;
+        }
         applyRoute();
         updateStraight();
+        pushRail(); // 残り距離・進行度・標識を最新に
         if (plan.light != null && Store.turnLight(this)) {
             int c = Store.neon(this, 3), lv = Store.neonLevel(this, 3);
             root.turnGlow(plan.light, dayColor(c), dayLevel(lv / 100f));
@@ -749,7 +824,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         int mode = Store.hintMode(this);
         Route r = route;
         // CarPlay が見えている間は、DuoCruise の案内板を出さない(CarPlay 自身の矢印と二重になるため)
-        boolean show = r != null && plan.hint && mode != 0 && !root.carVisible()
+        boolean show = r != null && plan.hint && mode != 0 && !root.carVisible() && !railsWanted()
                 && (panel == null || panel.getVisibility() != View.VISIBLE) && !guiding();
         root.turnHint(show, r == null ? 0 : r.getTurn(), r == null ? null : r.exitAngle,
                 r == null ? -1 : r.drivingSide, r == null ? null : distanceText(r), r == null ? null : r.onto);
