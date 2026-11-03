@@ -116,8 +116,8 @@ final class Store {
     static int hintDist(Context c) { return p(c).getInt("rtHintDist", 1000); }
     static void setHintDist(Context c, int v) { p(c).edit().putInt("rtHintDist", clampDist(v)).apply(); }
 
-    /** 曲がり角が近づいたら地図を表示するか。 */
-    static boolean mapFront(Context c) { return p(c).getBoolean("rtMap", false); }
+    /** 曲がり角が近づいたら地図を表示するか(コーナービュー)。確定デザインの標準挙動なので初期値は ON。 */
+    static boolean mapFront(Context c) { return p(c).getBoolean("rtMap", true); }
     static void setMapFront(Context c, boolean v) { p(c).edit().putBoolean("rtMap", v).apply(); }
     static int mapDist(Context c) { return p(c).getInt("rtMapDist", 300); }
     static void setMapDist(Context c, int v) { p(c).edit().putInt("rtMapDist", clampDist(v)).apply(); }
@@ -146,8 +146,8 @@ final class Store {
     static boolean naviAlert(Context c) { return p(c).getBoolean("drAlert", true); }
     static void setNaviAlert(Context c, boolean v) { p(c).edit().putBoolean("drAlert", v).apply(); }
 
-    /** 一本道(次の曲がり角が遠い)のあいだ、YouTube を大きくするか。 */
-    static boolean straightOn(Context c) { return p(c).getBoolean("rtStraight", false); }
+    /** 一本道(次の曲がり角が遠い)のあいだ、YouTube を大きくするか(走行中レール)。確定デザインの標準挙動なので初期値は ON。 */
+    static boolean straightOn(Context c) { return p(c).getBoolean("rtStraight", true); }
     static void setStraightOn(Context c, boolean v) { p(c).edit().putBoolean("rtStraight", v).apply(); }
     /** 次の曲がり角がこの距離より遠ければ一本道とみなす。 */
     static int straightDist(Context c) { return p(c).getInt("rtStraightDist", 2000); }

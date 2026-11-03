@@ -445,6 +445,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
             case PANEL: togglePanel(); break;
             case SINGLE: toggleSingle(); break;
             case SPLIT: startSplitAdjust(); break;
+            case YT_BACK: tv.back(); break;
         }
     }
 

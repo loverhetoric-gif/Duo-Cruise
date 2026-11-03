@@ -15,9 +15,9 @@ import android.view.View;
  * そういう自動の切り替えに名前(Parking Mode など)を添えて、数秒で引っ込める。
  *
  * 見た目は縁の光と同じ考え方で、さりげなく:
- *   ・端(左か右)に、そのモードの色の細い光の筋。そこから内側へ柔らかくにじむ。
- *   ・黒の透過の板(角は丸めない)に、白いモード名。初めてのときだけ、下に小さな一行の説明。
- *   ・出入りは Motion の緩急で、端からスライド。入って約2秒そのまま、引く。
+ *   ・画面の中央・上から降りてくる。上端にそのモードの色の細い光の筋、そこから下へ柔らかくにじむ。
+ *   ・黒の透過の板(角は丸めない)に、中央寄せの白いモード名。初めてのときだけ、下に小さな一行の説明。
+ *   ・出入りは Motion の緩急で、上からスライド。入って約2秒そのまま、引く。
  */
 final class ModeTag extends View {
     private final float dp;
@@ -43,8 +43,10 @@ final class ModeTag extends View {
         name.setColor(0xFFFFFFFF);
         name.setFakeBoldText(true);
         name.setTextSize(19 * dp);
+        name.setTextAlign(Paint.Align.CENTER);
         cap.setColor(0xB8FFFFFF);
         cap.setTextSize(12.5f * dp);
+        cap.setTextAlign(Paint.Align.CENTER);
         setVisibility(GONE);
     }
 
@@ -84,41 +86,41 @@ final class ModeTag extends View {
 
     @Override protected void onDraw(Canvas cv) {
         if (in <= 0 || label.isEmpty()) return;
-        int h = getHeight(), w = getWidth();
-        float pad = 16 * dp, gap = 10 * dp;
+        int w = getWidth();
+        float pad = 16 * dp;
         boolean hasCap = !caption.isEmpty();
         float tagH = (hasCap ? 60 : 44) * dp;
         float contentW = Math.max(name.measureText(label), hasCap ? cap.measureText(caption) : 0);
         float tagW = contentW + pad * 2;
-        float top = (h - tagH) / 2f;
-        // 端からスライド: in=0 で端の外、in=1 で端にぴたり
-        float left = fromLeft ? tagW * (in - 1) : w - tagW * in;
+        float margin = 14 * dp;                         // 上端からの余白
+        float left = (w - tagW) / 2f;                   // 画面中央(横)
         float right = left + tagW;
+        float cx = (left + right) / 2f;
+        // 上からスライド: in=0 で画面の上に隠れ、in=1 で上端の余白までぴたり
+        float top = -tagH + (tagH + margin) * in;
+        float bottom = top + tagH;
 
         int a = Math.round(255 * Math.min(1f, in * 1.3f));
         plate.setAlpha(Math.round((0xCC / 255f) * a));
-        cv.drawRect(left, top, right, top + tagH, plate);
+        cv.drawRect(left, top, right, bottom, plate);
 
-        // 端(画面の縁側)の光の筋と、内側へのにじみ
-        float edge = fromLeft ? left : right;
-        float dir = fromLeft ? 1 : -1;
-        float g = 26 * dp;
-        glow.setShader(new LinearGradient(edge, 0, edge + dir * g, 0,
+        // 上端の色の筋と、下へのにじみ
+        float g = 22 * dp;
+        glow.setShader(new LinearGradient(0, top, 0, top + g,
                 new int[]{withA(color, Math.round(0x4D / 255f * a)), withA(color, 0)},
                 new float[]{0f, 1f}, Shader.TileMode.CLAMP));
-        cv.drawRect(Math.min(edge, edge + dir * g), top, Math.max(edge, edge + dir * g), top + tagH, glow);
+        cv.drawRect(left, top, right, top + g, glow);
         core.setColor(withA(color, a));
-        cv.drawRect(fromLeft ? left : right - 2 * dp, top, fromLeft ? left + 2 * dp : right, top + tagH, core);
+        cv.drawRect(left, top, right, top + 2 * dp, core);
 
-        // 文字
+        // 文字(中央寄せ)
         name.setAlpha(a);
         cap.setAlpha(Math.round(0xB8 / 255f * a));
-        float tx = left + pad;
         if (hasCap) {
-            cv.drawText(label, tx, top + 26 * dp, name);
-            cv.drawText(caption, tx, top + 46 * dp, cap);
+            cv.drawText(label, cx, top + 26 * dp, name);
+            cv.drawText(caption, cx, top + 46 * dp, cap);
         } else {
-            cv.drawText(label, tx, top + tagH / 2 + name.getTextSize() * 0.36f, name);
+            cv.drawText(label, cx, top + tagH / 2 + name.getTextSize() * 0.36f, name);
         }
     }
 

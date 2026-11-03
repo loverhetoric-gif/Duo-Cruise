@@ -31,7 +31,9 @@ final class KeyMap {
         SINGLE(R.string.act_single),
         /** 分割比の調整: 入ったあとは回して境目を動かし、押し込みで決定・戻るで取り消し。 */
         SPLIT(R.string.act_split),
-        PANEL(R.string.act_panel);
+        PANEL(R.string.act_panel),
+        /** YouTube(TV 版)の「戻る」。再生中なら一覧へ戻る。 */
+        YT_BACK(R.string.act_yt_back);
         private final int labelId;
         Action(int id) { labelId = id; }
         /** 画面に出す名前(端末の言語)。 */

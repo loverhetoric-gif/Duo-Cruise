@@ -135,7 +135,7 @@ class RouteGuidanceAccumulator {
     /** 1 つの知らせを取り込み、今の姿を返す。読めない知らせなら null。 */
     @Synchronized
     fun update(frame: Iap2Frame): Route? {
-        val body = try { Iap2Messages.reader(frame) } catch (_: RuntimeException) { return null }
+        val body = try { Iap2Messages.reader(frame) } catch (_: Exception) { return null }
         dump = null
         when (frame.messageId) {
             0x5201 -> {
@@ -220,7 +220,9 @@ class RouteGuidanceAccumulator {
         )
     }
 
-    private inline fun <T> read(block: () -> T?): T? = try { block() } catch (_: RuntimeException) { null }
+    // Iap2ProtocolException は IOException(= RuntimeException でない)。案内の解析失敗で接続を落とさないよう
+    // Exception を広く握りつぶす(読めなかった項目は無いものとして扱う)。
+    private inline fun <T> read(block: () -> T?): T? = try { block() } catch (_: Exception) { null }
 
     private companion object {
         const val START_ROUTE = 11

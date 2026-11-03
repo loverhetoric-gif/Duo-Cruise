@@ -124,6 +124,7 @@ final class Panes {
         @Override public String command(String cmd) { return p.command(cmd); }
         @Override public void duck(float level) { p.setDuck(level); }
         @Override public void hold(boolean on) { p.setHold(on); }
+        @Override public void back() { p.back(); }
         @Override public void typeText(String text) { p.typeText(text); }
         @Override public void typeKey(int keyCode) { p.typeKey(keyCode); }
         @Override public void scroll(float dx, float dy) { p.scroll(dx, dy); }

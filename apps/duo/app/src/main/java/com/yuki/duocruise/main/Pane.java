@@ -32,6 +32,8 @@ interface Pane {
     /** タッチパッドのキーボードの文字・キー。文字を受ける部品だけが使う。 */
     default void typeText(String text) {}
     default void typeKey(int keyCode) {}
+    /** YouTube(TV 版)を「戻る」。YouTube の枠だけが使う。 */
+    default void back() {}
     /** 2本指スクロール。その画面本来の送り方(YouTube=矢印、CarPlay=ダイヤル)にする。dx,dy は OTTO の px。 */
     default void scroll(float dx, float dy) {}
     /** スクロールが終わった(たまりを捨てる)。 */
