@@ -31,9 +31,9 @@ import java.io.File;
  */
 public final class ShotService extends Service {
     static final String EXTRA_CODE = "code", EXTRA_DATA = "data";
-    static final String EXTRA_W = "w", EXTRA_H = "h", EXTRA_DPI = "dpi";
+    static final String EXTRA_W = "w", EXTRA_H = "h", EXTRA_DPI = "dpi", EXTRA_CONT = "cont";
     static final long SETTLE_MS = 5000;        // 切り替えが落ち着いたとみなすまで
-    private static final long MAX_MS = 60_000;  // 1 クリップの最大の長さ
+    private static final long MAX_MS = 60_000;  // 1 セグメント(クリップ)の最大の長さ。連続録画はこの単位で区切って保存する
     private static final int FPS = 15, BPS = 3_000_000;
 
     private static final int NID = 0x0D0C;
@@ -46,22 +46,28 @@ public final class ShotService extends Service {
     private MediaRecorder recorder;
     private int w, h, dpi, cw, ch;              // 画面の実寸と、クリップの寸法(半分)
     private boolean recording;
+    /** 連続録画(本人が「画面収録」をオンにした)。オンの間ずっと録り、MAX_MS ごとにファイルを区切る。 */
+    private boolean continuous;
     private String clipName, firstReason;
     private long clipStartUp;
     private HandlerThread th;
     private Handler bg;
 
     private final Runnable stopRun = this::stopClip;
-    private final Runnable maxRun = this::stopClip;
+    private final Runnable maxRun = this::segmentEnd;
 
-    /** 許可の結果を受けて前面サービスを始める(DuoActivity.onActivityResult から)。 */
-    static void enable(Context c, int code, Intent data, int w, int h, int dpi) {
+    /** 録画中か(REC マークの表示や設定の ON/OFF 判定に使う)。 */
+    static boolean active() { ShotService s = instance; return s != null && s.projection != null; }
+
+    /** 許可の結果を受けて前面サービスを始める(DuoActivity.onActivityResult から)。continuous=本人の連続録画。 */
+    static void enable(Context c, int code, Intent data, int w, int h, int dpi, boolean continuous) {
         Intent i = new Intent(c, ShotService.class);
         i.putExtra(EXTRA_CODE, code);
         i.putExtra(EXTRA_DATA, data);
         i.putExtra(EXTRA_W, w);
         i.putExtra(EXTRA_H, h);
         i.putExtra(EXTRA_DPI, dpi);
+        i.putExtra(EXTRA_CONT, continuous);
         if (Build.VERSION.SDK_INT >= 26) c.startForegroundService(i);
         else c.startService(i);
     }
@@ -86,7 +92,7 @@ public final class ShotService extends Service {
     static void clipStop(long delayMs) {
         ShotService s = instance;
         if (s != null && s.bg != null) s.bg.post(() -> {
-            if (s.bg == null || !s.recording) return;
+            if (s.bg == null || !s.recording || s.continuous) return; // 連続録画中は止めない
             s.bg.removeCallbacks(s.stopRun);
             s.bg.postDelayed(s.stopRun, Math.max(0, delayMs));
         });
@@ -111,7 +117,9 @@ public final class ShotService extends Service {
                 @Override public void onStop() { teardown(); }
             }, bg);
             instance = this;
-            DuoLog.log("走行の記録: 画面の録画を始められます(" + cw + "×" + ch + ")");
+            continuous = i.getBooleanExtra(EXTRA_CONT, false);
+            DuoLog.log("走行の記録: 画面の録画を始められます(" + cw + "×" + ch + ")" + (continuous ? "・連続録画" : ""));
+            if (continuous) bg.post(() -> startClip("rec")); // 連続録画: すぐ録り始める
         } catch (Throwable t) {
             DuoLog.error("画面の録画を始められません: " + DuoLog.why(t));
             teardown();
@@ -126,14 +134,18 @@ public final class ShotService extends Service {
         if (projection == null) return;
         if (!recording) startClip(reason);
         else Trace.clipMark(reason);     // 同じクリップに印だけ足す
+        if (continuous) return;          // 連続録画中は、切り替えで自動停止しない(印だけ)
         bg.removeCallbacks(stopRun);
         if (autoStopMs > 0) bg.postDelayed(stopRun, autoStopMs);
     }
 
     private void startClip(String reason) {
+        File dir = Trace.clipDir();
+        if (dir == null) { // 記録フォルダがまだ用意できていない(連続録画なら少し待って再試行)
+            if (continuous && bg != null) bg.postDelayed(() -> startClip(reason), 500);
+            return;
+        }
         try {
-            File dir = Trace.clipDir();
-            if (dir == null) return;
             clipName = "clips/" + SystemClock.elapsedRealtime() + ".mp4";
             File out = new File(dir.getParentFile(), clipName);
             recorder = new MediaRecorder();
@@ -146,8 +158,11 @@ public final class ShotService extends Service {
             recorder.setOutputFile(out.getAbsolutePath());
             recorder.prepare();
             Surface surface = recorder.getSurface();
-            vdisplay = projection.createVirtualDisplay("duo-clip", cw, ch, dpi,
-                    DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, surface, null, bg);
+            if (vdisplay == null)
+                vdisplay = projection.createVirtualDisplay("duo-clip", cw, ch, dpi,
+                        DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, surface, null, bg);
+            else
+                vdisplay.setSurface(surface); // セグメントの差し替え。ディスプレイ追加を増やさない
             recorder.start();
             recording = true;
             firstReason = reason;
@@ -160,7 +175,10 @@ public final class ShotService extends Service {
         }
     }
 
-    private void stopClip() {
+    private void stopClip() { stopSegment(false); }
+
+    /** いまのセグメントを保存して止める。keepDisplay=true なら VirtualDisplay は残す(連続録画のセグメント間)。 */
+    private void stopSegment(boolean keepDisplay) {
         if (!recording) return;
         recording = false;
         bg.removeCallbacks(stopRun);
@@ -168,12 +186,20 @@ public final class ShotService extends Service {
         long dur = SystemClock.elapsedRealtime() - clipStartUp;
         boolean ok = true;
         try { recorder.stop(); } catch (Throwable t) { ok = false; }
-        releaseRecorder();
+        try { if (recorder != null) { recorder.reset(); recorder.release(); } } catch (Throwable ignored) {}
+        recorder = null;
+        if (!keepDisplay) { try { if (vdisplay != null) vdisplay.release(); } catch (Throwable ignored) {} vdisplay = null; }
         if (ok) Trace.clipSaved(clipName, firstReason, dur);
         else { // 短すぎてフレームが無い等。半端なファイルは消す
             try { File f = new File(Trace.clipDir().getParentFile(), clipName); if (f.exists()) //noinspection ResultOfMethodCallIgnored
                 f.delete(); } catch (Throwable ignored) {}
         }
+    }
+
+    /** MAX_MS に達したとき: 連続録画ならファイルを区切って次を続ける、通常はそこで止める。 */
+    private void segmentEnd() {
+        if (continuous) { stopSegment(true); startClip("rec"); }
+        else stopClip();
     }
 
     private void releaseRecorder() {

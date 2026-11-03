@@ -74,6 +74,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     private PaneService service;
     private String sizes = "-", insets = "-";
     private GuideView guide;
+    private RecMark recMark;
     /** 新しい版ができた合図を待ち、更新アプリに今すぐ確認を頼む。 */
     private InstantUpdate instant;
     private final Runnable learnTimeout = () -> {
@@ -117,6 +118,9 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         stage.setBackgroundColor(android.graphics.Color.BLACK); // 起動の地(白/黒)は演出の後ろに隠し、2 画面の地は黒
         stage.addView(root);
         stage.addView(guide);
+        recMark = new RecMark(this);
+        stage.addView(recMark, new android.widget.FrameLayout.LayoutParams( // 画面収録中の REC マーク(全画面に重ね、描くのは右上だけ)
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.MATCH_PARENT));
         boolean first = !Store.guided(this);
         if (b == null) {          // エンジンをかけて開いたとき(作り直しでは出さない)
             SplashView splash = new SplashView(this);
@@ -520,6 +524,18 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
 
     @Override public boolean bootSound() { return Store.bootSound(this); }
     @Override public void toggleBootSound() { Store.setBootSound(this, !Store.bootSound(this)); }
+
+    @Override public boolean screenRecOn() { return ShotService.active(); }
+    @Override public void toggleScreenRec() {
+        if (ShotService.active()) {
+            Trace.setShots(this, false);
+            ShotService.disable(this);
+            if (recMark != null) recMark.setVisibility(View.GONE);
+            DuoLog.log("画面収録を止めました");
+        } else {
+            enableShots(); // 許可画面 → onActivityResult で録画開始・REC 表示
+        }
+    }
 
     private boolean guiding() { return guide != null && guide.getVisibility() == View.VISIBLE; }
 
@@ -1793,10 +1809,11 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         if (req != REQ_SHOT) return;
         if (res == RESULT_OK && data != null) {
             android.util.DisplayMetrics m = getResources().getDisplayMetrics();
-            ShotService.enable(this, res, data, m.widthPixels, m.heightPixels, m.densityDpi);
+            ShotService.enable(this, res, data, m.widthPixels, m.heightPixels, m.densityDpi, true);
             Trace.setShots(this, true);
             if (!Trace.on()) { Trace.setOn(this, true); TraceStats.start(); }
-            DuoLog.log("走行の記録: 画面の撮影を許可しました");
+            if (recMark != null) recMark.setVisibility(View.VISIBLE);
+            DuoLog.log("走行の記録: 画面収録を始めました");
         } else {
             DuoLog.log("走行の記録: 画面の撮影は許可されませんでした");
         }

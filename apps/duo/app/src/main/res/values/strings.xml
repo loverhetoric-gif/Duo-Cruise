@@ -73,6 +73,7 @@
     <string name="act_panel">Open or Close Menu</string>
     <string name="act_single">Single or Split View</string>
     <string name="act_yt_back">YouTube Back</string>
+    <string name="s_screenrec">Screen Recording</string>
     <string name="k_unassigned">Not Assigned</string>
     <string name="g_long">" (hold)"</string>
     <string name="g_short">" (press)"</string>
