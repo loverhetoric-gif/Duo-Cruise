@@ -130,13 +130,7 @@ public final class TvPane {
         // 再生中の戻る: TV 版は操作の表示(再生バー)が出ていると 1 回目は表示を消すだけで、戻らなかった(2026-10-29)。
         // Esc を送り、まだ再生の画面(#/watch)なら 0.45 秒おきに最大 3 回まで送り直す(1 回の戻るで一覧へ)
         if (e.getKeyCode() == KeyEvent.KEYCODE_BACK) {
-            if (e.getAction() == KeyEvent.ACTION_UP) {
-                if (!web.hasFocus()) web.requestFocus();
-                web.evaluateJavascript("location.href", h -> {
-                    escape();
-                    if (h != null && h.contains("/watch")) leaveWatch(3);
-                });
-            }
+            if (e.getAction() == KeyEvent.ACTION_UP) back();
             return true;
         }
         KeyEvent k = translate(e);
@@ -168,6 +162,19 @@ public final class TvPane {
                 if (h != null && h.contains("/watch")) { escape(); leaveWatch(n - 1); }
             });
         }, 450);
+    }
+
+    /**
+     * TV 版 YouTube の「戻る」。再生中(/watch)は操作の表示が出ていると 1 回目で戻らないので、
+     * 一覧へ戻るまで 0.45 秒おきに最大 3 回 Esc を送り直す。ハードの戻るキーとコマンダー割り当ての両方から使う。
+     */
+    public void back() {
+        if (web == null || destroyed) return;
+        if (!web.hasFocus()) web.requestFocus();
+        web.evaluateJavascript("location.href", h -> {
+            escape();
+            if (h != null && h.contains("/watch")) leaveWatch(3);
+        });
     }
 
     /** Esc を 1 回(TV 版の「戻る」)。 */
