@@ -1,5 +1,6 @@
 package com.yuki.duocruise.carplay
 
+import com.shilapi.xcertplay.iap2.body.Iap2BodyReader
 import com.shilapi.xcertplay.iap2.message.Iap2Messages
 import com.shilapi.xcertplay.iap2.wire.Iap2Frame
 
@@ -130,6 +131,7 @@ class RouteGuidanceAccumulator {
     // 診断: ルート開始から数回だけ 0x5201 の生フィールドを書き出す(ETA 等の在り処を特定するため)
     private var dumpArmed = true
     private var dumpLeft = 0
+    private var dump2Left = 0   // 0x5202(曲がり方)の診断ダンプの残り回数
     private var dump: String? = null
 
     /** 1 つの知らせを取り込み、今の姿を返す。読めない知らせなら null。 */
@@ -156,23 +158,8 @@ class RouteGuidanceAccumulator {
                 if (state == 0) { order = emptyList(); maneuvers.clear() } // ルートが消えたら曲がり角も忘れる
                 // 診断: ルートが消えたら次のルートで再アーム。案内に入ったら数回だけ全フィールドを書き出す
                 if (state == 0) dumpArmed = true
-                else if (dumpArmed && (state == 1 || state == 5 || state == 6)) { dumpArmed = false; dumpLeft = 3 }
-                if (dumpLeft > 0) {
-                    dumpLeft--
-                    val sb = StringBuilder("0x5201")
-                    for (id in 1..30) {
-                        if (read { body.has(id) } != true) continue
-                        val s = read { body.optionalString(id) }
-                        val u = read { body.optionalU32(id) }
-                        sb.append(" #").append(id).append('=')
-                        when {
-                            s != null -> sb.append('"').append(s).append('"')
-                            u != null -> sb.append(u)
-                            else -> sb.append('?')
-                        }
-                    }
-                    dump = sb.toString()
-                }
+                else if (dumpArmed && (state == 1 || state == 5 || state == 6)) { dumpArmed = false; dumpLeft = 3; dump2Left = 5 }
+                if (dumpLeft > 0) { dumpLeft--; dump = dumpFields(body, "0x5201") }
             }
             0x5202 -> {
                 val index = read { body.optionalU16(1) } ?: return null
@@ -186,6 +173,7 @@ class RouteGuidanceAccumulator {
                     val stale = maneuvers.keys.firstOrNull { it !in order } ?: break
                     maneuvers.remove(stale)
                 }
+                if (dump2Left > 0) { dump2Left--; dump = dumpFields(body, "0x5202#$index") } // 曲がり方(種別)の診断
             }
             else -> return null
         }
@@ -223,6 +211,19 @@ class RouteGuidanceAccumulator {
     // Iap2ProtocolException は IOException(= RuntimeException でない)。案内の解析失敗で接続を落とさないよう
     // Exception を広く握りつぶす(読めなかった項目は無いものとして扱う)。
     private inline fun <T> read(block: () -> T?): T? = try { block() } catch (_: Exception) { null }
+
+    /** 診断: 本体の各フィールドを「#id=生バイト(16進)("文字列")」で書き出す。ETA・曲がり方コード等の在り処を特定するため。 */
+    private fun dumpFields(body: Iap2BodyReader, label: String): String {
+        val sb = StringBuilder(label)
+        for (id in 1..30) {
+            val b = read { body.optionalBytes(id) } ?: continue
+            sb.append(" #").append(id).append('=')
+            sb.append(b.joinToString("") { "%02x".format(it.toInt() and 0xff) })
+            val s = read { body.optionalString(id) }
+            if (s != null && s.isNotEmpty()) sb.append("(\"").append(s).append("\")")
+        }
+        return sb.toString()
+    }
 
     private companion object {
         const val START_ROUTE = 11
