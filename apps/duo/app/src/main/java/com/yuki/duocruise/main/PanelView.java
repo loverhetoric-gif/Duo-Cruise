@@ -325,18 +325,17 @@ final class PanelView extends ViewGroup {
         editing = -1;
         if (p == MAIN) {
             title.setText(T(R.string.menu_title));
-            items.add(new Item(() -> T(R.string.m_display), () -> GO, () -> show(DISPLAY)));
+            items.add(new Item(() -> T(R.string.m_vehicle), () -> GO, () -> show(VEHICLE)));
+            items.add(new Item(() -> T(R.string.m_window), () -> GO, () -> show(DISPLAY)));
             items.add(new Item(() -> T(R.string.m_controls), () -> GO, () -> show(CONTROLS)));
             items.add(new Item(() -> T(R.string.m_system), () -> GO, () -> show(SYS)));
             items.add(new Item(() -> host.carOn() ? T(R.string.m_car_stop) : T(R.string.m_car_start),
                     () -> host.carOn() ? T(R.string.v_connected) : T(R.string.v_stopped), host::toggleCar, true));
         } else if (p == DISPLAY) {
-            title.setText(T(R.string.m_display));
+            title.setText(T(R.string.m_window));
             items.add(new Item(() -> T(R.string.d_target), host::sideText, host::switchSide, true));
             items.add(new Item(() -> T(R.string.d_layout), host::layoutText, host::swap, true));
             items.add(new Item(() -> T(R.string.d_split), () -> GO, () -> show(SPLIT)));
-            if (BuildConfig.UNLIMITED) items.add(new Item(() -> T(R.string.d_route), () -> GO, () -> show(ROUTE)));
-            items.add(new Item(() -> T(R.string.d_drive), () -> GO, () -> show(DRIVE)));
             items.add(back(T(R.string.to_menu)));
         } else if (p == CONTROLS) {
             title.setText(T(R.string.m_controls));
@@ -354,7 +353,6 @@ final class PanelView extends ViewGroup {
             items.add(back(T(R.string.to_controls)));
         } else if (p == SYS) {
             title.setText(T(R.string.m_system));
-            items.add(new Item(() -> T(R.string.s_vehicle), () -> GO, () -> show(VEHICLE)));
             items.add(new Item(() -> T(R.string.s_range), () -> host.panelHalf() ? T(R.string.v_active_only) : T(R.string.v_full), host::togglePanelHalf, true));
             items.add(new Item(() -> T(R.string.s_access), () -> host.accessOn() ? T(R.string.on) : T(R.string.off), host::openAccessibility));
             items.add(new Item(() -> T(R.string.s_home), () -> host.isDefaultHome() ? "Duo Cruise" : host.otherHomeName(), host::chooseHome));
@@ -387,16 +385,18 @@ final class PanelView extends ViewGroup {
             items.add(new Item(() -> T(R.string.ne_b), () -> {}, channelSlider(2)));
             items.add(new Item(() -> T(R.string.ne_level), () -> {}, levelSlider()));
             items.add(back(neonWhich == NEON_TURN ? T(R.string.to_route_light) : T(R.string.to_neon)));
-        } else if (p >= ROUTE && p <= R_ARRIVE) {
+        } else if ((p >= ROUTE && p <= R_ARRIVE) || p == R_STRAIGHT || p == DRIVE) {
             routePage(p);
         } else if (p == VEHICLE) {
-            title.setText(T(R.string.s_vehicle));
+            title.setText(T(R.string.m_vehicle));
             items.add(new Item(() -> T(R.string.s_drive), () -> host.rightHand() ? T(R.string.v_rhd) : T(R.string.v_lhd),
                     () -> { host.toggleRightHand(); refresh(); }, true));
             if (BuildConfig.UNLIMITED) items.add(new Item(() -> T(R.string.s_units), () -> host.miles() ? T(R.string.v_mi) : T(R.string.v_km),
                     () -> { host.toggleMiles(); refresh(); }, true));
             items.add(new Item(() -> T(R.string.s_wifi), () -> GO, () -> show(WIFI)));
-            items.add(back(T(R.string.to_system)));
+            if (BuildConfig.UNLIMITED) items.add(new Item(() -> T(R.string.d_route), () -> GO, () -> show(ROUTE)));
+            items.add(new Item(() -> T(R.string.d_drive), () -> GO, () -> show(DRIVE)));
+            items.add(back(T(R.string.to_menu)));
         } else if (p == WIFI) {
             title.setText(T(R.string.s_wifi));
             items.add(new Item(() -> T(R.string.w_ssid), () -> { String n = host.wifiSsid(); return n == null ? T(R.string.v_unset) : n; },
@@ -437,9 +437,9 @@ final class PanelView extends ViewGroup {
     private int depth(int p) {
         switch (p) {
             case MAIN: return 0;
-            case DISPLAY: case CONTROLS: case SYS: return 1;
+            case DISPLAY: case CONTROLS: case SYS: case VEHICLE: return 1;
             case NEON_EDIT: return neonWhich == NEON_TURN ? 4 : 3;
-            case R_HINT: case R_MAP: case R_LIGHT: case R_AUDIO: case R_ARRIVE: case R_STRAIGHT: case WIFI: return 3;
+            case R_HINT: case R_MAP: case R_LIGHT: case R_AUDIO: case R_ARRIVE: case R_STRAIGHT: return 3;
             default: return 2;
         }
     }
@@ -690,9 +690,9 @@ final class PanelView extends ViewGroup {
             case KEYS: case NEON: return CONTROLS;
             case LOG: return SYS;
             case NEON_EDIT: return neonWhich == NEON_TURN ? R_LIGHT : NEON;
-            case ROUTE: case DRIVE: return DISPLAY;
+            case ROUTE: case DRIVE: return VEHICLE;
             case R_HINT: case R_MAP: case R_LIGHT: case R_AUDIO: case R_ARRIVE: case R_STRAIGHT: return ROUTE;
-            case VEHICLE: return SYS;
+            case VEHICLE: return MAIN;
             case WIFI: return VEHICLE;
             default: return MAIN;
         }
@@ -732,7 +732,7 @@ final class PanelView extends ViewGroup {
                 items.add(new Item(() -> T(R.string.r_light), () -> onOff(Store.turnLight(c)), () -> show(R_LIGHT)));
                 items.add(new Item(() -> T(R.string.r_audio), () -> onOff(Store.turnDuck(c)), () -> show(R_AUDIO)));
                 items.add(new Item(() -> T(R.string.r_arrive), () -> onOff(Store.arriveFull(c)), () -> show(R_ARRIVE)));
-                items.add(back(T(R.string.to_display)));
+                items.add(back(T(R.string.to_vehicle)));
                 break;
             case R_HINT:
                 title.setText(T(R.string.r_hint));
@@ -772,7 +772,7 @@ final class PanelView extends ViewGroup {
                         () -> { Store.setDayNeon(c, !Store.dayNeon(c)); changed(); }, true));
                 items.add(new Item(() -> T(R.string.dr_alert), () -> onOff(Store.naviAlert(c)),
                         () -> { Store.setNaviAlert(c, !Store.naviAlert(c)); changed(); }, true));
-                items.add(back(T(R.string.to_display)));
+                items.add(back(T(R.string.to_vehicle)));
                 break;
             case R_STRAIGHT:
                 title.setText(T(R.string.r_straight));

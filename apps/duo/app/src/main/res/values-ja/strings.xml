@@ -5,8 +5,10 @@
     <string name="svc_desc">Duo Slate(手元のタッチパッド)で、Duo Cruise だけでなく、ホーム画面やほかのアプリも操作できるようにします。画面にカーソルを出し、あなたが動かした所を押します。ご自身で操作するためのものです。</string>
     <string name="menu_title">メニュー</string>
     <string name="m_display">画面</string>
-    <string name="m_controls">操作・カスタマイズ</string>
-    <string name="m_system">システム</string>
+    <string name="m_vehicle">マイカー設定</string>
+    <string name="m_window">ウィンドウ</string>
+    <string name="m_controls">操作</string>
+    <string name="m_system">システム設定</string>
     <string name="m_car_stop">CarPlay を終了</string>
     <string name="m_car_start">CarPlay を開始</string>
     <string name="v_connected">接続中</string>
@@ -171,7 +173,7 @@
     <string name="meters">%d m</string>
     <string name="feet">%d ft</string>
     <string name="s_vehicle">車の設定</string>
-    <string name="to_vehicle">車の設定へ</string>
+    <string name="to_vehicle">マイカー設定へ</string>
     <string name="s_wifi">CarPlay 用の Wi-Fi</string>
     <string name="w_ssid">ネットワーク名(SSID)</string>
     <string name="w_pass">パスワード</string>

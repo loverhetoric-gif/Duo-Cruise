@@ -5,7 +5,9 @@
     <string name="svc_desc">Lets Duo Slate (your hand-held touchpad) control not only Duo Cruise but also the home screen and other apps. It shows a cursor on the screen and taps where you move it. It is for your own operation.</string>
     <string name="menu_title">Menu</string>
     <string name="m_display">Display</string>
-    <string name="m_controls">Controls &amp; Customization</string>
+    <string name="m_vehicle">My Car</string>
+    <string name="m_window">Windows</string>
+    <string name="m_controls">Controls</string>
     <string name="m_system">System</string>
     <string name="m_car_stop">Stop CarPlay</string>
     <string name="m_car_start">Start CarPlay</string>
@@ -171,7 +173,7 @@
     <string name="meters">%d m</string>
     <string name="feet">%d ft</string>
     <string name="s_vehicle">Vehicle</string>
-    <string name="to_vehicle">Vehicle</string>
+    <string name="to_vehicle">My Car</string>
     <string name="s_wifi">Wi-Fi for CarPlay</string>
     <string name="w_ssid">Network Name (SSID)</string>
     <string name="w_pass">Password</string>
