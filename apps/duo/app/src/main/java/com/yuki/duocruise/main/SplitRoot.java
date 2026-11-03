@@ -54,6 +54,7 @@ final class SplitRoot extends ViewGroup {
     private ValueAnimator moveAnim;
     private int[] animCar, animTv, lastCar, lastTv;
     private String lastShape = "";
+    private boolean lastRails;
     int side;
     /** YouTube の幅の割合(%)。50＝半々。 */
     int ytPct = 50;
@@ -82,7 +83,13 @@ final class SplitRoot extends ViewGroup {
     void setRails(boolean v) {
         if (rails == v) return;
         rails = v;
-        railView.setVisibility(v ? VISIBLE : GONE);
+        // 全画面レールの出入りは、レイアウトの慣性モーション(move)に合わせてフェードさせる。
+        // 消すのは完全に透明になってから(動いている最中は出しておく)。
+        if (v && railView.getVisibility() != VISIBLE) railView.setAlpha(0f);
+        railView.setVisibility(VISIBLE);
+        railView.animate().cancel();
+        railView.animate().alpha(v ? 1f : 0f).setDuration(Motion.MS).setInterpolator(Motion.EASE)
+                .withEndAction(() -> { if (!rails) railView.setVisibility(GONE); });
     }
 
     /** 情報レールに出す値を渡す(行き先・目的地まで・到着・航続・進行度・標識)。 */
@@ -157,7 +164,10 @@ final class SplitRoot extends ViewGroup {
     private int[] carRect(int w, int h) { return carRect(w, h, ytPct); }
 
     private int[] carRect(int w, int h, int yt) {
-        if (rails) return SplitGeometry.offscreen(w, h); // レール中: CarPlay は画面外(YouTube 中央全画面)
+        // レール中: CarPlay は動かさず全画面のまま背後に生かす(画面外へ出すと surfaceDestroyed で映像面が壊れ、
+        // 比率が変わるたびに CarPlay が切断していた)。前面の YouTube(中央)とレール(余白を黒で塗る)で隠す。
+        // コーナー(pip)も全画面なので、レール↔コーナーで CarPlay のジオメトリは変わらない。
+        if (rails) return new int[]{0, 0, w, h};
         if (pip) return new int[]{0, 0, w, h};
         if (single) return tvShown() ? SplitGeometry.offscreen(w, h) : SplitGeometry.single(w, h, false);
         // YouTube が全画面に近いとき、CarPlay は幅0になり映像面が壊れるので、画面の外へ置く
@@ -248,12 +258,15 @@ final class SplitRoot extends ViewGroup {
         // 並べ方の形(1画面・小窓・1画面で出す側)が変わったら、前の位置から動かす。比率だけの変化は呼び手が動かす
         String shape = single + "," + pip + "," + (single && !pip ? tvShown() : "");
         int w = contentW(), h = contentH();
-        if (!shape.equals(lastShape) && lastCar != null && w > 0) {
+        // レール(全画面)の出入りも形の変化として扱い、同じ慣性モーションで動かす(rails は shape 文字列に
+        // 混ぜると flip/fromPip の判定を壊すため別に見る)。
+        if ((!shape.equals(lastShape) || rails != lastRails) && lastCar != null && w > 0) {
             boolean flip = single && !pip && lastShape.startsWith("true,false,");
             boolean fromPip = lastShape.contains(",true,");
             move(lastCar, carRect(w, h), lastTv, tvRect(w, h), w, flip, pip, fromPip);
         }
         lastShape = shape;
+        lastRails = rails;
         requestLayout();
         frame.requestLayout();
         frame.invalidate();

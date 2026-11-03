@@ -76,6 +76,10 @@ final class RailView extends View {
         int vw = Math.min(w, Math.round(h * 16f / 9f));
         int left = (w - vw) / 2;       // 左余白の幅
         int right = w - (left + vw);   // 右余白の幅
+        // 背後で生かしている CarPlay を隠す: 中央(YouTube)以外の左右の黒余白を不透明の黒で塗る。
+        p.setColor(0xFF000000);
+        if (left > 0) cv.drawRect(0, 0, left, h, p);
+        if (right > 0) cv.drawRect(w - right, 0, w, h, p);
         if (left >= 18 * u) drawLeft(cv, 0, left, h, u);
         if (right >= 18 * u && data.turnAngle != null) drawRight(cv, w - right, right, h, u);
     }
