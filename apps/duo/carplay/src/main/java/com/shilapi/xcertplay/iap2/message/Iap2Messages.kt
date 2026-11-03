@@ -112,13 +112,13 @@ object Iap2CarPlayMessages {
         val wired = body.optionalGroup(0)?.let {
             Iap2AvailabilityState(
                 available = decodeAvailability(it.optionalU8(0), "wired"),
-                identifier = it.optionalString(1),
+                identifier = runCatching { it.optionalString(1) }.getOrNull(),
             )
         }
         val wireless = body.optionalGroup(1)?.let {
             Iap2AvailabilityState(
                 available = decodeAvailability(it.optionalU8(0), "wireless"),
-                identifier = it.optionalString(1),
+                identifier = runCatching { it.optionalString(1) }.getOrNull(),
             )
         }
         val themeAssets = body.optionalGroup(2)?.let {
