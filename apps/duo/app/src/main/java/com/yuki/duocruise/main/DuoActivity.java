@@ -20,6 +20,7 @@ import android.view.WindowInsetsController;
 import android.view.WindowManager;
 
 import com.yuki.duocruise.carplay.Route;
+import com.yuki.duocruise.carplay.Turn;
 
 /**
  * Duo Cruise 本体の画面。1つの画面の中に、左右2つの枠(各 740×480)を持つ。
@@ -73,6 +74,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     private PaneService service;
     private String sizes = "-", insets = "-";
     private GuideView guide;
+    private RecMark recMark;
     /** 新しい版ができた合図を待ち、更新アプリに今すぐ確認を頼む。 */
     private InstantUpdate instant;
     private final Runnable learnTimeout = () -> {
@@ -116,6 +118,9 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         stage.setBackgroundColor(android.graphics.Color.BLACK); // 起動の地(白/黒)は演出の後ろに隠し、2 画面の地は黒
         stage.addView(root);
         stage.addView(guide);
+        recMark = new RecMark(this);
+        stage.addView(recMark, new android.widget.FrameLayout.LayoutParams( // 画面収録中の REC マーク(全画面に重ね、描くのは右上だけ)
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.MATCH_PARENT));
         boolean first = !Store.guided(this);
         if (b == null) {          // エンジンをかけて開いたとき(作り直しでは出さない)
             SplashView splash = new SplashView(this);
@@ -150,7 +155,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
                 DuoLog.log("運転の見張り: " + (s == DriveWatch.PARKED ? "駐車" : s == DriveWatch.STOPPED ? "停止" : "走行"));
                 Trace.event("drive", s == DriveWatch.PARKED ? "parked" : s == DriveWatch.STOPPED ? "stopped" : "moving");
                 if (s == DriveWatch.PARKED) Uploader.sweep(this0()); // 駐車したら、貯まった記録をまとめて送る
-                if (s == DriveWatch.MOVING) { driveHeld = false; carRetryMs = CAR_RETRY_MIN_MS; } // 走り出したら、自動を再開し、CarPlay の再接続も即リトライへ戻す
+                if (s == DriveWatch.MOVING) { driveHeld = false; everMoved = true; carRetryMs = CAR_RETRY_MIN_MS; } // 走り出したら、自動を再開し(50:50→デフォルトへ)、CarPlay の再接続も即リトライへ戻す
                 if (!Store.single(this0())) animateYt(targetYt());
                 modeForDrive(was, s);
             }
@@ -520,6 +525,18 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     @Override public boolean bootSound() { return Store.bootSound(this); }
     @Override public void toggleBootSound() { Store.setBootSound(this, !Store.bootSound(this)); }
 
+    @Override public boolean screenRecOn() { return ShotService.active(); }
+    @Override public void toggleScreenRec() {
+        if (ShotService.active()) {
+            Trace.setShots(this, false);
+            ShotService.disable(this);
+            if (recMark != null) recMark.setVisibility(View.GONE);
+            DuoLog.log("画面収録を止めました");
+        } else {
+            enableShots(); // 許可画面 → onActivityResult で録画開始・REC 表示
+        }
+    }
+
     private boolean guiding() { return guide != null && guide.getVisibility() == View.VISIBLE; }
 
     @Override public void switchSide() {
@@ -541,7 +558,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     private android.animation.ValueAnimator ytAnim;
 
     private void applyLayout() {
-        if (curYt < 0) curYt = Store.splitYt(this);
+        if (curYt < 0) curYt = targetYt();
         root.setSingle(Store.single(this));
         root.setPip(mapEngaged, true); // 小窓は左下(本人の指示)
         root.setRails(railsWanted());  // クルーズ/停車/駐車/案内: YouTube を中央全画面にし、左右の余白へ情報レール
@@ -559,6 +576,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
      */
     private boolean railsWanted() {
         if (Store.single(this) || mapEngaged || arriveEngaged || driveHeld) return false;
+        if (!everMoved) return false;                                              // 起動時は 50:50(レールを出さない)
         if (straightEngaged) return true;                                          // クルーズ(一本道)
         if (driveState == DriveWatch.PARKED && Store.parkOn(this)) return true;     // 駐車
         if (driveState >= DriveWatch.STOPPED && Store.stopOn(this)) return true;    // 停車
@@ -652,7 +670,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     /** 比率をなめらかに変える。 */
     private void animateYt(int target) {
         target = SplitGeometry.clampYt(target);
-        if (curYt < 0) curYt = Store.splitYt(this);
+        if (curYt < 0) curYt = targetYt();
         if (ytAnim != null) ytAnim.cancel();
         if (curYt == target) { applyLayout(); return; }
         final int from = curYt, to = target;
@@ -722,14 +740,15 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         if (splitAdjusting) return splitVal;
         if (demoYt >= 0) return demoYt;
         if (navEngaged) return Store.navYt(this);
-        if (!driveHeld) { // 手で分割比を変えたら、次に走り出すまで自動を止める(家では常に停車のため)
-            // 停止・駐車は YouTube を 16:9(黒枠なし)でいちばん大きく。全画面(100)は 3:1 で左右に黒枠が出るため使わない
-            if (driveState == DriveWatch.PARKED && Store.parkOn(this)) return ytFit;
-            if (driveState >= DriveWatch.STOPPED && Store.stopOn(this)) return ytFit;
-        }
-        if (straightEngaged) return ytFit; // 一本道(クルーズ)も 16:9 まで
         if (arriveEngaged) return 100;
-        return Store.splitYt(this);
+        if (driveHeld) return Store.splitYt(this); // 手で分割比を変えたら、次に走り出すまで自動を止める(家では常に停車のため)
+        if (!everMoved) return 50;                  // 起動時: 50:50
+        // 停止・駐車・クルーズは YouTube を 16:9(黒枠なし)でいちばん大きく(レールで CarPlay を隠す)。
+        if (driveState == DriveWatch.PARKED && Store.parkOn(this)) return ytFit;
+        if (driveState >= DriveWatch.STOPPED && Store.stopOn(this)) return ytFit;
+        if (straightEngaged) return ytFit;                              // 一本道(クルーズ)
+        if (mapClose) return SplitGeometry.clampYt(100 - ytFit);        // マップクローズ: 反転して地図を大きく
+        return ytFit;                                                   // デフォルト(走行中): YouTube 16:9 + CarPlay を横に
     }
 
     // ───────── 曲がり角の案内(Duo Cruise Unlimited Edition だけ。リリース版では案内が届かない) ─────────
@@ -749,6 +768,14 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     private static final int CORNER_CHAIN_M = 150;
     /** 通過して(または案内終了で)地図を戻すまでの余韻。 */
     private static final long CORNER_TAIL_MS = 2000;
+    /** 一度でも走り出したか。起動直後(未走行)は 50:50、走り出したら各ビューへ移る。 */
+    private boolean everMoved;
+    /** マップクローズ中(地図を大きく: 分割を反転して CarPlay 大・YouTube 小)。コーナーの手前の予告段。 */
+    private boolean mapClose;
+    /** マップクローズの接近帯: コーナー発火距離(mapDist)の外側、この距離までを地図強調にする(仮。実走で詰める)。 */
+    private static final int MAPCLOSE_BAND_M = 500;
+    /** Uターン・ロータリー・分岐(寄り=三叉路)は複雑なので、通常より手前からコーナービューにする(仮)。 */
+    private static final int SPECIAL_CORNER_EXTRA_M = 150;
 
     private final Runnable mapRelease = this::mapRelease;
 
@@ -799,13 +826,20 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         boolean guiding = r != null && r.getGuiding();
         long dist = r == null ? -1 : r.distanceToTurnM;
         int idx = r == null ? -1 : r.turnIndex;
+        int turn = r == null ? Turn.NONE : r.getTurn();
+        // Uターン・ロータリー・分岐(寄り=三叉路)は複雑なので、通常より手前からコーナービューにする。
+        // 車線変更→デフォルト(コーナーにしない)の判定コードは実走ログ未採取のため今は無効(isLaneChange)。
+        boolean special = turn == Turn.U_TURN || turn == Turn.ROUNDABOUT
+                || turn == Turn.SLIGHT_LEFT || turn == Turn.SLIGHT_RIGHT;
+        boolean cornerOk = !isLaneChange(r);
+        int cornerAt = Store.mapDist(this) + (special ? SPECIAL_CORNER_EXTRA_M : 0);
         if (mapOn && guiding && dist >= 0) {
             if (!mapEngaged) {
-                if (dist <= Store.mapDist(this)) engageMap();     // 曲がり角に接近 → 地図を前へ
+                if (cornerOk && dist <= cornerAt) engageMap();    // 曲がり角に接近 → 地図を前へ(特例は手前から)
             } else if (idx != cornerTurnIndex) {
                 // 出していた曲がり角を通過した(番号が進んだ)
                 main.removeCallbacks(mapRelease);
-                if (dist <= CORNER_CHAIN_M) cornerTurnIndex = idx; // 次の曲がり角も近い → 1本として継続
+                if (dist <= CORNER_CHAIN_M) cornerTurnIndex = idx; // 次の曲がり角も近い → 1本として継続(連続)
                 else main.postDelayed(mapRelease, CORNER_TAIL_MS); // 次は遠い → 余韻を残して解除
             } else {
                 main.removeCallbacks(mapRelease); // まだその曲がり角へ接近中 → 0m まで保持
@@ -814,6 +848,15 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
             // 案内終了 / 地図フロント OFF → 余韻を残して戻す
             main.removeCallbacks(mapRelease);
             main.postDelayed(mapRelease, CORNER_TAIL_MS);
+        }
+        // マップクローズ(地図を大きく): コーナーの手前の帯で、CarPlay を大きくして予告する(反転)。
+        boolean closeWant = mapOn && guiding && dist >= 0 && everMoved && cornerOk && !mapEngaged
+                && !straightEngaged && !railsWanted()
+                && dist > cornerAt && dist <= cornerAt + MAPCLOSE_BAND_M;
+        if (closeWant != mapClose) {
+            mapClose = closeWant;
+            if (mapClose) showMode("mapclose", R.string.mode_mapclose, R.string.mode_mapclose_cap, Store.neonTurn(this));
+            animateYt(targetYt());
         }
         boolean duck = plan.duck && Store.turnDuck(this);
         if (duck != turnDucked) { turnDucked = duck; applyDuck(); }
@@ -841,6 +884,15 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
      * 地図を表示する: CarPlay を画面いっぱいにし、YouTube は止めずに隅の小窓へ縮める(設定の「元に戻るまでの時間」で戻す)。
      * 1 画面で CarPlay を出しているときは、もう地図が見えているので何もしない。
      */
+    /**
+     * 車線変更の maneuver か(本人の指示: 車線変更→デフォルト、つまりコーナーにしない)。
+     * iAP2 の車線変更コードは実走ログ(nav-raw)未採取のため、今は常に false(＝無効)。実データを採ったら
+     * r.maneuverType で判定を入れる。分岐自体は applyRoute に用意済み。
+     */
+    private static boolean isLaneChange(Route r) {
+        return false;
+    }
+
     private void engageMap() {
         if (Store.single(this) && active() == car) return; // 1画面で CarPlay 表示中は、もう地図が見えている
         mapEngaged = true;
@@ -1757,10 +1809,11 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         if (req != REQ_SHOT) return;
         if (res == RESULT_OK && data != null) {
             android.util.DisplayMetrics m = getResources().getDisplayMetrics();
-            ShotService.enable(this, res, data, m.widthPixels, m.heightPixels, m.densityDpi);
+            ShotService.enable(this, res, data, m.widthPixels, m.heightPixels, m.densityDpi, true);
             Trace.setShots(this, true);
             if (!Trace.on()) { Trace.setOn(this, true); TraceStats.start(); }
-            DuoLog.log("走行の記録: 画面の撮影を許可しました");
+            if (recMark != null) recMark.setVisibility(View.VISIBLE);
+            DuoLog.log("走行の記録: 画面収録を始めました");
         } else {
             DuoLog.log("走行の記録: 画面の撮影は許可されませんでした");
         }

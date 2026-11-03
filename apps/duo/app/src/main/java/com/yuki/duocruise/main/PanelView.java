@@ -36,6 +36,8 @@ final class PanelView extends ViewGroup {
         /** デモ(全部の挙動を順に見せる)を始める。 */
         void startDemo();
         boolean bootSound(); void toggleBootSound();
+        /** 画面収録(連続録画)が動いているか / 切り替える(オンで許可画面→録画、オフで停止)。 */
+        boolean screenRecOn(); void toggleScreenRec();
         void closePanel();
         void toggleCar();
         boolean carOn();
@@ -358,6 +360,7 @@ final class PanelView extends ViewGroup {
             items.add(new Item(() -> T(R.string.s_home), () -> host.isDefaultHome() ? "Duo Cruise" : host.otherHomeName(), host::chooseHome));
             items.add(new Item(() -> T(R.string.s_settings), () -> "", host::openSettings));
             items.add(new Item(() -> T(R.string.s_bootsound), () -> host.bootSound() ? T(R.string.on) : T(R.string.off), () -> { host.toggleBootSound(); refresh(); }, true));
+            items.add(new Item(() -> T(R.string.s_screenrec), () -> host.screenRecOn() ? T(R.string.on) : T(R.string.off), () -> { host.toggleScreenRec(); refresh(); }, true));
             items.add(new Item(() -> T(R.string.s_guide), () -> "", host::showGuide));
             items.add(new Item(() -> T(R.string.s_demo), () -> "", host::startDemo));
             items.add(new Item(() -> T(R.string.s_log), () -> GO, () -> show(LOG)));
