@@ -125,6 +125,8 @@
     <string name="mode_parking_cap">駐車中は YouTube を全画面</string>
     <string name="mode_stopped_cap">停車中は YouTube を大きく</string>
     <string name="mode_corner_cap">曲がり角は地図を全画面</string>
+    <string name="mode_mapclose">マップクローズ</string>
+    <string name="mode_mapclose_cap">曲がり角の手前で地図を大きく</string>
     <string name="mode_cruise_cap">一本道は YouTube を大きく</string>
     <string name="mode_arrived_cap">目的地に到着しました</string>
     <string name="s_demo">デモ</string>

@@ -125,6 +125,8 @@
     <string name="mode_parking_cap">YouTube full screen while parked</string>
     <string name="mode_stopped_cap">YouTube gets bigger when you stop</string>
     <string name="mode_corner_cap">Full-screen map at the turn</string>
+    <string name="mode_mapclose">Map Close-up</string>
+    <string name="mode_mapclose_cap">Enlarging the map before the turn</string>
     <string name="mode_cruise_cap">YouTube gets bigger on a long stretch</string>
     <string name="mode_arrived_cap">You have arrived</string>
     <string name="s_demo">Demo</string>
