@@ -164,10 +164,7 @@ final class SplitRoot extends ViewGroup {
     private int[] carRect(int w, int h) { return carRect(w, h, ytPct); }
 
     private int[] carRect(int w, int h, int yt) {
-        // レール中: CarPlay は動かさず全画面のまま背後に生かす(画面外へ出すと surfaceDestroyed で映像面が壊れ、
-        // 比率が変わるたびに CarPlay が切断していた)。前面の YouTube(中央)とレール(余白を黒で塗る)で隠す。
-        // コーナー(pip)も全画面なので、レール↔コーナーで CarPlay のジオメトリは変わらない。
-        if (rails) return new int[]{0, 0, w, h};
+        if (rails) return SplitGeometry.offscreen(w, h); // レール中: CarPlay は画面外(YouTube 中央全画面)
         if (pip) return new int[]{0, 0, w, h};
         if (single) return tvShown() ? SplitGeometry.offscreen(w, h) : SplitGeometry.single(w, h, false);
         // YouTube が全画面に近いとき、CarPlay は幅0になり映像面が壊れるので、画面の外へ置く
