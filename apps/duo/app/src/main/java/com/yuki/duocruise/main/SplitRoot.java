@@ -68,7 +68,8 @@ final class SplitRoot extends ViewGroup {
         super(c);
         listener = l;
         dp = c.getResources().getDisplayMetrics().density;
-        setBackgroundColor(Theme.BG);
+        // 地は真っ黒(クルーズの中央 16:9 の左右の余白が紺だと YouTube が浮いて見え、没入感がなくなる)
+        setBackgroundColor(android.graphics.Color.BLACK);
         frame = new Frame(c);
         hint = new TurnHintView(c);
         turnGlow = new TurnGlow(c);
