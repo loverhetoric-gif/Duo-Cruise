@@ -583,7 +583,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         return false;
     }
 
-    /** 情報レールに今の値を渡す(推測しない。案内から取れた分だけ。到着(ETA)は未特定なので「—」)。 */
+    /** 情報レールに今の値を渡す(推測しない。案内から取れた分だけ)。 */
     private void pushRail() {
         RailView.Data d = new RailView.Data();
         Route r = route;
@@ -591,7 +591,9 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         if (d.guiding) {
             d.dest = r.destination;
             if (r.distanceRemainingM >= 0) d.remain = Store.distance(this, r.distanceRemainingM);
-            d.eta = "—"; // 到着時間: iAP2 のどのフィールドか未特定(nav-raw 診断で特定中)
+            // 到着予定: iPhone が送る到着時刻(0x5201 #5)を端末の時刻表示(12/24 時間)で。来ていなければ「—」
+            if (r.etaEpochSec > 0)
+                d.eta = android.text.format.DateFormat.getTimeFormat(this).format(new java.util.Date(r.etaEpochSec * 1000L));
             if (cruiseMeters > 0) d.cruise = Store.distance(this, Math.round(cruiseMeters));
             if (navStartRemainM > 0 && r.distanceRemainingM >= 0)
                 d.progress = Math.max(0f, Math.min(1f, (navStartRemainM - r.distanceRemainingM) / (float) navStartRemainM));
@@ -1790,7 +1792,8 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
                 + ",\"nav\":" + (navEngaged ? 1 : 0)
                 + ",\"held\":" + (driveHeld ? 1 : 0)
                 + ",\"conn\":" + (lastConn ? 1 : 0)
-                + ",\"turnM\":" + (r == null ? -1 : r.distanceToTurnM);
+                + ",\"turnM\":" + (r == null ? -1 : r.distanceToTurnM)
+                + ",\"leftS\":" + (r == null ? -1 : r.timeRemainingSec);
     }
 
     private static final int REQ_SHOT = 0xD0C;

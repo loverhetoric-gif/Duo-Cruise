@@ -26,7 +26,7 @@ final class RailView extends View {
         boolean guiding;          // 案内中か
         String dest;              // 行き先
         String remain;            // 目的地まで(例 "12.3 km")。null で出さない
-        String eta = "—";         // 到着時間。まだ特定できていなければ "—"
+        String eta = "—";         // 到着予定時刻(例 "9:47")。iPhone から来ていなければ "—"
         String cruise;            // 航続距離(案内開始からの GPS 累積)。null で出さない
         float progress = -1f;     // 進行度 0..1。<0 で出さない
         Integer turnAngle;        // 標識の矢印の角度(0=直進, -90=左, 90=右…)。null で標識なし
