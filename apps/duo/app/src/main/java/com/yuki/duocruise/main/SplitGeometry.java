@@ -104,8 +104,11 @@ final class SplitGeometry {
     }
 
     /** 曲がり角の小窓(YouTube)。幅は画面の 1/3、16:9。下の隅(left なら左下、普段は右下)。 */
-    static int[] pip(int w, int h, boolean left) {
-        int pw = Math.round(w / 3f), ph = Math.min(h, Math.round(pw * 9 / 16f)), m = 16;
+    static int[] pip(int w, int h, boolean left) { return pip(w, h, left, 16); }
+
+    /** 小窓の置き場所(余白 m px)。影で浮かせるため、呼び手は影が収まる余白を渡す。 */
+    static int[] pip(int w, int h, boolean left, int m) {
+        int pw = Math.round(w / 3f), ph = Math.min(h, Math.round(pw * 9 / 16f));
         return left ? new int[]{m, h - m - ph, m + pw, h - m} : new int[]{w - m - pw, h - m - ph, w - m, h - m};
     }
 

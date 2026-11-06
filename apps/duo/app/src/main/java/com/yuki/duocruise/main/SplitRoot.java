@@ -50,6 +50,12 @@ final class SplitRoot extends ViewGroup {
     boolean swapped, panelHalf, single;
     /** 曲がり角の小窓: CarPlay を画面いっぱいに、YouTube を隅の小窓に(pipLeft なら左下)。 */
     private boolean pip, pipLeft;
+    /** 小窓から戻る動きの間も、縮んだ YouTube の下に影を残す。 */
+    private boolean pipLeaving;
+    /** 小窓を浮かせる影(ぼかし 18dp・下へ 6dp)。小窓の真下にだけ描く。 */
+    private final Paint pipShadow = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final RectF pipBox = new RectF();
+    private static final int PIP_MARGIN_DP = 20;
     /** 並べ方が変わったときの動き。動いている間は、枠を animCar / animTv に置いて変形で見せる。 */
     private ValueAnimator moveAnim;
     private int[] animCar, animTv, lastCar, lastTv;
@@ -77,6 +83,24 @@ final class SplitRoot extends ViewGroup {
         modeTag = new ModeTag(c);
         railView = new RailView(c);
         railView.setVisibility(GONE);
+        pipShadow.setColor(0xFF000000);
+        pipShadow.setShadowLayer(18 * dp, 0, 6 * dp, 0xA6000000);
+    }
+
+    /**
+     * 小窓(YouTube)の下に影を描いて、地図の上に浮いて見せる。動いている間も、
+     * 実際に見えている位置・大きさ(移動と拡大縮小)に合わせて付いていく。
+     */
+    @Override protected boolean drawChild(Canvas cv, View child, long time) {
+        if (child == tv && (pip || pipLeaving) && tv.getVisibility() == VISIBLE) {
+            float x = tv.getLeft() + tv.getTranslationX(), y = tv.getTop() + tv.getTranslationY();
+            float vw = tv.getWidth() * tv.getScaleX(), vh = tv.getHeight() * tv.getScaleY();
+            if (vw > 0 && vh > 0 && vw < contentW() * 0.95f) {
+                pipBox.set(x, y, x + vw, y + vh);
+                cv.drawRect(pipBox, pipShadow);
+            }
+        }
+        return super.drawChild(cv, child, time);
     }
 
     /** 情報レールを出す/やめる(YouTube 中央全画面 + 左右余白のレール)。apply の前に呼ぶ。 */
@@ -173,9 +197,12 @@ final class SplitRoot extends ViewGroup {
         return SplitGeometry.car(w, h, swapped, yt);
     }
 
+    /** 小窓の置き場所。影(下へずらしたぼかし)が画面の端で切れないよう、余白を 20dp とる。 */
+    private int[] pipRect(int w, int h) { return SplitGeometry.pip(w, h, pipLeft, Math.round(PIP_MARGIN_DP * dp)); }
+
     private int[] tvRect(int w, int h) {
         if (rails) return SplitGeometry.centered169(w, h); // レール中: YouTube を中央 16:9 全画面
-        if (pip) return SplitGeometry.pip(w, h, pipLeft);
+        if (pip) return pipRect(w, h);
         if (single) return tvShown() ? SplitGeometry.single(w, h, true) : SplitGeometry.offscreen(w, h);
         if (ytPct >= 98) return SplitGeometry.single(w, h, true);
         if (ytPct <= 2) return SplitGeometry.offscreen(w, h);
@@ -185,7 +212,7 @@ final class SplitRoot extends ViewGroup {
     /** 操作している枠(線と光を描く場所)。 */
     int[] activeRect(int w, int h) {
         if (rails) return SplitGeometry.centered169(w, h); // レール中: 操作対象は中央の YouTube
-        if (pip) return tvShown() ? SplitGeometry.pip(w, h, pipLeft) : new int[]{0, 0, w, h};
+        if (pip) return tvShown() ? pipRect(w, h) : new int[]{0, 0, w, h};
         if (single) return SplitGeometry.single(w, h, tvShown());
         if (ytPct >= 98) return SplitGeometry.single(w, h, tvShown());
         return SplitGeometry.activeHalf(w, h, side, swapped, ytPct);
@@ -277,6 +304,7 @@ final class SplitRoot extends ViewGroup {
      */
     private void move(int[] fc, int[] tc, int[] fv, int[] tv2, int w, boolean flip, boolean toPip, boolean fromPip) {
         if (moveAnim != null) moveAnim.cancel();
+        pipLeaving = fromPip && !toPip;
         boolean carIn = fc[0] >= w && tc[0] < w, tvIn = fv[0] >= w && tv2[0] < w;
         // 小窓へ: CarPlay は最初から画面いっぱいに下にいて、縮む YouTube の下から現れる。小窓から戻る: 広がる YouTube に隠れるまで動かない
         if (toPip && carIn) fc = tc;
@@ -307,12 +335,14 @@ final class SplitRoot extends ViewGroup {
             put(car, sc, ec, e);
             put(carLoader, sc, ec, e);
             put(tv, sv, ev, e);
+            invalidate(); // 影を小窓の動きに付いていかせる
         });
         moveAnim.addListener(new android.animation.AnimatorListenerAdapter() {
             boolean cancelled;
             @Override public void onAnimationCancel(android.animation.Animator a) { cancelled = true; }
             @Override public void onAnimationEnd(android.animation.Animator a) {
                 if (cancelled) return;
+                pipLeaving = false;
                 animCar = animTv = null;
                 for (View v : new View[]{car, carLoader, tv}) {
                     v.setTranslationX(0); v.setTranslationY(0); v.setScaleX(1); v.setScaleY(1);
