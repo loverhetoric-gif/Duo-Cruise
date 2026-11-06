@@ -560,7 +560,8 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     private void applyLayout() {
         if (curYt < 0) curYt = targetYt();
         root.setSingle(Store.single(this));
-        root.setPip(mapEngaged, true); // 小窓は左下(本人の指示)
+        root.setPip(mapEngaged, false); // 小窓は右の空き(曲がり角カードと到着カードの間)。左下は自車と曲がる先を隠していた
+        root.setPipAspect(tv.videoAspect()); // 小窓を動画の形に合わせる(黒い帯を作らない)
         root.setRails(railsWanted());  // クルーズ/停車/駐車/案内: YouTube を中央全画面にし、左右の余白へ情報レール
         root.apply(Store.swapped(this), Store.side(this), Store.panelHalf(this), curYt);
         if (ytAnim == null || !ytAnim.isRunning()) fitCar(curYt);
@@ -1708,26 +1709,46 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         try { return p.status(); } catch (Throwable t) { return "状態を読めません " + DuoLog.why(t); }
     }
 
-    /** いま鳴っている CarPlay の音の種類(audioType)。 */
+    /** いま流れが開いている CarPlay の音の種類(audioType)。 */
     private final java.util.Set<String> carSounds = new java.util.HashSet<>();
+    /** いま実際に声が鳴っているナビ・通知の音の種類(音の大きさで判定。流れが開いているだけでは入らない)。 */
+    private final java.util.Set<String> carVoices = new java.util.HashSet<>();
     private final Runnable applyDuck = this::applyDuck;
     /** ナビ音声のあいだ YouTube を下げる音量。 */
     static final float DUCK_NAV = 0.2f;
+    /** YouTube を下げる速さ(声が聞こえる前に下げ切る)と、戻す速さ(声の余韻に重ねてゆっくり)。 */
+    private static final long DUCK_DOWN_MS = 250, DUCK_UP_MS = 900;
+    /** 声が消えてから戻し始めるまでの間(余韻)。 */
+    private static final long DUCK_RELEASE_MS = 200;
 
-    /** CarPlay の音が始まった/終わった(メインスレッド)。 */
+    /** CarPlay の音の流れが開いた/閉じた(メインスレッド)。電話・Siri の一時停止と、記録に使う。 */
     static void carAudio(String audioType, boolean active) {
         DuoActivity a = live;
         if (a == null) return;
-        if (active) a.carSounds.add(audioType); else a.carSounds.remove(audioType);
+        if (active) a.carSounds.add(audioType); else { a.carSounds.remove(audioType); a.carVoices.remove(audioType); }
+        Trace.event("car-audio", audioType + (active ? " 開始" : " 終了"));
         a.main.removeCallbacks(a.applyDuck);
-        // 下げるのはすぐ、戻すのは1秒待ってから(ナビの言葉の切れ目で上がったり下がったりしないように)
-        if (active) a.applyDuck(); else a.main.postDelayed(a.applyDuck, 1000);
+        a.applyDuck();
         a.updateNavSplit();
     }
 
     /**
+     * ナビの声が実際に鳴り始めた/鳴り終わった(メインスレッド)。inMs 後にスピーカーから聞こえる(目安)。
+     * 鳴り始め: すぐ YouTube を下げ始める(声はまだバッファの中。声の頭はふわっと上がるのでクロスフェードになる)。
+     * 鳴り終わり: 聞こえ終わるのを待ち、余韻をおいてから、ゆっくり戻す。
+     */
+    static void carVoice(String audioType, boolean speaking, long inMs) {
+        DuoActivity a = live;
+        if (a == null) return;
+        Trace.event("voice", audioType + (speaking ? " 鳴り始め" : " 鳴り終わり") + " 聞こえるまで" + inMs + "ms");
+        a.main.removeCallbacks(a.applyDuck);
+        if (speaking) { a.carVoices.add(audioType); a.applyDuck(); }
+        else { a.carVoices.remove(audioType); a.main.postDelayed(a.applyDuck, Math.max(0, inMs) + DUCK_RELEASE_MS); }
+    }
+
+    /**
      * Apple の機器と同じ考え方: 基本は YouTube。CarPlay の
-     * ・ナビの声・通知音(default/alert/compatibility) → YouTube を 20% に下げて重ねる
+     * ・ナビの声・通知音(default/alert/compatibility) → 声が実際に鳴っている間だけ YouTube を 20% に下げて重ねる
      * ・電話・Siri(telephony/speechrecognition) → YouTube を一時停止し、終わったら再開
      * ・音楽(media) → 何もしない
      * 鳴り終わったら元の音量に戻す。
@@ -1735,28 +1756,22 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     private void applyDuck() {
         float level = 1f;
         boolean call = false;
-        for (String t : carSounds) {
+        for (String t : carSounds)
             if (t.equals("telephony") || t.equals("speechrecognition")) { level = 0f; call = true; }
-            else if (!t.equals("media")) level = Math.min(level, DUCK_NAV);
-        }
+        if (!carVoices.isEmpty()) level = Math.min(level, DUCK_NAV);
         if (turnDucked) level = Math.min(level, Store.duckLevel(this) / 100f); // 曲がり角の手前(Unlimited Edition)
         if (alertDucked) level = Math.min(level, Store.duckLevel(this) / 100f); // Y!カーナビの警告
         fadeDuckTo(level); // 急に切り替えず、自然に上げ下げする
         tv.hold(call); // 電話・Siri の間は一時停止。終わったら、止める前に再生していれば再開
     }
 
-    /** YouTube の音量を、目標までなめらかに上げ下げする(ナビ音声の重なりを自然に)。 */
-    private android.animation.ValueAnimator duckAnim;
+    /** YouTube の音量を目標へ。下げるのは速く、戻すのはゆっくり。フェードは YouTube の中で1回だけ行う。 */
     private float curDuck = 1f;
-    private static final long DUCK_FADE_MS = 350;
     private void fadeDuckTo(float target) {
-        if (duckAnim != null) duckAnim.cancel();
-        if (Math.abs(curDuck - target) < 0.02f) { curDuck = target; tv.duck(target); return; }
-        duckAnim = android.animation.ValueAnimator.ofFloat(curDuck, target);
-        duckAnim.setDuration(DUCK_FADE_MS);
-        duckAnim.setInterpolator(new android.view.animation.DecelerateInterpolator());
-        duckAnim.addUpdateListener(a -> { curDuck = (float) a.getAnimatedValue(); tv.duck(curDuck); });
-        duckAnim.start();
+        if (Math.abs(curDuck - target) < 0.01f) return;
+        long ms = target < curDuck ? DUCK_DOWN_MS : DUCK_UP_MS;
+        curDuck = target;
+        tv.duck(target, ms);
     }
 
     /** 状態が変わったら、少し待ってまとめて1回送る。 */

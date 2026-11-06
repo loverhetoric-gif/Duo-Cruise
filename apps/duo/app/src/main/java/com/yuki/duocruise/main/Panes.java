@@ -41,6 +41,11 @@ final class Panes {
                     DuoActivity.carAudio(audioType, active);
                 }
 
+                /** ナビの声が実際に鳴り始めた/鳴り終わった(YouTube とのクロスフェードの合図)。 */
+                @Override public void onVoice(String audioType, boolean speaking, long inMs) {
+                    DuoActivity.carVoice(audioType, speaking, inMs);
+                }
+
                 /** ナビの案内(Duo Cruise Unlimited Edition だけ。リリース版では届かない)。 */
                 @Override public void onRoute(Route route) {
                     DuoActivity.carRoute(route);
@@ -122,7 +127,9 @@ final class Panes {
         @Override public boolean onGenericMotion(MotionEvent e) { return false; }
         @Override public String status() { return p.status(); }
         @Override public String command(String cmd) { return p.command(cmd); }
-        @Override public void duck(float level) { p.setDuck(level); }
+        @Override public void duck(float level) { p.setDuck(level, 300); }
+        @Override public void duck(float level, long fadeMs) { p.setDuck(level, fadeMs); }
+        @Override public float videoAspect() { return p.videoAspect(); }
         @Override public void hold(boolean on) { p.setHold(on); }
         @Override public void back() { p.back(); }
         @Override public void typeText(String text) { p.typeText(text); }

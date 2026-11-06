@@ -74,6 +74,9 @@ class CarPlayPane @JvmOverloads constructor(
         /** CarPlay の音の流れが始まった/終わった(audioType: media・default(ナビ)・alert・telephony・speechrecognition)。 */
         fun onAudio(audioType: String, active: Boolean)
 
+        /** ナビの声・通知音が実際に鳴り始めた/鳴り終わった。inMs 後にスピーカーから聞こえる(目安)。 */
+        fun onVoice(audioType: String, speaking: Boolean, inMs: Long)
+
         /** ナビの案内が変わった(Duo Cruise Unlimited Edition)。CarPlay が止まったら null。 */
         fun onRoute(route: Route?)
 
@@ -339,6 +342,11 @@ class CarPlayPane @JvmOverloads constructor(
                                 " (再生中のアプリ=${nowPlayingApp ?: "不明"})")
                             listener?.onAudio(audioType.lowercase(), active)
                         }
+                    }
+                },
+                onVoiceActive = { audioType, speaking, inMs ->
+                    main.post {
+                        if (myGeneration == generation) listener?.onVoice(audioType.lowercase(), speaking, inMs)
                     }
                 },
             )

@@ -551,6 +551,7 @@ public final class TvPane {
             if (o.optInt("nv") == 1) return;
             boolean p = o.optBoolean("p");
             String res = o.optInt("w") + "x" + o.optInt("h");
+            if (o.optInt("w") > 0 && o.optInt("h") > 0) { videoW = o.optInt("w"); videoH = o.optInt("h"); }
             int dropped = o.optInt("d", -1), total = o.optInt("f", -1);
             String now = (p ? "再生中 " : "停止 ") + res + (o.optBoolean("m") ? " 消音" : "");
             boolean changed = !now.equals(playState);
@@ -621,17 +622,30 @@ public final class TvPane {
      * YouTube の音量を level へ、約0.3秒かけてなめらかに変える(Apple の機器でナビが割り込むときと同じ動き)。
      * 再生は止めない。端末の音量ではなく、ページの動画の音量だけを変える。
      */
-    public void setDuck(float level) {
+    public void setDuck(float level) { setDuck(level, 300); }
+
+    /**
+     * 音量を fadeMs かけて level へ。フェードはページの中で1回だけ(呼ぶ側で刻まない)。
+     * なめらかに聞こえるよう、時間はゆっくり始まりゆっくり終わる曲線(smoothstep)、音量は耳の感じ方に合わせて二乗で動かす。
+     */
+    public void setDuck(float level, long fadeMs) {
         level = Math.max(0f, Math.min(1f, level));
         if (level == duck) return;
         duck = level;
         TvLog.state(app, level >= 1f ? "音量を戻した" : "CarPlay の音のため音量を " + Math.round(level * 100) + "% に下げた");
         if (web == null) return;
-        web.evaluateJavascript("(function(t){var v=document.querySelector('video');if(!v)return;"
-                + "clearInterval(window.__duoFade);var s=v.volume,n=0;"
-                + "window.__duoFade=setInterval(function(){n++;v.volume=s+(t-s)*Math.min(1,n/10);"
-                + "if(n>=10){clearInterval(window.__duoFade);window.__duoFade=0;}},30);})(" + level + ")", null);
+        long ms = Math.max(0, Math.min(3000, fadeMs));
+        web.evaluateJavascript("(function(t,d){var v=document.querySelector('video');if(!v)return;"
+                + "clearInterval(window.__duoFade);var s=Math.sqrt(v.volume),e=Math.sqrt(t),t0=Date.now();"
+                + "if(d<=0){v.volume=t;window.__duoFade=0;return;}"
+                + "window.__duoFade=setInterval(function(){var x=Math.min(1,(Date.now()-t0)/d),k=x*x*(3-2*x),a=s+(e-s)*k;"
+                + "v.volume=Math.max(0,Math.min(1,a*a));"
+                + "if(x>=1){clearInterval(window.__duoFade);window.__duoFade=0;}},16);})(" + level + "," + ms + ")", null);
     }
+
+    /** いま再生中の動画の横÷縦(定期の様子見で取った値)。分からなければ 0。 */
+    public float videoAspect() { return videoH > 0 ? videoW / (float) videoH : 0f; }
+    private int videoW, videoH;
 
     // ---------------- 電話・Siri の間の一時停止 ----------------
 

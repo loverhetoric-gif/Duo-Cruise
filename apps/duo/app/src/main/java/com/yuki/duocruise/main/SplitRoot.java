@@ -128,6 +128,10 @@ final class SplitRoot extends ViewGroup {
     /** 曲がり角の小窓を出す/やめる。apply の前に呼ぶ。 */
     void setPip(boolean on, boolean left) { pip = on; pipLeft = left; }
 
+    /** 小窓に入れる動画の形(横÷縦。0 なら 16:9)。apply の前に呼ぶ。 */
+    void setPipAspect(float a) { pipAspect = a; }
+    private float pipAspect;
+
     /** YouTube の幅の割合が yt のときの CarPlay の枠の幅(描く範囲を選ぶため)。並べる前は 0。 */
     int carWidth(int yt) {
         int w = contentW(), h = contentH();
@@ -175,7 +179,7 @@ final class SplitRoot extends ViewGroup {
 
     private int[] tvRect(int w, int h) {
         if (rails) return SplitGeometry.centered169(w, h); // レール中: YouTube を中央 16:9 全画面
-        if (pip) return SplitGeometry.pip(w, h, pipLeft);
+        if (pip) return SplitGeometry.pip(w, h, pipLeft, pipAspect);
         if (single) return tvShown() ? SplitGeometry.single(w, h, true) : SplitGeometry.offscreen(w, h);
         if (ytPct >= 98) return SplitGeometry.single(w, h, true);
         if (ytPct <= 2) return SplitGeometry.offscreen(w, h);
@@ -185,7 +189,7 @@ final class SplitRoot extends ViewGroup {
     /** 操作している枠(線と光を描く場所)。 */
     int[] activeRect(int w, int h) {
         if (rails) return SplitGeometry.centered169(w, h); // レール中: 操作対象は中央の YouTube
-        if (pip) return tvShown() ? SplitGeometry.pip(w, h, pipLeft) : new int[]{0, 0, w, h};
+        if (pip) return tvShown() ? SplitGeometry.pip(w, h, pipLeft, pipAspect) : new int[]{0, 0, w, h};
         if (single) return SplitGeometry.single(w, h, tvShown());
         if (ytPct >= 98) return SplitGeometry.single(w, h, tvShown());
         return SplitGeometry.activeHalf(w, h, side, swapped, ytPct);

@@ -54,6 +54,11 @@ class AndroidMediaSink(
     private val audioFocus: AudioFocusSession? = null,
     /** 音の流れが始まった/終わった(audioType と、始まったら true)。Duo Cruise が YouTube の音量を下げるのに使う。 */
     private val onAudioActive: ((String, Boolean) -> Unit)? = null,
+    /**
+     * ナビの声・通知音が実際に鳴り始めた/鳴り終わった(audioType・鳴っているか・スピーカーから聞こえるまでの ms)。
+     * 音の流れの開始/終了より正確(iPhone は流れを早めに開けて、しゃべり終えて数秒後に閉じる)。音楽・電話・Siri では来ない。
+     */
+    private val onVoiceActive: ((String, Boolean, Long) -> Unit)? = null,
 ) : MediaSink {
     private val audioTypes = ConcurrentHashMap<Int, String>()
     private val closed = java.util.concurrent.atomic.AtomicBoolean(false)
@@ -230,6 +235,7 @@ class AndroidMediaSink(
             mainMediaAudioBufferDurationMs,
             mediaMetricsMonitor,
             mediaTap,
+            onVoiceActive?.let { cb -> { speaking: Boolean, inMs: Long -> cb(format.audioType, speaking, inMs) } },
         ).also {
             audioRenderers[type] = it
         }
@@ -797,6 +803,8 @@ private class AudioRenderer(
     private val mainMediaAudioBufferDurationMs: Int,
     mediaMetricsMonitor: MediaMetricsMonitor?,
     private val mediaTap: MediaTap?,
+    /** 声の鳴り始め/鳴り終わり(鳴っているか・聞こえるまでの ms)。ナビの声・通知音の流れだけで使う。 */
+    private val onVoice: ((Boolean, Long) -> Unit)? = null,
 ) : Closeable {
     private data class AudioPacket(val rtp: ByteArray, val sample: Int)
 
@@ -830,6 +838,12 @@ private class AudioRenderer(
     private var lastTimestampHeadFrames = 0L
     private var latestOutputLatencyMs: Float? = null
     @Volatile private var mediaMetricsMonitor = mediaMetricsMonitor
+    // 声の見張り(ナビの声・通知音のときだけ)。音の大きさで鳴り始め/鳴り終わりを決める
+    private val watchVoice = onVoice != null && format.audioType.lowercase().let {
+        it != "media" && it != "telephony" && it != "speechrecognition"
+    }
+    private var speaking = false
+    private var quietFrames = 0L
     private val thread = Thread(::run, "carplay-audio").apply { isDaemon = true }
 
     fun start() {
@@ -1120,6 +1134,7 @@ private class AudioRenderer(
     }
 
     private fun writePcm(data: ByteArray, offset: Int = 0, length: Int = data.size) {
+        if (watchVoice) watchVoice(data, offset, length)
         if (mediaTap?.takesAudio() == true) {
             forwardPcm(data, offset, length)
             return
@@ -1168,6 +1183,68 @@ private class AudioRenderer(
                     playbackStarted = true
                     Log.i(TAG, "audio playback started type=${format.payloadType}")
                 }
+            }
+        }
+    }
+
+    /**
+     * 声の見張り: この塊の音の大きさ(RMS)で、鳴り始め/鳴り終わりを決めて知らせる。
+     * 鳴り始めはすぐ(まだバッファにあり、聞こえる前に YouTube を下げ始められる)。声の頭はふわっと上げる。
+     * 鳴り終わりは、静かな状態が VOICE_HANG_MS 続いたら(言葉の切れ目で上下しないように)。
+     */
+    private fun watchVoice(data: ByteArray, offset: Int, length: Int) {
+        val samples = (length - length % 2) / 2
+        if (samples <= 0) return
+        var sum = 0.0
+        for (i in 0 until samples) {
+            val p = offset + i * 2
+            val v = ((data[p].toInt() and 0xff) or (data[p + 1].toInt() shl 8)).toShort().toInt()
+            sum += v.toDouble() * v
+        }
+        val rms = Math.sqrt(sum / samples)
+        val channels = if (format.channels >= 2) 2 else 1
+        val frames = (samples / channels).toLong()
+        if (!speaking) {
+            if (rms >= VOICE_ON_RMS) {
+                speaking = true
+                quietFrames = 0
+                applyVoiceFadeIn(data, offset, length, channels)
+                onVoice?.invoke(true, bufferedMs())
+            }
+        } else if (rms < VOICE_OFF_RMS) {
+            quietFrames += frames
+            if (quietFrames * 1000 / format.sampleRate >= VOICE_HANG_MS) {
+                speaking = false
+                onVoice?.invoke(false, bufferedMs())
+            }
+        } else {
+            quietFrames = 0
+        }
+    }
+
+    /** いま書いた音が、スピーカーから聞こえるまでの時間(ms、目安)。 */
+    private fun bufferedMs(): Long {
+        val track = track ?: return 0
+        if (trackBytesPerFrame <= 0) return 0
+        val written = totalBytesWritten / trackBytesPerFrame
+        val head = if (playbackStarted) playbackHeadFrames(track) else 0L
+        val wait = if (playbackStarted) 0L else maxOf(0, startThresholdBytes - prebufferBytes).toLong() / trackBytesPerFrame
+        return ((written - head + wait) * 1000 / format.sampleRate).coerceIn(0, 2000)
+    }
+
+    /** 声の頭を VOICE_FADE_IN_MS かけて 0 から上げる(いきなり鳴らさず、YouTube とクロスフェードに)。 */
+    private fun applyVoiceFadeIn(data: ByteArray, offset: Int, length: Int, channels: Int) {
+        val frames = (length - length % (2 * channels)) / (2 * channels)
+        val fadeFrames = minOf(frames, maxOf(1, format.sampleRate * VOICE_FADE_IN_MS / 1000))
+        for (f in 0 until fadeFrames) {
+            val x = (f + 1).toDouble() / fadeFrames
+            val g = Math.sin(x * Math.PI / 2) // 等パワーの上げ方
+            for (c in 0 until channels) {
+                val p = offset + (f * channels + c) * 2
+                val v = ((data[p].toInt() and 0xff) or (data[p + 1].toInt() shl 8)).toShort().toInt()
+                val scaled = (v * g).toInt()
+                data[p] = scaled.toByte()
+                data[p + 1] = (scaled shr 8).toByte()
             }
         }
     }
@@ -1298,6 +1375,13 @@ private class AudioRenderer(
         const val MAX_QUEUED_PACKETS = 64
         const val MIN_TRACK_BUFFER_BYTES = 16 * 1024
         const val MIN_START_BUFFER_BYTES = 4 * 1024
+        /** 声とみなす音の大きさ(RMS、16bit)。約 -40 dBFS で鳴り始め、約 -46 dBFS 未満が続けば鳴り終わり。 */
+        const val VOICE_ON_RMS = 330.0
+        const val VOICE_OFF_RMS = 165.0
+        /** 静かな状態がこれだけ続いたら鳴り終わり(言葉の切れ目で上がったり下がったりしないように)。 */
+        const val VOICE_HANG_MS = 600L
+        /** 声の頭を上げる時間。 */
+        const val VOICE_FADE_IN_MS = 80
         const val PREBUFFER_WRITE_CHUNK_BYTES = 2 * 1024
         const val DECODED_BUFFER_LOG_INTERVAL = 50
         const val AUDIO_TIMESTAMP_INTERVAL_NS = 200_000_000L
