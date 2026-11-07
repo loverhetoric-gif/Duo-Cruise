@@ -33,6 +33,8 @@ interface Pane {
     default float videoAspect() { return 0f; }
     /** 電話・Siri の間は止め(on)、終わったら止める前の状態に戻す(off)。音を出す部品だけが使う。 */
     default void hold(boolean on) {}
+    /** ナビの声の間、動画を限りなくスローにする(YouTube だけ)。 */
+    default void slow(boolean on) {}
     /** タッチパッドのキーボードの文字・キー。文字を受ける部品だけが使う。 */
     default void typeText(String text) {}
     default void typeKey(int keyCode) {}

@@ -57,6 +57,16 @@ final class Store {
     static int splitYt(Context c) { return SplitGeometry.clampYt(p(c).getInt("splitYt", 50)); }
     static void setSplitYt(Context c, int v) { p(c).edit().putInt("splitYt", SplitGeometry.clampYt(v)).apply(); }
 
+    /** コーナーの小窓の中心(画面に対する割合)。本人がコマンダーで動かした位置。-1 なら既定の場所。 */
+    static float pipX(Context c) { return p(c).getFloat("pipX", -1f); }
+    static float pipY(Context c) { return p(c).getFloat("pipY", -1f); }
+    static void setPipPos(Context c, float x, float y) { p(c).edit().putFloat("pipX", x).putFloat("pipY", y).apply(); }
+
+    /** ナビの声の間の YouTube の動画: そのまま(音量だけ下げる)/ 限りなくスロー / 一時停止。既定はスロー(本人の指定)。 */
+    static final int NAV_VIDEO_KEEP = 0, NAV_VIDEO_SLOW = 1, NAV_VIDEO_PAUSE = 2;
+    static int navVideo(Context c) { return ((p(c).getInt("navVideo", NAV_VIDEO_SLOW) % 3) + 3) % 3; }
+    static void setNavVideo(Context c, int v) { p(c).edit().putInt("navVideo", ((v % 3) + 3) % 3).apply(); }
+
     /** ナビ音声が流れている間の、YouTube の幅の割合(%)。 */
     static int navYt(Context c) { return SplitGeometry.clampYt(p(c).getInt("navYt", 50)); }
     static void setNavYt(Context c, int v) { p(c).edit().putInt("navYt", SplitGeometry.clampYt(v)).apply(); }

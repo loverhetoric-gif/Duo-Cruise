@@ -111,19 +111,33 @@ final class SplitGeometry {
      * 大きさは幅 21%・高さ 40% の箱に、動画の形(aspect=横÷縦、0 なら 16:9)で収める(黒い帯を作らない)。
      * left なら従来どおり左下。
      */
-    static int[] pip(int w, int h, boolean left, float aspect) {
+    static int[] pip(int w, int h, boolean left, float aspect) { return pip(w, h, left, aspect, -1f, -1f); }
+
+    /**
+     * 小窓。fx・fy は本人がコマンダーで動かした中心の位置(画面に対する割合)。負なら既定の場所。
+     * どこへ動かしても画面の内側(縁から m)に収める。
+     */
+    static int[] pip(int w, int h, boolean left, float aspect, float fx, float fy) {
         float a = aspect > 0.3f && aspect < 4f ? aspect : 16f / 9f;
         int maxW = Math.round(w * PIP_W), maxH = Math.round(h * PIP_H), m = 16;
         int pw = maxW, ph = Math.round(pw / a);
         if (ph > maxH) { ph = maxH; pw = Math.round(ph * a); }
+        if (fx >= 0f && fy >= 0f) {
+            int lx = Math.max(m, Math.min(w - m - pw, Math.round(fx * w) - pw / 2));
+            int ty = Math.max(m, Math.min(h - m - ph, Math.round(fy * h) - ph / 2));
+            return new int[]{lx, ty, lx + pw, ty + ph};
+        }
         if (left) return new int[]{m, h - m - ph, m + pw, h - m};
         int cy = Math.round(h * PIP_CY);
         int top = Math.max(m, Math.min(h - m - ph, cy - ph / 2));
         return new int[]{w - m - pw, top, w - m, top + ph};
     }
 
-    /** 小窓の箱(画面に対する幅・高さの割合)と、縦の中心(曲がり角カードの下〜到着カードの上の真ん中)。 */
-    static final float PIP_W = 0.21f, PIP_H = 0.40f, PIP_CY = 0.445f;
+    /**
+     * 小窓の箱(画面に対する幅・高さの割合)と、縦の中心(曲がり角カードの下〜到着カードの上の真ん中)。
+     * 11/7 の本人の指定で 1.2 倍に(幅 21%→25.2%、高さ 40%→48%。OTTO では 311×175 → 373×210)。
+     */
+    static final float PIP_W = 0.252f, PIP_H = 0.48f, PIP_CY = 0.445f;
 
     /**
      * 1画面のときの、出さない側の置き場所(画面の右の外)。大きさは画面と同じ。

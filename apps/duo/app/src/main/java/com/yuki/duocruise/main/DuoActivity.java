@@ -136,7 +136,19 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         setupInsets();
         applyLayout();
         android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
-        ytFit = SplitGeometry.fit169Pct(dm.widthPixels, dm.heightPixels); // この画面で YouTube が 16:9(黒枠なし)になる割合
+        ytFit = SplitGeometry.fit169Pct(dm.widthPixels, dm.heightPixels); // この画面で YouTube が 16:9(黒枠なし)になる割合(仮)
+        // 本当の値は、実際に並べた枠の大きさから。起動時の画面の情報はナビゲーションバー(下 64px)を除いた高さで、
+        // OTTO(1480×480)では 416px → 16:9 が「ちょうど 50%」になり、どの段でも 50:50 のままだった(11/7 実走)。
+        root.addOnLayoutChangeListener((v, l0, t0, r0, b0, ol, ot, or, ob) -> {
+            int w = v.getWidth() - v.getPaddingLeft() - v.getPaddingRight();
+            int h = v.getHeight() - v.getPaddingTop() - v.getPaddingBottom();
+            if (w <= 0 || h <= 0) return;
+            int f = SplitGeometry.fit169Pct(w, h);
+            if (f == ytFit) return;
+            ytFit = f;
+            DuoLog.log("16:9 の幅: " + w + "×" + h + " の画面で YouTube " + f + "%");
+            main.post(() -> { if (!Store.single(this)) animateYt(targetYt()); });
+        });
 
         askPermissions();
         // CarPlay は開いたら自動で始め、失敗・切断したら見張りがつなぎ直す
@@ -419,8 +431,28 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         if (splitAdjusting) { splitKey(code, action); return; }
         if (panel.getVisibility() == View.VISIBLE) { panel.onKey(ev); return; }
         if (isMediaKey(code)) { mediaTarget().onKey(ev); return; }
+        if (mapEngaged && movePip(code, action)) return; // コーナー中: コマンダーの上下左右で小窓を動かす
         try { active().onKey(ev); }
         catch (Throwable t) { DuoLog.error(active().name() + " へキーを渡せません: " + DuoLog.why(t)); }
+    }
+
+    /**
+     * コーナーの小窓を、コマンダーの上下左右で動かす(本人の指定)。押した瞬間と押し続け(繰り返し)で動く。
+     * 動かした場所は覚えておき、次のコーナーでもそこに出す。上下左右以外のキーは false(いつもどおり渡す)。
+     */
+    private boolean movePip(int code, int action) {
+        int dx = 0, dy = 0;
+        switch (code) {
+            case KeyEvent.KEYCODE_DPAD_LEFT: dx = -1; break;
+            case KeyEvent.KEYCODE_DPAD_RIGHT: dx = 1; break;
+            case KeyEvent.KEYCODE_DPAD_UP: dy = -1; break;
+            case KeyEvent.KEYCODE_DPAD_DOWN: dy = 1; break;
+            default: return false;
+        }
+        if (action != KeyEvent.ACTION_DOWN) return true; // 離したときは何もしない(CarPlay にも渡さない)
+        float[] at = root.nudgePip(dx, dy);
+        if (at != null) Store.setPipPos(this, at[0], at[1]);
+        return true;
     }
 
     /** ステアリングの曲送り・曲戻し・再生/一時停止。 */
@@ -562,6 +594,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         root.setSingle(Store.single(this));
         root.setPip(mapEngaged, false); // 小窓は右の空き(曲がり角カードと到着カードの間)。左下は自車と曲がる先を隠していた
         root.setPipAspect(tv.videoAspect()); // 小窓を動画の形に合わせる(黒い帯を作らない)
+        root.setPipPos(Store.pipX(this), Store.pipY(this)); // 本人がコマンダーで動かした場所(なければ右の空き)
         root.setRails(railsWanted());  // クルーズ/停車/駐車/案内: YouTube を中央全画面にし、左右の余白へ情報レール
         root.apply(Store.swapped(this), Store.side(this), Store.panelHalf(this), curYt);
         if (ytAnim == null || !ytAnim.isRunning()) fitCar(curYt);
@@ -781,6 +814,8 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     private static final int SPECIAL_CORNER_EXTRA_M = 150;
 
     private final Runnable mapRelease = this::mapRelease;
+    /** 戻す予約を入れてある(入れ直さない)。 */
+    private boolean cornerReleasing;
 
     /** CarPlay から(メインスレッド)。CarPlay が止まったら null。 */
     static void carRoute(Route r) {
@@ -841,16 +876,19 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
                 if (cornerOk && dist <= cornerAt) engageMap();    // 曲がり角に接近 → 地図を前へ(特例は手前から)
             } else if (idx != cornerTurnIndex) {
                 // 出していた曲がり角を通過した(番号が進んだ)
-                main.removeCallbacks(mapRelease);
-                if (dist <= CORNER_CHAIN_M) cornerTurnIndex = idx; // 次の曲がり角も近い → 1本として継続(連続)
-                else main.postDelayed(mapRelease, CORNER_TAIL_MS); // 次は遠い → 余韻を残して解除
+                if (dist <= CORNER_CHAIN_M) {                      // 次の曲がり角も近い → 1本として継続(連続)
+                    main.removeCallbacks(mapRelease);
+                    cornerReleasing = false;
+                    cornerTurnIndex = idx;
+                } else {
+                    releaseCornerOnce();                           // 次は遠い → 余韻を残して解除
+                }
             } else {
                 main.removeCallbacks(mapRelease); // まだその曲がり角へ接近中 → 0m まで保持
+                cornerReleasing = false;
             }
         } else if (mapEngaged) {
-            // 案内終了 / 地図フロント OFF → 余韻を残して戻す
-            main.removeCallbacks(mapRelease);
-            main.postDelayed(mapRelease, CORNER_TAIL_MS);
+            releaseCornerOnce(); // 案内終了 / 地図フロント OFF → 余韻を残して戻す
         }
         // マップクローズ(地図を大きく): コーナーの手前の帯で、CarPlay を大きくして予告する(反転)。
         boolean closeWant = mapOn && guiding && dist >= 0 && everMoved && cornerOk && !mapEngaged
@@ -904,11 +942,23 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         showMode("corner", R.string.mode_corner, R.string.mode_corner_cap, Store.neonTurn(this));
         Trace.clipHold(); // コーナーは通過するまでクリップを止めない(自動停止を取り消す)
         main.removeCallbacks(mapRelease); // 戻すのは、曲がり角を通過して plan.map が外れてから(applyRoute)
+        cornerReleasing = false;
         DuoLog.log("曲がり角の案内: CarPlay を全画面にし、YouTube を小窓にしました");
+    }
+
+    /**
+     * 余韻のあとに戻す予約を、1回だけ入れる。案内は1秒足らずごとに届くので、届くたびに予約を入れ直すと
+     * 2秒が永遠に来ず、案内が途切れるまでコーナーのままだった(11/7 実走: 次の曲がり角まで 17km でも 35 分間)。
+     */
+    private void releaseCornerOnce() {
+        if (cornerReleasing) return;
+        cornerReleasing = true;
+        main.postDelayed(mapRelease, CORNER_TAIL_MS);
     }
 
     private void mapRelease() {
         main.removeCallbacks(mapRelease);
+        cornerReleasing = false;
         if (!mapEngaged) return;
         mapEngaged = false;
         cornerTurnIndex = -1;
@@ -1762,7 +1812,11 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         if (turnDucked) level = Math.min(level, Store.duckLevel(this) / 100f); // 曲がり角の手前(Unlimited Edition)
         if (alertDucked) level = Math.min(level, Store.duckLevel(this) / 100f); // Y!カーナビの警告
         fadeDuckTo(level); // 急に切り替えず、自然に上げ下げする
-        tv.hold(call); // 電話・Siri の間は一時停止。終わったら、止める前に再生していれば再開
+        // ナビの声の間の動画(本人の指定): そのまま / 限りなくスロー / 一時停止。声の検出は鳴り始め・鳴り終わり(実音)
+        int nv = Store.navVideo(this);
+        boolean voice = !carVoices.isEmpty();
+        tv.hold(call || (voice && nv == Store.NAV_VIDEO_PAUSE)); // 電話・Siri(とナビの声)の間は一時停止。終われば再開
+        tv.slow(!call && voice && nv == Store.NAV_VIDEO_SLOW);
     }
 
     /** YouTube の音量を目標へ。下げるのは速く、戻すのはゆっくり。フェードは YouTube の中で1回だけ行う。 */

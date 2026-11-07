@@ -120,7 +120,41 @@ final class SplitRoot extends ViewGroup {
         addView(splitLine);
         addView(panel);
         if (cursor != null) { if (cursor.getParent() != null) ((ViewGroup) cursor.getParent()).removeView(cursor); addView(cursor); }
+        // 小窓は影を付けて少し浮かす(高さ pipZ)。高さのある部品は上に描かれるので、小窓より上に出すべき
+        // 部品(枠・案内・光・帯・境目・操作盤・カーソル)はさらに高くする。これらには影を付けない(輪郭なし)。
+        for (View v : new View[]{frame, hint, turnGlow, modeTag, splitLine, panel, cursor}) {
+            if (v == null) continue;
+            v.setOutlineProvider(null);
+            v.setElevation(overlayZ());
+        }
+        tv.setOutlineProvider(new android.view.ViewOutlineProvider() {
+            @Override public void getOutline(View v, android.graphics.Outline o) {
+                o.setRect(0, 0, v.getWidth(), v.getHeight());
+                o.setAlpha(1f);
+            }
+        });
+        if (android.os.Build.VERSION.SDK_INT >= 28) {
+            tv.setOutlineAmbientShadowColor(android.graphics.Color.BLACK);
+            tv.setOutlineSpotShadowColor(android.graphics.Color.BLACK);
+        }
+        updatePipLift();
     }
+
+    /** 小窓のときだけ影を付けて浮かす(並べ方の動きに合わせて、ふわっと)。 */
+    private void updatePipLift() {
+        if (tv == null) return;
+        float z = pip ? pipZ() : 0f;
+        if (liftTarget == z) return;
+        liftTarget = z;
+        if (liftAnim != null) liftAnim.cancel();
+        liftAnim = ValueAnimator.ofFloat(tv.getTranslationZ(), z);
+        liftAnim.setDuration(Motion.MS);
+        liftAnim.setInterpolator(Motion.EASE);
+        liftAnim.addUpdateListener(a -> tv.setTranslationZ((float) a.getAnimatedValue()));
+        liftAnim.start();
+    }
+    private float liftTarget;
+    private ValueAnimator liftAnim;
 
     /** 並べ直す(入れ替え・操作側・操作盤の場所が変わったとき)。 */
     /** 1画面にするか。apply の前に呼ぶ。 */
@@ -132,6 +166,40 @@ final class SplitRoot extends ViewGroup {
     /** 小窓に入れる動画の形(横÷縦。0 なら 16:9)。apply の前に呼ぶ。 */
     void setPipAspect(float a) { pipAspect = a; }
     private float pipAspect;
+    /** 本人がコマンダーで動かした小窓の中心(画面に対する割合)。負なら既定の場所(右の空き)。 */
+    private float pipFx = -1f, pipFy = -1f;
+    void setPipPos(float fx, float fy) { pipFx = fx; pipFy = fy; }
+
+    private int[] pipRect(int w, int h) { return SplitGeometry.pip(w, h, pipLeft, pipAspect, pipFx, pipFy); }
+
+    /**
+     * 小窓をコマンダーの上下左右で動かす(dx・dy は -1/0/1)。1回で画面の STEP ぶん。端で止まる。
+     * 動かした後の中心(割合)を返す(保存用)。小窓を出していないときは null。
+     */
+    float[] nudgePip(int dx, int dy) {
+        int w = contentW(), h = contentH();
+        if (!pip || w <= 0 || h <= 0) return null;
+        int[] r = pipRect(w, h);
+        int sx = Math.round(w * PIP_STEP), sy = Math.round(h * PIP_STEP * 1.5f);
+        int[] to = SplitGeometry.pip(w, h, pipLeft, pipAspect,
+                ((r[0] + r[2]) / 2f + dx * sx) / w, ((r[1] + r[3]) / 2f + dy * sy) / h);
+        pipFx = (to[0] + to[2]) / 2f / w;   // 端で止めた後の位置を持つ(押し続けても外へ溜まらない)
+        pipFy = (to[1] + to[3]) / 2f / h;
+        if (moveAnim == null || !moveAnim.isRunning()) {
+            // 動かした分だけ、短くすっと滑らせる
+            tv.setTranslationX(r[0] - to[0]);
+            tv.setTranslationY(r[1] - to[1]);
+            tv.animate().cancel();
+            tv.animate().translationX(0).translationY(0).setDuration(120).setInterpolator(new android.view.animation.DecelerateInterpolator()).start();
+        }
+        requestLayout();
+        return new float[]{pipFx, pipFy};
+    }
+    /** コマンダー1回で動く量(画面の幅に対する割合。縦はその 1.5 倍)。 */
+    private static final float PIP_STEP = 0.04f;
+    /** 小窓の浮き(影の高さ)と、その上に重ねる部品(枠・案内・帯・操作盤・カーソル)の高さ。 */
+    private float pipZ() { return 14 * dp; }
+    private float overlayZ() { return 20 * dp; }
 
     /** YouTube の幅の割合が yt のときの CarPlay の枠の幅(描く範囲を選ぶため)。並べる前は 0。 */
     int carWidth(int yt) {
@@ -180,7 +248,7 @@ final class SplitRoot extends ViewGroup {
 
     private int[] tvRect(int w, int h) {
         if (rails) return SplitGeometry.centered169(w, h); // レール中: YouTube を中央 16:9 全画面
-        if (pip) return SplitGeometry.pip(w, h, pipLeft, pipAspect);
+        if (pip) return pipRect(w, h);
         if (single) return tvShown() ? SplitGeometry.single(w, h, true) : SplitGeometry.offscreen(w, h);
         if (ytPct >= 98) return SplitGeometry.single(w, h, true);
         if (ytPct <= 2) return SplitGeometry.offscreen(w, h);
@@ -190,7 +258,7 @@ final class SplitRoot extends ViewGroup {
     /** 操作している枠(線と光を描く場所)。 */
     int[] activeRect(int w, int h) {
         if (rails) return SplitGeometry.centered169(w, h); // レール中: 操作対象は中央の YouTube
-        if (pip) return tvShown() ? SplitGeometry.pip(w, h, pipLeft, pipAspect) : new int[]{0, 0, w, h};
+        if (pip) return tvShown() ? pipRect(w, h) : new int[]{0, 0, w, h};
         if (single) return SplitGeometry.single(w, h, tvShown());
         if (ytPct >= 98) return SplitGeometry.single(w, h, tvShown());
         return SplitGeometry.activeHalf(w, h, side, swapped, ytPct);
@@ -269,6 +337,7 @@ final class SplitRoot extends ViewGroup {
         }
         lastShape = shape;
         lastRails = rails;
+        updatePipLift();
         requestLayout();
         frame.requestLayout();
         frame.invalidate();

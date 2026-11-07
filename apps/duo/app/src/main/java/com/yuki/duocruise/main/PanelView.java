@@ -811,6 +811,13 @@ final class PanelView extends ViewGroup {
                     public String text() { return value() + "%"; }
                     public int tint() { return Theme.NEON_WHITE; }
                 }));
+                // ナビの声の間の動画: そのまま → スロー → 一時停止 と押すたびに切り替え
+                items.add(new Item(() -> T(R.string.ra_video), () -> {
+                            int v = Store.navVideo(c);
+                            return T(v == Store.NAV_VIDEO_SLOW ? R.string.ra_video_slow
+                                    : v == Store.NAV_VIDEO_PAUSE ? R.string.ra_video_pause : R.string.ra_video_keep);
+                        },
+                        () -> { Store.setNavVideo(c, Store.navVideo(c) + 1); changed(); }));
                 items.add(back(T(R.string.to_route)));
                 break;
             default: // R_ARRIVE

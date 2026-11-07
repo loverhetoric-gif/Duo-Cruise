@@ -657,13 +657,36 @@ public final class TvPane {
         held = on;
         if (on) {
             heldWasPlaying = playing;
-            if (playing) { pauseVideo(); TvLog.state(app, "電話・Siri のため一時停止"); }
+            if (playing) { pauseVideo(); TvLog.state(app, "電話・Siri・ナビの声のため一時停止"); }
         } else if (heldWasPlaying) {
             heldWasPlaying = false;
             playVideo();
-            TvLog.state(app, "電話・Siri が終わったので再開");
+            TvLog.state(app, "電話・Siri・ナビの声が終わったので再開");
         }
     }
+
+    // ---------------- ナビの声の間のスロー再生 ----------------
+
+    private boolean slowed;
+
+    /**
+     * ナビの声の間、動画を「限りなくスロー」にする(本人の指定)。止めはしないので、声が終われば途切れずに続く。
+     * 速さは SLOW_RATE。ブラウザは 0.25 倍未満では音を出さないので、スロー中の音は自然に消える
+     * (音量のクロスフェードと重ねても問題ない)。戻すときは、本人が選んでいた速さへ戻す。
+     */
+    public void setSlow(boolean on) {
+        if (on == slowed) return;
+        slowed = on;
+        TvLog.state(app, on ? "ナビの声のためスロー再生" : "ナビの声が終わったので元の速さへ");
+        if (web == null) return;
+        web.evaluateJavascript(on
+                ? "(function(){var v=document.querySelector('video');if(!v)return;"
+                  + "if(!window.__duoSlow){window.__duoRate=v.playbackRate||1;window.__duoSlow=1;}v.playbackRate=" + SLOW_RATE + ";})()"
+                : "(function(){var v=document.querySelector('video');if(!v)return;"
+                  + "if(window.__duoSlow){v.playbackRate=window.__duoRate||1;window.__duoSlow=0;}})()", null);
+    }
+    /** スロー再生の速さ(ブラウザが受け付ける最低は 0.0625)。 */
+    private static final double SLOW_RATE = 0.1;
 
     // ---------------- 前回の続き(エンジンをかけたら、見ていた動画のその位置から) ----------------
 

@@ -844,6 +844,8 @@ private class AudioRenderer(
     }
     private var speaking = false
     private var quietFrames = 0L
+    /** 最後に声(鳴り終わりのしきい値以上)がした時刻。 */
+    private var lastLoudNs = 0L
     private val thread = Thread(::run, "carplay-audio").apply { isDaemon = true }
 
     fun start() {
@@ -878,7 +880,16 @@ private class AudioRenderer(
                 AudioCodecKind.LPCM -> Unit
             }
             createTrack()
-            while (running) handle(queue.take())
+            while (running) {
+                // 声が鳴っている間は待ちを区切る。iPhone は声が途切れると音の塊を送ってこないことがあり、
+                // 塊を待つだけだと「静かになった」を判定できない(11/7 の実走で鳴り終わりの検出は 117 回中 1 回)
+                if (watchVoice && speaking) {
+                    val p = queue.poll(VOICE_POLL_MS, java.util.concurrent.TimeUnit.MILLISECONDS)
+                    if (p != null) handle(p) else checkVoiceGap()
+                } else {
+                    handle(queue.take())
+                }
+            }
         } catch (_: InterruptedException) {
             // Worker shut down.
         } catch (error: Exception) {
@@ -1204,10 +1215,12 @@ private class AudioRenderer(
         val rms = Math.sqrt(sum / samples)
         val channels = if (format.channels >= 2) 2 else 1
         val frames = (samples / channels).toLong()
+        if (rms >= VOICE_OFF_RMS) lastLoudNs = System.nanoTime()
         if (!speaking) {
             if (rms >= VOICE_ON_RMS) {
                 speaking = true
                 quietFrames = 0
+                lastLoudNs = System.nanoTime()
                 applyVoiceFadeIn(data, offset, length, channels)
                 onVoice?.invoke(true, bufferedMs())
             }
@@ -1220,6 +1233,15 @@ private class AudioRenderer(
         } else {
             quietFrames = 0
         }
+    }
+
+    /** 声の途中で音の塊が来なくなった: 最後に声がしてから VOICE_HANG_MS 経てば鳴り終わり。 */
+    private fun checkVoiceGap() {
+        if (!speaking) return
+        if ((System.nanoTime() - lastLoudNs) / 1_000_000 < VOICE_HANG_MS) return
+        speaking = false
+        quietFrames = 0
+        onVoice?.invoke(false, bufferedMs())
     }
 
     /** いま書いた音が、スピーカーから聞こえるまでの時間(ms、目安)。 */
@@ -1380,6 +1402,8 @@ private class AudioRenderer(
         const val VOICE_OFF_RMS = 165.0
         /** 静かな状態がこれだけ続いたら鳴り終わり(言葉の切れ目で上がったり下がったりしないように)。 */
         const val VOICE_HANG_MS = 600L
+        /** 声が鳴っている間、音の塊を待つ区切り(塊が来なくても鳴り終わりを判定するため)。 */
+        const val VOICE_POLL_MS = 100L
         /** 声の頭を上げる時間。 */
         const val VOICE_FADE_IN_MS = 80
         const val PREBUFFER_WRITE_CHUNK_BYTES = 2 * 1024
