@@ -1,0 +1,1 @@
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMIhV7oZBIMajPQAW8HoFjZ6PBq4qQ+j3M9Kappn7yxv mac-backup-loverhetoric 2026-11-08
