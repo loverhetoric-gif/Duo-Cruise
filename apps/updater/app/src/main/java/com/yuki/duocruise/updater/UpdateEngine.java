@@ -33,7 +33,10 @@ import java.util.Locale;
  *   (Android は版番号を下げられないため、版番号は今と同じにして中身だけ1つ前にする)
  */
 final class UpdateEngine {
-    static final String REPO_API = "https://api.github.com/repos/loverhetoric-gif/Duo-Cruise";
+    // 配信口。GitHub 停止中(2026-11-09〜)は、Cloudflare の duo-releases(tools/release-worker)を見る。
+    // GitHub のリリース API と同じ形で返すので、GitHub に戻すときはこの1行を
+    // "https://api.github.com/repos/loverhetoric-gif/Duo-Cruise" に戻すだけでよい。
+    static final String REPO_API = "https://duo-releases.twilight-star-9d9d.workers.dev";
     static final String RELEASE_API = REPO_API + "/releases/latest";
     /** テスト版(変更の提案の段階で作ったもの)も含めた、新しい順の一覧。 */
     static final String RELEASES_API = REPO_API + "/releases?per_page=50";
