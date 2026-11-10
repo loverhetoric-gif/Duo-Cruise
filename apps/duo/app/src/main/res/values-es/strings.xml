@@ -182,4 +182,5 @@
     <string name="s_units">Unidades de distancia</string>
     <string name="v_km">Kilómetros</string>
     <string name="v_mi">Millas</string>
+    <string name="d_ambient">Luz ambiental</string>
 </resources>

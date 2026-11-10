@@ -274,10 +274,8 @@ public final class TvPane {
                 r = "番号は 0〜" + (UA_NAMES.length - 1);
             }
         } else if (c.startsWith("tv-ambient:")) {
-            boolean on = c.endsWith("1");
-            prefs.edit().putBoolean("ambient", on).apply();
-            injectAmbient();
-            r = "アンビエント: " + (on ? "オン" : "オフ");
+            setAmbient(c.endsWith("1")); // 確かめる用(本体の設定は変えない。次に設定が変わると設定の値に戻る)
+            r = "アンビエント: " + (ambient ? "オン" : "オフ");
         } else if (c.equals("tv-reload")) {
             if (web != null) web.reload();
             r = "読み直します";
@@ -540,40 +538,32 @@ public final class TvPane {
 
 
     /**
-     * アンビエント(2026-11-10、テスト版): YouTube の枠より動画が細いとき(マップクローズなどで上下に黒い帯が出るとき)、
-     * 動画の色をぼかして暗くし、その帯に敷く。動画の上下の縁は少しずつ溶かして境目を消す。
-     * ページの中の canvas に 1 秒 4 回だけ描く(32×18 に縮めてから広げるので軽い)。地図には出ない(この枠の中だけ)。
-     * 一時停止中・操作の直後(6 秒)は出さない(TV 版の操作の表示を隠さないため)。設定は tv-ambient:0/1。
+     * アンビエント: YouTube の枠より動画が細いとき(マップクローズなどで上下に黒い帯が出るとき)、
+     * 帯を動画の色の光で埋める。中身は assets/tv-ambient.js(見え方の決まりもそこに書いてある)。
+     * オン・オフは本体の設定(画面 → YouTube の余白を光で)から setAmbient で受ける。
      */
-    private static final String AMBIENT_JS =
-            "(function(on){var A=window.__duoAmb;if(!A){"
-            + "var c=document.createElement('canvas');c.id='duo-amb';"
-            + "c.style.cssText='position:fixed;left:0;top:0;width:100vw;height:100vh;pointer-events:none;z-index:2147483646;opacity:0;transition:opacity .8s';"
-            + "var s=document.createElement('canvas');s.width=32;s.height=18;var sx=s.getContext('2d'),cx=c.getContext('2d');"
-            + "A=window.__duoAmb={on:on,hold:0};"
-            + "var tick=function(){var show=false;try{"
-            + "if(!c.isConnected)document.documentElement.appendChild(c);"
-            + "var v=document.querySelector('video'),W=innerWidth,H=innerHeight;"
-            + "if(A.on&&v&&v.videoWidth&&v.readyState>=2&&!v.paused&&!v.ended&&Date.now()>A.hold){"
-            + "var r=v.getBoundingClientRect(),ar=v.videoWidth/v.videoHeight,cw=r.width,ch=r.height;"
-            + "if(cw/ch>ar)cw=ch*ar;else ch=cw/ar;"
-            + "var x=r.left+(r.width-cw)/2,y=r.top+(r.height-ch)/2;"
-            + "if(cw>=W*0.9&&ch<H-12){show=true;"
-            + "var w2=Math.max(1,Math.round(W/2)),h2=Math.max(1,Math.round(H/2));if(c.width!==w2||c.height!==h2){c.width=w2;c.height=h2;}"
-            + "var k=c.width/W;sx.drawImage(v,0,0,32,18);"
-            + "cx.globalCompositeOperation='source-over';cx.filter='blur(14px) brightness(0.45) saturate(1.3)';"
-            + "cx.drawImage(s,-c.width*0.1,-c.height*0.1,c.width*1.2,c.height*1.2);cx.filter='none';"
-            + "var fx=x*k,fy=y*k,fw=cw*k,fh=ch*k,e=Math.min(0.15,40*k/fh);"
-            + "cx.globalCompositeOperation='destination-out';var g=cx.createLinearGradient(0,fy,0,fy+fh);"
-            + "g.addColorStop(0,'rgba(0,0,0,0)');g.addColorStop(e,'rgba(0,0,0,1)');g.addColorStop(1-e,'rgba(0,0,0,1)');g.addColorStop(1,'rgba(0,0,0,0)');"
-            + "cx.fillStyle=g;cx.fillRect(fx,fy,fw,fh);cx.globalCompositeOperation='source-over';}}"
-            + "}catch(err){show=false;}c.style.opacity=show?'1':'0';setTimeout(tick,250);};tick();}"
-            + "A.on=on;})(";
+    private String ambientJs;
+    private boolean ambient = true;
 
-    private boolean ambientOn() { return prefs.getBoolean("ambient", true); }
+    public void setAmbient(boolean on) {
+        ambient = on;
+        injectAmbient();
+    }
 
     private void injectAmbient() {
-        if (web != null) web.evaluateJavascript(AMBIENT_JS + ambientOn() + ")", null);
+        if (web == null || destroyed) return;
+        if (ambientJs == null) {
+            try (java.io.InputStream in = app.getAssets().open("tv-ambient.js")) {
+                java.io.ByteArrayOutputStream o = new java.io.ByteArrayOutputStream();
+                byte[] buf = new byte[8192]; int n;
+                while ((n = in.read(buf)) > 0) o.write(buf, 0, n);
+                ambientJs = o.toString("UTF-8");
+            } catch (Exception e) {
+                ambientJs = "";
+                TvLog.error(app, "アンビエントを読めません: " + e);
+            }
+        }
+        if (!ambientJs.isEmpty()) web.evaluateJavascript(ambientJs + "(" + ambient + ")", null);
     }
 
     private final Runnable poller = new Runnable() {

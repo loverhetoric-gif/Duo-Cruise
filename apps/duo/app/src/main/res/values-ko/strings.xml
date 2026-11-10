@@ -182,4 +182,5 @@
     <string name="s_units">거리 단위</string>
     <string name="v_km">킬로미터</string>
     <string name="v_mi">마일</string>
+    <string name="d_ambient">YouTube 여백을 빛으로</string>
 </resources>

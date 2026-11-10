@@ -182,4 +182,5 @@
     <string name="s_units">距离单位</string>
     <string name="v_km">公里</string>
     <string name="v_mi">英里</string>
+    <string name="d_ambient">用光填充 YouTube 边距</string>
 </resources>

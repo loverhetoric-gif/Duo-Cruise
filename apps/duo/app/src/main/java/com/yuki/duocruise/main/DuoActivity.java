@@ -194,6 +194,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         padServer = PadRouter.get(this).server();
         padServer.setState(sideMsg());
         try { tv.start(); } catch (Throwable t) { DuoLog.error("YouTube を始められません: " + DuoLog.why(t)); }
+        tv.ambient(Store.ambient(this));
         boolean asHome = getIntent() != null && getIntent().hasCategory(Intent.CATEGORY_HOME);
         DuoLog.log((BuildConfig.UNLIMITED ? "Duo Cruise Unlimited Edition" : "Duo Cruise") + " を開きました(版 "
                 + DuoLog.version() + (asHome ? "、ホームとして" : "") + ")");
@@ -987,7 +988,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         focusActive();
     }
 
-    @Override public void routeSettingsChanged() { applyRoute(); updateStraight(); }
+    @Override public void routeSettingsChanged() { applyRoute(); updateStraight(); tv.ambient(Store.ambient(this)); }
 
     /**
      * 一本道: 案内中で、次の曲がり角が設定の距離より遠ければ YouTube を大きくする(2 画面のときだけ)。

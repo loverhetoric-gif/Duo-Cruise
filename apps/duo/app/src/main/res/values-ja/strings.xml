@@ -191,4 +191,5 @@
     <string name="s_units">距離の単位</string>
     <string name="v_km">キロメートル</string>
     <string name="v_mi">マイル</string>
+    <string name="d_ambient">YouTube の余白を光で</string>
 </resources>

@@ -338,6 +338,9 @@ final class PanelView extends ViewGroup {
             items.add(new Item(() -> T(R.string.d_target), host::sideText, host::switchSide, true));
             items.add(new Item(() -> T(R.string.d_layout), host::layoutText, host::swap, true));
             items.add(new Item(() -> T(R.string.d_split), () -> GO, () -> show(SPLIT)));
+            // YouTube の上下の余白を動画の色の光で埋める(マップクローズなどで帯が出るとき)
+            items.add(new Item(() -> T(R.string.d_ambient), () -> Store.ambient(getContext()) ? T(R.string.on) : T(R.string.off),
+                    () -> { Store.setAmbient(getContext(), !Store.ambient(getContext())); host.routeSettingsChanged(); refresh(); }, true));
             items.add(back(T(R.string.to_menu)));
         } else if (p == CONTROLS) {
             title.setText(T(R.string.m_controls));

@@ -10,6 +10,9 @@ final class Store {
     static SharedPreferences p(Context c) { return c.getApplicationContext().getSharedPreferences("duo", Context.MODE_PRIVATE); }
 
     /** true のとき、CarPlay を右・YouTube を左に置く。 */
+    /** YouTube の上下の余白(黒い帯)を、動画の色の光で埋める(アンビエント)。既定はオン。 */
+    static boolean ambient(Context c) { return p(c).getBoolean("ambient", true); }
+    static void setAmbient(Context c, boolean v) { p(c).edit().putBoolean("ambient", v).apply(); }
     static boolean swapped(Context c) { return p(c).getBoolean("swapped", false); }
     static void setSwapped(Context c, boolean v) { p(c).edit().putBoolean("swapped", v).apply(); }
 
