@@ -33,6 +33,8 @@ interface Pane {
     default float videoAspect() { return 0f; }
     /** 電話・Siri の間は止め(on)、終わったら止める前の状態に戻す(off)。音を出す部品だけが使う。 */
     default void hold(boolean on) {}
+    /** ナビの声の間: 無音へクロスフェードしてスロー(pause なら一時停止)、終われば戻す。YouTube だけ。 */
+    default void voice(boolean on, boolean pause) {}
     /** 余白を動画の色の光で埋める(アンビエント)。YouTube だけ。 */
     default void ambient(boolean on) {}
     /** タッチパッドのキーボードの文字・キー。文字を受ける部品だけが使う。 */

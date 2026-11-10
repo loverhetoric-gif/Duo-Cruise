@@ -736,7 +736,7 @@ final class PanelView extends ViewGroup {
                 items.add(new Item(() -> T(R.string.r_map), () -> onOff(Store.mapFront(c)), () -> show(R_MAP)));
                 items.add(new Item(() -> T(R.string.r_straight), () -> onOff(Store.straightOn(c)), () -> show(R_STRAIGHT)));
                 items.add(new Item(() -> T(R.string.r_light), () -> onOff(Store.turnLight(c)), () -> show(R_LIGHT)));
-                items.add(new Item(() -> T(R.string.r_audio), () -> Store.voiceLevel(c) + "%", () -> show(R_AUDIO)));
+                items.add(new Item(() -> T(R.string.r_audio), () -> T(Store.navVideo(c) == Store.NAV_VIDEO_PAUSE ? R.string.ra_video_pause : R.string.ra_video_slow), () -> show(R_AUDIO)));
                 items.add(new Item(() -> T(R.string.r_arrive), () -> onOff(Store.arriveFull(c)), () -> show(R_ARRIVE)));
                 items.add(back(T(R.string.to_vehicle)));
                 break;
@@ -804,18 +804,11 @@ final class PanelView extends ViewGroup {
                 break;
             case R_AUDIO:
                 title.setText(T(R.string.r_audio));
-                items.add(new Item(() -> T(R.string.ra_level), () -> {}, new Slider() {
-                    public int value() { return Store.voiceLevel(c); }
-                    public int max() { return 100; }
-                    public void nudge(int d) { Store.setVoiceLevel(c, value() + d * 5); changed(); }
-                    public String text() { return value() + "%"; }
-                    public int tint() { return Theme.NEON_WHITE; }
-                }));
-                // ナビの声の間の動画: そのまま ⇄ 一時停止 と押すたびに切り替え
+                // ナビの声の間の動画(音は必ず無音へ): スロー ⇄ 一時停止 と押すたびに切り替え
                 items.add(new Item(() -> T(R.string.ra_video), () -> T(Store.navVideo(c) == Store.NAV_VIDEO_PAUSE
-                                ? R.string.ra_video_pause : R.string.ra_video_keep),
+                                ? R.string.ra_video_pause : R.string.ra_video_slow),
                         () -> { Store.setNavVideo(c, Store.navVideo(c) == Store.NAV_VIDEO_PAUSE
-                                ? Store.NAV_VIDEO_KEEP : Store.NAV_VIDEO_PAUSE); changed(); }));
+                                ? Store.NAV_VIDEO_SLOW : Store.NAV_VIDEO_PAUSE); changed(); }));
                 items.add(back(T(R.string.to_route)));
                 break;
             default: // R_ARRIVE

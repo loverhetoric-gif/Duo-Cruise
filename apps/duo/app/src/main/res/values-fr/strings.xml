@@ -161,7 +161,6 @@
     <string name="rl_dist">Allumer à</string>
     <string name="rl_color">Couleur et intensité</string>
     <string name="n_turn_color">Couleur du virage</string>
-    <string name="ra_level">Volume pendant le guidage</string>
     <string name="rr_on">YouTube plein écran à l’arrivée</string>
     <string name="to_route">Vers le guidage</string>
     <string name="to_route_light">Vers la lumière</string>
@@ -181,4 +180,5 @@
     <string name="v_km">Kilomètres</string>
     <string name="v_mi">Miles</string>
     <string name="d_ambient">Lumière ambiante</string>
+    <string name="ra_video_slow">Ralenti</string>
 </resources>

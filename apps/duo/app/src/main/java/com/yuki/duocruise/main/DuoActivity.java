@@ -1767,10 +1767,12 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     /** YouTube を下げる速さ(声が聞こえる前に下げ切る)と、戻す速さ。 */
     private static final long DUCK_DOWN_MS = 250, DUCK_UP_MS = 900;
     /**
-     * 流れが閉じてから戻し始めるまでの間。続けて次の声の流れが開くことがあるので、すぐには戻さない
-     * (初版 10/27 と同じ 1 秒。本人の評価「初版はちゃんと識別できていた」)。
+     * 流れが閉じてから戻し始めるまでの間(声の余韻)。戻し方そのものは tv-voice.js(無音のまま速さを戻し、1.5 秒でなめらかに)。
      */
-    private static final long DUCK_RELEASE_MS = 1000;
+    private static final long DUCK_RELEASE_MS = 300;
+    /** Y!カーナビの警告音のあいだの YouTube の音量。 */
+    private static final float DUCK_ALERT = 0.2f;
+    private boolean voiceDucked;
 
     private static boolean isVoiceType(String t) {
         return !t.equals("media") && !t.equals("telephony") && !t.equals("speechrecognition");
@@ -1778,7 +1780,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
 
     /**
      * CarPlay の音の流れが開いた/閉じた(メインスレッド)。YouTube の音量はこれだけで動かす(初版と同じ)。
-     * ナビの声・通知音: 開いたらすぐ下げ、閉じたら 1 秒おいてゆっくり戻す。電話・Siri: 一時停止。
+     * ナビの声・通知音: 開いたらすぐ無音へクロスフェードしてスロー、閉じたら 0.3 秒おいて戻す。電話・Siri: 一時停止。
      * iPhone は声を鳴らすときに流れを開き、鳴らし終えると閉じる(コードで受け取る合図。音の大きさは測らない)。
      */
     static void carAudio(String audioType, boolean active) {
@@ -1805,7 +1807,8 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
 
     /**
      * Apple の機器と同じ考え方: 基本は YouTube。CarPlay の
-     * ・ナビの声・通知音(default/alert/compatibility) → 流れが開いている間だけ YouTube を下げて重ねる(設定の音量、既定 20%)
+     * ・ナビの声・通知音(default/alert/compatibility) → 流れが開いている間、YouTube を無音へクロスフェードしてスロー(設定で一時停止)
+     *   スローの音は一切出さない(無音・消音にしてから速さを変え、速さを戻してから音を戻す。tv-voice.js)
      * ・電話・Siri(telephony/speechrecognition) → YouTube を一時停止し、終わったら再開
      * ・音楽(media) → 何もしない
      * 鳴り終わったら元の音量に戻す。
@@ -1815,13 +1818,18 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         boolean call = false;
         for (String t : carSounds)
             if (t.equals("telephony") || t.equals("speechrecognition")) { level = 0f; call = true; }
-        // 音量はナビの声の流れ(開いている間)だけで下げる。曲がり角の距離・画面の切り替えには連動させない
-        if (!carVoices.isEmpty()) level = Math.min(level, Store.voiceLevel(this) / 100f);
-        if (alertDucked) level = Math.min(level, Store.voiceLevel(this) / 100f); // Y!カーナビの警告音
-        fadeDuckTo(level); // 急に切り替えず、自然に上げ下げする
-        // ナビの声の間の動画(本人の指定): そのまま / 一時停止。声の流れが開いている間
+        if (alertDucked) level = Math.min(level, DUCK_ALERT); // Y!カーナビの警告音
+        fadeDuckTo(level); // 急に切り替えず、自然に上げ下げする(ナビの声の間は tv-voice.js が音量を持つ)
+        // ナビの声: 流れが開いている間だけ。曲がり角の距離・画面の切り替えには連動させない
         boolean voice = !carVoices.isEmpty();
-        tv.hold(call || (voice && Store.navVideo(this) == Store.NAV_VIDEO_PAUSE)); // 電話・Siri(とナビの声)の間は一時停止。終われば再開
+        boolean pause = Store.navVideo(this) == Store.NAV_VIDEO_PAUSE;
+        if (voice != voiceDucked) {
+            voiceDucked = voice;
+            Trace.event("duck", (voice ? "ナビの声: 無音へ・" + (pause ? "一時停止" : "スロー") : "ナビの声の終わり: 戻す")
+                    + " 声の流れ=" + carVoices + " 流れ全部=" + carSounds);
+        }
+        tv.voice(voice, pause);
+        tv.hold(call); // 電話・Siri の間は一時停止。終われば再開
     }
 
     /** YouTube の音量を目標へ。下げるのは速く、戻すのはゆっくり。フェードは YouTube の中で1回だけ行う。 */

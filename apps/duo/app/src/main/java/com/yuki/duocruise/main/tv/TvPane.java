@@ -571,9 +571,11 @@ public final class TvPane {
             if (destroyed) return;
             if (web != null) web.evaluateJavascript(POLL_JS, TvPane.this::onPoll);
             injectAmbient(); // 読み直しで消えても次の確認で戻る(2回目以降は設定を渡すだけ)
+            if (voiceOn) sendVoice(); // ナビの声の間にページが読み直されても、無音・スローに戻す
             // 動画が切り替わると音量が戻ることがあるので、下げている間は5秒ごとにかけ直す
-            if (web != null && duck < 1f) web.evaluateJavascript(
-                    "(function(){var v=document.querySelector('video');if(v&&!window.__duoFade)v.volume=" + duck + ";})()", null);
+            if (web != null && duck < 1f && !voiceOn) web.evaluateJavascript(
+                    "(function(){var v=document.querySelector('video');"
+                    + "if(v&&!window.__duoFade&&!(window.__duoVoiceActive&&window.__duoVoiceActive()))v.volume=" + duck + ";})()", null);
             main.postDelayed(this, POLL_MS);
         }
     };
@@ -670,6 +672,7 @@ public final class TvPane {
         duck = level;
         TvLog.state(app, level >= 1f ? "音量を戻した" : "CarPlay の音のため音量を " + Math.round(level * 100) + "% に下げた");
         if (web == null) return;
+        if (voiceOn) { sendVoice(); return; } // ナビの声の間は音量を tv-voice.js が持つ。戻す先の音量だけ伝える
         long ms = Math.max(0, Math.min(3000, fadeMs));
         web.evaluateJavascript("(function(t,d){var v=document.querySelector('video');if(!v)return;"
                 + "clearInterval(window.__duoFade);var s=Math.sqrt(v.volume),e=Math.sqrt(t),t0=Date.now();"
@@ -682,6 +685,42 @@ public final class TvPane {
     /** いま再生中の動画の横÷縦(定期の様子見で取った値)。分からなければ 0。 */
     public float videoAspect() { return videoH > 0 ? videoW / (float) videoH : 0f; }
     private int videoW, videoH;
+
+    // ---------------- ナビの声の間(クロスフェード → 無音でスロー → 戻す) ----------------
+
+    /** 中身は assets/tv-voice.js(動きの決まりもそこに書いてある)。 */
+    private String voiceJs;
+    private boolean voiceOn, voicePause;
+
+    /**
+     * ナビの声が始まった/終わった。始まり: 音量を 0 へクロスフェードし、0 になってから無音のままスロー(または一時停止)。
+     * 終わり: 無音のまま速さを戻し、ごく小さい音からなめらかに音量を戻す。スローの音は一切出さない。
+     */
+    public void setVoice(boolean on, boolean pause) {
+        if (on == voiceOn && pause == voicePause) return;
+        voiceOn = on;
+        voicePause = pause;
+        TvLog.state(app, on ? "ナビの声: YouTube を無音へ(" + (pause ? "一時停止" : "スロー") + ")" : "ナビの声が終わった: YouTube を戻す");
+        sendVoice();
+    }
+
+    private void sendVoice() {
+        if (web == null || destroyed) return;
+        if (voiceJs == null) {
+            try (java.io.InputStream in = app.getAssets().open("tv-voice.js")) {
+                java.io.ByteArrayOutputStream o = new java.io.ByteArrayOutputStream();
+                byte[] buf = new byte[8192]; int n;
+                while ((n = in.read(buf)) > 0) o.write(buf, 0, n);
+                voiceJs = o.toString("UTF-8");
+            } catch (Exception e) {
+                voiceJs = "";
+                TvLog.error(app, "ナビの声の間の動きを読めません: " + e);
+            }
+        }
+        if (voiceJs.isEmpty()) return;
+        web.evaluateJavascript(voiceJs + ";window.__duoVoice(" + voiceOn + ",{base:" + duck
+                + ",mode:'" + (voicePause ? "pause" : "slow") + "'});", null);
+    }
 
     // ---------------- 電話・Siri の間の一時停止 ----------------
 

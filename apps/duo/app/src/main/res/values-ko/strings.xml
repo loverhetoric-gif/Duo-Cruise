@@ -161,7 +161,6 @@
     <string name="rl_dist">빛을 낼 거리</string>
     <string name="rl_color">빛 색상 및 강도</string>
     <string name="n_turn_color">회전 방향 빛 색상</string>
-    <string name="ra_level">안내 음성 중 볼륨</string>
     <string name="rr_on">도착 시 YouTube 전체 화면</string>
     <string name="to_route">턴바이턴 안내로</string>
     <string name="to_route_light">방향 조명으로</string>
@@ -181,4 +180,5 @@
     <string name="v_km">킬로미터</string>
     <string name="v_mi">마일</string>
     <string name="d_ambient">YouTube 여백을 빛으로</string>
+    <string name="ra_video_slow">슬로 모션</string>
 </resources>

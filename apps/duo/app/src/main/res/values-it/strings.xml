@@ -161,7 +161,6 @@
     <string name="rl_dist">Illumina a</string>
     <string name="rl_color">Colore e intensità</string>
     <string name="n_turn_color">Colore della svolta</string>
-    <string name="ra_level">Volume durante la guida vocale</string>
     <string name="rr_on">YouTube a schermo intero all’arrivo</string>
     <string name="to_route">Alle indicazioni</string>
     <string name="to_route_light">Alla luce di direzione</string>
@@ -181,4 +180,5 @@
     <string name="v_km">Chilometri</string>
     <string name="v_mi">Miglia</string>
     <string name="d_ambient">Luce ambientale</string>
+    <string name="ra_video_slow">Rallentatore</string>
 </resources>

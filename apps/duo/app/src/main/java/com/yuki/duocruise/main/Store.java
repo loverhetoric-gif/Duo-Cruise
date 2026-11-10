@@ -69,9 +69,13 @@ final class Store {
      * ナビの声の間の YouTube の動画: そのまま(音量だけ下げる)/ 一時停止。既定はそのまま。
      * 以前あった「スロー」(1)は、音が間延びして怖かったのでやめた(2026-11-10 本人)。保存が 1 の端末はそのままに読む。
      */
-    static final int NAV_VIDEO_KEEP = 0, NAV_VIDEO_PAUSE = 2;
-    static int navVideo(Context c) { return p(c).getInt("navVideo", NAV_VIDEO_KEEP) == NAV_VIDEO_PAUSE ? NAV_VIDEO_PAUSE : NAV_VIDEO_KEEP; }
-    static void setNavVideo(Context c, int v) { p(c).edit().putInt("navVideo", v == NAV_VIDEO_PAUSE ? NAV_VIDEO_PAUSE : NAV_VIDEO_KEEP).apply(); }
+    /**
+     * ナビの声の間の YouTube: 音量は必ず 0 へクロスフェードし、そのうえでスロー(既定)か一時停止。
+     * 音量・速さは声の流れだけで動かす(曲がり角の距離・画面の切り替えでは動かさない。2026-11-10 本人の指定)。
+     */
+    static final int NAV_VIDEO_SLOW = 1, NAV_VIDEO_PAUSE = 2;
+    static int navVideo(Context c) { return p(c).getInt("navVideo", NAV_VIDEO_SLOW) == NAV_VIDEO_PAUSE ? NAV_VIDEO_PAUSE : NAV_VIDEO_SLOW; }
+    static void setNavVideo(Context c, int v) { p(c).edit().putInt("navVideo", v == NAV_VIDEO_PAUSE ? NAV_VIDEO_PAUSE : NAV_VIDEO_SLOW).apply(); }
 
     /** ナビ音声が流れている間の、YouTube の幅の割合(%)。 */
     static int navYt(Context c) { return SplitGeometry.clampYt(p(c).getInt("navYt", 50)); }
@@ -178,12 +182,7 @@ final class Store {
     static int lightDist(Context c) { return p(c).getInt("rtLightDist", 200); }
     static void setLightDist(Context c, int v) { p(c).edit().putInt("rtLightDist", clampDist(v)).apply(); }
 
-    /**
-     * ナビの声が鳴っている間の YouTube の音量(%)。音量はナビの声(実音)だけで動かし、
-     * 曲がり角の距離・画面の切り替えでは動かさない(2026-11-10 本人の指定で「曲がり角で下げる」は廃止)。
-     */
-    static int voiceLevel(Context c) { return p(c).getInt("voiceDuckLv", 20); }
-    static void setVoiceLevel(Context c, int v) { p(c).edit().putInt("voiceDuckLv", Math.max(0, Math.min(100, v))).apply(); }
+
 
     /** 到着したら YouTube を全画面にするか。 */
     static boolean arriveFull(Context c) { return p(c).getBoolean("rtArrive", false); }

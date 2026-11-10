@@ -1240,11 +1240,14 @@ private class AudioRenderer(
                 voiceChunks = 1
                 minRms = rms
                 quietMaxRms = 0.0
+                fadeTotalFrames = maxOf(1, format.sampleRate * VOICE_FADE_IN_MS / 1000)
+                fadePosFrames = 0
                 applyVoiceFadeIn(data, offset, length, channels)
                 onVoice?.invoke(true, bufferedMs(), "")
             }
             return
         }
+        if (fadePosFrames < fadeTotalFrames) applyVoiceFadeIn(data, offset, length, channels) // 立ち上げの続き(塊をまたぐ)
         voiceChunks++
         if (rms > peakRms) peakRms = rms
         if (rms < minRms) minRms = rms
@@ -1291,12 +1294,17 @@ private class AudioRenderer(
         return ((written - head + wait) * 1000 / format.sampleRate).coerceIn(0, 2000)
     }
 
-    /** 声の頭を VOICE_FADE_IN_MS かけて 0 から上げる(いきなり鳴らさず、YouTube とクロスフェードに)。 */
+    /**
+     * 声の頭を VOICE_FADE_IN_MS かけて 0 から上げる(いきなり鳴らさず、YouTube とクロスフェードに)。
+     * 音の塊は 10〜20ms と短いので、いくつもの塊をまたいで続ける(以前は最初の塊の中だけで、実質 0.01〜0.02 秒だった)。
+     */
+    private var fadeTotalFrames = 0
+    private var fadePosFrames = 0
     private fun applyVoiceFadeIn(data: ByteArray, offset: Int, length: Int, channels: Int) {
         val frames = (length - length % (2 * channels)) / (2 * channels)
-        val fadeFrames = minOf(frames, maxOf(1, format.sampleRate * VOICE_FADE_IN_MS / 1000))
-        for (f in 0 until fadeFrames) {
-            val x = (f + 1).toDouble() / fadeFrames
+        val n = minOf(frames, fadeTotalFrames - fadePosFrames)
+        for (f in 0 until n) {
+            val x = (fadePosFrames + f + 1).toDouble() / fadeTotalFrames
             val g = Math.sin(x * Math.PI / 2) // 等パワーの上げ方
             for (c in 0 until channels) {
                 val p = offset + (f * channels + c) * 2
@@ -1306,6 +1314,7 @@ private class AudioRenderer(
                 data[p + 1] = (scaled shr 8).toByte()
             }
         }
+        fadePosFrames += maxOf(0, n)
     }
 
     /** Remote playback silences the local track; returning to it starts over with prebuffering. */
@@ -1444,7 +1453,7 @@ private class AudioRenderer(
         /** 声が鳴っている間、音の塊を待つ区切り(塊が来なくても鳴り終わりを判定するため)。 */
         const val VOICE_POLL_MS = 100L
         /** 声の頭を上げる時間。 */
-        const val VOICE_FADE_IN_MS = 80
+        const val VOICE_FADE_IN_MS = 150
         const val PREBUFFER_WRITE_CHUNK_BYTES = 2 * 1024
         const val DECODED_BUFFER_LOG_INTERVAL = 50
         const val AUDIO_TIMESTAMP_INTERVAL_NS = 200_000_000L
