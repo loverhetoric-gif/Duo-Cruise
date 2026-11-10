@@ -154,7 +154,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         // CarPlay は開いたら自動で始め、失敗・切断したら見張りがつなぎ直す
         startCar("開いたので自動で");
         // 走行の記録(Unlimited Edition・本人の検証用)。オンなら GPS の各点・切り替え・CPU/メモリを貯める
-        Trace.init(this, this::traceSnapshot);
+        Trace.init(this, traceCtx);
         if (Store.traceOn(this)) {
             TraceStats.start();
             if (Store.traceShots(this)) DuoLog.log("走行の記録: 録画は、次に画面で許可するまで止まっています(trace shots)");
@@ -162,6 +162,8 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         Uploader.sweep(this); // 前回までの走行で貯まった記録を、SIM でアップロード(送り先が設定されていれば)
         drive = new DriveWatch(this, new DriveWatch.Listener() {
             @Override public void driveState(int s) {
+                // 案内中(到着前)の長い停車は駐車にしない: 右折待ち・長い信号で 2 分止まると駐車になっていた(11/9 実走 19:38)
+                if (s == DriveWatch.PARKED && enRoute()) s = DriveWatch.STOPPED;
                 int was = driveState;
                 driveState = s;
                 DuoLog.log("運転の見張り: " + (s == DriveWatch.PARKED ? "駐車" : s == DriveWatch.STOPPED ? "停止" : "走行"));
@@ -354,6 +356,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     }
 
     @Override protected void onDestroy() {
+        Trace.detach(traceCtx);
         if (front == this) front = null;
         if (live == this) live = null;
         DuoLog.listener = null;
@@ -801,8 +804,6 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     private android.location.Location cruiseLast;
     /** コーナーで地図を前に出した対象の曲がり角の番号。番号が進んだ＝その曲がり角を通過した。 */
     private int cornerTurnIndex = -1;
-    /** 通過後、次の曲がり角がこの距離より近ければ1本のコーナーとして続ける(連続カーブでバタつかせない)。 */
-    private static final int CORNER_CHAIN_M = 150;
     /** 通過して(または案内終了で)地図を戻すまでの余韻。 */
     private static final long CORNER_TAIL_MS = 2000;
     /** 一度でも走り出したか。起動直後(未走行)は 50:50、走り出したら各ビューへ移る。 */
@@ -878,7 +879,10 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
                 if (cornerOk && dist <= cornerAt) engageMap();    // 曲がり角に接近 → 地図を前へ(特例は手前から)
             } else if (idx != cornerTurnIndex) {
                 // 出していた曲がり角を通過した(番号が進んだ)
-                if (dist <= CORNER_CHAIN_M) {                      // 次の曲がり角も近い → 1本として継続(連続)
+                // 次の曲がり角がもうコーナーの距離に入っている → 外さずに1本として続ける(連続)。
+                // 以前は 150m で切っていたため、200〜300m おきの曲がり角で「戻る→1秒後にまたコーナー」とばたついた
+                // (11/9 実走: 国道170号を降りた先で 4 回連続)。余韻の途中で近づいて入った場合も、ここで取り消す。
+                if (cornerOk && dist <= cornerAt) {
                     main.removeCallbacks(mapRelease);
                     cornerReleasing = false;
                     cornerTurnIndex = idx;
@@ -1071,13 +1075,36 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     /** 運転の見張りの状態が変わったら、対応するモードの帯を出す(自動が効いているときだけ)。 */
     private void modeForDrive(int from, int to) {
         if (from == to || driveHeld) return; // 手動で保っているときは、自動の帯は出さない(嘘になる)
-        if (to == DriveWatch.PARKED && Store.parkOn(this))
-            showMode("parking", R.string.mode_parking, R.string.mode_parking_cap, 0xFF59E3B0);
-        else if (to == DriveWatch.STOPPED && Store.stopOn(this))
-            showMode("stopped", R.string.mode_stopped, R.string.mode_stopped_cap, 0xFF4F8CFF);
-        else if (to == DriveWatch.MOVING && from != DriveWatch.MOVING && (Store.parkOn(this) || Store.stopOn(this)))
-            showMode("driving", R.string.mode_driving, 0, Theme.NEON_WHITE);
+        main.removeCallbacks(stopBand);
+        // コーナー中は画面がコーナーのままなので、停車・駐車・走行の帯は出さない(帯と見た目が食い違うため)
+        if (to == DriveWatch.PARKED && Store.parkOn(this)) {
+            if (!mapEngaged) { showMode("parking", R.string.mode_parking, R.string.mode_parking_cap, 0xFF59E3B0); stopBandShown = true; }
+        } else if (to == DriveWatch.STOPPED && Store.stopOn(this)) {
+            // 停車の帯は、止まってから少し待って出す。渋滞の 1〜2 秒の停車で帯がばたつかないように(11/9 実走)
+            stopBandShown = false;
+            main.postDelayed(stopBand, STOP_BAND_DELAY_MS);
+        } else if (to == DriveWatch.MOVING && from != DriveWatch.MOVING) {
+            // 走り出したときの帯は、停車・駐車の帯を出していたときだけ。クルーズ中なら「クルーズ」と出す
+            if (stopBandShown && !mapEngaged) {
+                if (straightEngaged) showMode("cruise", R.string.mode_cruise, R.string.mode_cruise_cap, 0xFFB07BFF);
+                else showMode("driving", R.string.mode_driving, 0, Theme.NEON_WHITE);
+            }
+            stopBandShown = false;
+        }
     }
+
+    /** 停車の帯を出すのを、止まってから(見張りの 3 秒に加えて)この時間だけ待つ。 */
+    private static final long STOP_BAND_DELAY_MS = 5000;
+    /** 停車・駐車の帯を出した(走り出したら「走行/クルーズ」の帯で戻りを知らせる)。 */
+    private boolean stopBandShown;
+    private final Runnable stopBand = () -> {
+        if (driveState != DriveWatch.STOPPED || driveHeld || mapEngaged) return;
+        showMode("stopped", R.string.mode_stopped, R.string.mode_stopped_cap, 0xFF4F8CFF);
+        stopBandShown = true;
+    };
+
+    /** 案内中で、まだ到着していない。 */
+    private boolean enRoute() { Route r = route; return r != null && r.getGuiding() && !r.getArrived(); }
 
     /** モードの帯を左端から出す。初めてのモードのときだけ、下に一行の説明を添える。 */
     private void showMode(String key, int nameRes, int capRes, int color) {
@@ -1861,6 +1888,8 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     // ───────── 走行の記録(Trace) ─────────
 
     /** いまの状態を JSON の断片で返す(記録の各行に添える)。Trace のスレッドから呼ばれる。 */
+    /** 記録に添える状態。画面が作り直されたら、新しい画面のものに差し替わる(Trace.init)。 */
+    private final Trace.Ctx traceCtx = this::traceSnapshot;
     private String traceSnapshot() {
         Route r = route;
         int side = Store.side(this);
