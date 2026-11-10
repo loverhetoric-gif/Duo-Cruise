@@ -161,9 +161,7 @@
     <string name="rl_dist">Iluminar a</string>
     <string name="rl_color">Color e intensidad</string>
     <string name="n_turn_color">Color del giro</string>
-    <string name="ra_on">Bajar antes de girar</string>
-    <string name="ra_dist">Bajar desde</string>
-    <string name="ra_level">Volumen reducido</string>
+    <string name="ra_level">Volumen durante la guía</string>
     <string name="rr_on">YouTube a pantalla completa al llegar</string>
     <string name="to_route">A indicaciones</string>
     <string name="to_route_light">A luz de dirección</string>

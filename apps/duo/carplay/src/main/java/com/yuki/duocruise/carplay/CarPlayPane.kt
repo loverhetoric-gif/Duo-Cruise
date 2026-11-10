@@ -74,8 +74,8 @@ class CarPlayPane @JvmOverloads constructor(
         /** CarPlay の音の流れが始まった/終わった(audioType: media・default(ナビ)・alert・telephony・speechrecognition)。 */
         fun onAudio(audioType: String, active: Boolean)
 
-        /** ナビの声・通知音が実際に鳴り始めた/鳴り終わった。inMs 後にスピーカーから聞こえる(目安)。 */
-        fun onVoice(audioType: String, speaking: Boolean, inMs: Long)
+        /** ナビの声・通知音が実際に鳴り始めた/鳴り終わった。inMs 後にスピーカーから聞こえる(目安)。detail は記録用の説明。 */
+        fun onVoice(audioType: String, speaking: Boolean, inMs: Long, detail: String)
 
         /** ナビの案内が変わった(Duo Cruise Unlimited Edition)。CarPlay が止まったら null。 */
         fun onRoute(route: Route?)
@@ -100,6 +100,8 @@ class CarPlayPane @JvmOverloads constructor(
     }
 
     companion object {
+        /** onRecord の種類: iPhone からの命令(走行記録にだけ残す。更新アプリへは送らない)。 */
+        const val KIND_CAR_CMD = "car-cmd"
         /** 左右それぞれの枠の大きさ(画面は 1480×480)。 */
         const val WIDTH = 740
         const val HEIGHT = 480
@@ -344,9 +346,9 @@ class CarPlayPane @JvmOverloads constructor(
                         }
                     }
                 },
-                onVoiceActive = { audioType, speaking, inMs ->
+                onVoiceActive = { audioType, speaking, inMs, detail ->
                     main.post {
-                        if (myGeneration == generation) listener?.onVoice(audioType.lowercase(), speaking, inMs)
+                        if (myGeneration == generation) listener?.onVoice(audioType.lowercase(), speaking, inMs, detail)
                     }
                 },
             )
@@ -931,6 +933,17 @@ class CarPlayPane @JvmOverloads constructor(
 
         /** iPhone から来た命令(画面の持ち主の切り替えなど)。地図を開く頼みの効き目を見るため記録する(同じ種類は 10 秒に 1 回)。 */
         override fun onCommand(session: AirPlaySession, type: String, params: Map<String, Any?>) {
+            // 走行記録には全部・間引かずに残す(ナビの声の終わりを iPhone が合図で知らせるかを確かめる。2026-11-10)。
+            // 話している状態(appStates の speechMode)と、音量を下げる/戻す指示(duck…)は見やすく取り出す
+            val full = params.entries.joinToString(" ") { (k, v) ->
+                val s = v.toString()
+                "$k=" + if (s.length > 400) s.take(400) + "…" else s
+            }
+            val speech = (params["appStates"] as? List<*>)?.mapNotNull { it as? Map<*, *> }
+                ?.firstOrNull { it.containsKey("speechMode") }?.get("speechMode")
+            val traceText = "$type" + (if (speech != null) " speechMode=$speech" else "") + " $full"
+            main.post { if (myGeneration == generation) listener?.onRecord(KIND_CAR_CMD, traceText) }
+
             val now = android.os.SystemClock.elapsedRealtime()
             val last = commandSeen[type]
             if (last != null && now - last < 10_000) return

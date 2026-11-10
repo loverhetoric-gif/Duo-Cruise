@@ -792,7 +792,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     private final TurnPlan plan = new TurnPlan();
     private Route route;
     /** 曲がり角で地図を表示中 / そのために 1 画面の表示を地図へ切り替えた / 到着後の全画面 / 曲がり角の手前で音量を下げ中。 */
-    private boolean mapEngaged, arriveEngaged, turnDucked;
+    private boolean mapEngaged, arriveEngaged;
     /** 一本道(次の曲がり角が遠い)なので YouTube を大きくしている。 */
     private boolean straightEngaged;
     /** 情報レール: 案内開始時の残り距離(進行度の分母)と、開始からの航続距離(GPS 累積)。 */
@@ -835,7 +835,6 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
             plan.hintDist = Store.hintDist(this);
             plan.mapDist = Store.mapDist(this);
             plan.lightDist = Store.lightDist(this);
-            plan.duckDist = Store.duckDist(this);
             plan.update(r.getGuiding(), r.getArrived(), r.turnIndex, r.distanceToTurnM, r.getSide());
         }
         // 新しいルートが始まったら、到着後の全画面をやめる
@@ -902,8 +901,6 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
             if (mapClose) showMode("mapclose", R.string.mode_mapclose, R.string.mode_mapclose_cap, Store.neonTurn(this));
             animateYt(targetYt());
         }
-        boolean duck = plan.duck && Store.turnDuck(this);
-        if (duck != turnDucked) { turnDucked = duck; applyDuck(); }
     }
 
     /** 案内の板を出すか。表示の設定・地図が見えているか・メニューが出ているかで決める。 */
@@ -1767,8 +1764,6 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     /** いま実際に声が鳴っているナビ・通知の音の種類(音の大きさで判定。流れが開いているだけでは入らない)。 */
     private final java.util.Set<String> carVoices = new java.util.HashSet<>();
     private final Runnable applyDuck = this::applyDuck;
-    /** ナビ音声のあいだ YouTube を下げる音量。 */
-    static final float DUCK_NAV = 0.2f;
     /** YouTube を下げる速さ(声が聞こえる前に下げ切る)と、戻す速さ(声の余韻に重ねてゆっくり)。 */
     private static final long DUCK_DOWN_MS = 250, DUCK_UP_MS = 900;
     /** 声が消えてから戻し始めるまでの間(余韻)。 */
@@ -1790,10 +1785,11 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
      * 鳴り始め: すぐ YouTube を下げ始める(声はまだバッファの中。声の頭はふわっと上がるのでクロスフェードになる)。
      * 鳴り終わり: 聞こえ終わるのを待ち、余韻をおいてから、ゆっくり戻す。
      */
-    static void carVoice(String audioType, boolean speaking, long inMs) {
+    static void carVoice(String audioType, boolean speaking, long inMs, String detail) {
         DuoActivity a = live;
         if (a == null) return;
-        Trace.event("voice", audioType + (speaking ? " 鳴り始め" : " 鳴り終わり") + " 聞こえるまで" + inMs + "ms");
+        Trace.event("voice", audioType + (speaking ? " 鳴り始め" : " 鳴り終わり") + " 聞こえるまで" + inMs + "ms"
+                + (detail == null || detail.isEmpty() ? "" : " " + detail));
         a.main.removeCallbacks(a.applyDuck);
         if (speaking) { a.carVoices.add(audioType); a.applyDuck(); }
         else { a.carVoices.remove(audioType); a.main.postDelayed(a.applyDuck, Math.max(0, inMs) + DUCK_RELEASE_MS); }
@@ -1811,9 +1807,9 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         boolean call = false;
         for (String t : carSounds)
             if (t.equals("telephony") || t.equals("speechrecognition")) { level = 0f; call = true; }
-        if (!carVoices.isEmpty()) level = Math.min(level, DUCK_NAV);
-        if (turnDucked) level = Math.min(level, Store.duckLevel(this) / 100f); // 曲がり角の手前(Unlimited Edition)
-        if (alertDucked) level = Math.min(level, Store.duckLevel(this) / 100f); // Y!カーナビの警告
+        // 音量はナビの声(実際に鳴っている間)だけで下げる。曲がり角の距離・画面の切り替えには連動させない
+        if (!carVoices.isEmpty()) level = Math.min(level, Store.voiceLevel(this) / 100f);
+        if (alertDucked) level = Math.min(level, Store.voiceLevel(this) / 100f); // Y!カーナビの警告音
         fadeDuckTo(level); // 急に切り替えず、自然に上げ下げする
         // ナビの声の間の動画(本人の指定): そのまま / 一時停止。声の検出は鳴り始め・鳴り終わり(実音)
         boolean voice = !carVoices.isEmpty();

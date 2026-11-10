@@ -58,7 +58,7 @@ class AndroidMediaSink(
      * ナビの声・通知音が実際に鳴り始めた/鳴り終わった(audioType・鳴っているか・スピーカーから聞こえるまでの ms)。
      * 音の流れの開始/終了より正確(iPhone は流れを早めに開けて、しゃべり終えて数秒後に閉じる)。音楽・電話・Siri では来ない。
      */
-    private val onVoiceActive: ((String, Boolean, Long) -> Unit)? = null,
+    private val onVoiceActive: ((String, Boolean, Long, String) -> Unit)? = null,
 ) : MediaSink {
     private val audioTypes = ConcurrentHashMap<Int, String>()
     private val closed = java.util.concurrent.atomic.AtomicBoolean(false)
@@ -235,7 +235,7 @@ class AndroidMediaSink(
             mainMediaAudioBufferDurationMs,
             mediaMetricsMonitor,
             mediaTap,
-            onVoiceActive?.let { cb -> { speaking: Boolean, inMs: Long -> cb(format.audioType, speaking, inMs) } },
+            onVoiceActive?.let { cb -> { speaking: Boolean, inMs: Long, detail: String -> cb(format.audioType, speaking, inMs, detail) } },
         ).also {
             audioRenderers[type] = it
         }
@@ -803,8 +803,8 @@ private class AudioRenderer(
     private val mainMediaAudioBufferDurationMs: Int,
     mediaMetricsMonitor: MediaMetricsMonitor?,
     private val mediaTap: MediaTap?,
-    /** 声の鳴り始め/鳴り終わり(鳴っているか・聞こえるまでの ms)。ナビの声・通知音の流れだけで使う。 */
-    private val onVoice: ((Boolean, Long) -> Unit)? = null,
+    /** 声の鳴り始め/鳴り終わり(鳴っているか・聞こえるまでの ms・記録用の説明)。ナビの声・通知音の流れだけで使う。 */
+    private val onVoice: ((Boolean, Long, String) -> Unit)? = null,
 ) : Closeable {
     private data class AudioPacket(val rtp: ByteArray, val sample: Int)
 
@@ -846,6 +846,13 @@ private class AudioRenderer(
     private var quietFrames = 0L
     /** 最後に声(鳴り終わりのしきい値以上)がした時刻。 */
     private var lastLoudNs = 0L
+    /** 今の声のいちばん大きい音(RMS)。鳴り終わりのしきい値はここから決める(声ごとに合わせる)。 */
+    private var peakRms = 0.0
+    /** 記録用: 今の声の始まり・塊の数・いちばん小さい音・静かな間の音の大きさの最大。 */
+    private var voiceStartNs = 0L
+    private var voiceChunks = 0
+    private var minRms = Double.MAX_VALUE
+    private var quietMaxRms = 0.0
     private val thread = Thread(::run, "carplay-audio").apply { isDaemon = true }
 
     fun start() {
@@ -868,6 +875,11 @@ private class AudioRenderer(
     }
 
     override fun close() {
+        // 鳴り終わりを見つける前に流れが閉じた: 記録に残し(しきい値の調整用)、音量も戻させる
+        if (speaking) {
+            speaking = false
+            onVoice?.invoke(false, 0, voiceDetail("流れの終了"))
+        }
         running = false
         thread.interrupt()
     }
@@ -1201,7 +1213,10 @@ private class AudioRenderer(
     /**
      * 声の見張り: この塊の音の大きさ(RMS)で、鳴り始め/鳴り終わりを決めて知らせる。
      * 鳴り始めはすぐ(まだバッファにあり、聞こえる前に YouTube を下げ始められる)。声の頭はふわっと上げる。
-     * 鳴り終わりは、静かな状態が VOICE_HANG_MS 続いたら(言葉の切れ目で上下しないように)。
+     * 鳴り終わりは、その声のいちばん大きい音から VOICE_END_REL(約 -18 dB)より小さい状態が VOICE_HANG_MS 続いたら。
+     * 決まった値(約 -46 dBFS)だけで判定していたころは、声のあとも iPhone から小さな音が届き続けて
+     * 下回らず、鳴り終わりを 153 回中 9 回しか見つけられなかった(11/8〜11/9 の実走)。声ごとの大きさに合わせて判定する。
+     * 言葉の切れ目(0.6 秒未満)では戻らない。
      */
     private fun watchVoice(data: ByteArray, offset: Int, length: Int) {
         val samples = (length - length % 2) / 2
@@ -1215,25 +1230,39 @@ private class AudioRenderer(
         val rms = Math.sqrt(sum / samples)
         val channels = if (format.channels >= 2) 2 else 1
         val frames = (samples / channels).toLong()
-        if (rms >= VOICE_OFF_RMS) lastLoudNs = System.nanoTime()
         if (!speaking) {
             if (rms >= VOICE_ON_RMS) {
                 speaking = true
                 quietFrames = 0
+                peakRms = rms
                 lastLoudNs = System.nanoTime()
+                voiceStartNs = lastLoudNs
+                voiceChunks = 1
+                minRms = rms
+                quietMaxRms = 0.0
                 applyVoiceFadeIn(data, offset, length, channels)
-                onVoice?.invoke(true, bufferedMs())
+                onVoice?.invoke(true, bufferedMs(), "")
             }
-        } else if (rms < VOICE_OFF_RMS) {
+            return
+        }
+        voiceChunks++
+        if (rms > peakRms) peakRms = rms
+        if (rms < minRms) minRms = rms
+        if (rms >= endRms()) {
+            lastLoudNs = System.nanoTime()
+            quietFrames = 0
+        } else {
+            if (rms > quietMaxRms) quietMaxRms = rms
             quietFrames += frames
             if (quietFrames * 1000 / format.sampleRate >= VOICE_HANG_MS) {
                 speaking = false
-                onVoice?.invoke(false, bufferedMs())
+                onVoice?.invoke(false, bufferedMs(), voiceDetail("静かになった"))
             }
-        } else {
-            quietFrames = 0
         }
     }
+
+    /** 鳴り終わりのしきい値: その声のいちばん大きい音の約 -18 dB。ただし決まった値(約 -46 dBFS)より下には下げない。 */
+    private fun endRms(): Double = maxOf(VOICE_OFF_RMS, peakRms * VOICE_END_REL)
 
     /** 声の途中で音の塊が来なくなった: 最後に声がしてから VOICE_HANG_MS 経てば鳴り終わり。 */
     private fun checkVoiceGap() {
@@ -1241,7 +1270,15 @@ private class AudioRenderer(
         if ((System.nanoTime() - lastLoudNs) / 1_000_000 < VOICE_HANG_MS) return
         speaking = false
         quietFrames = 0
-        onVoice?.invoke(false, bufferedMs())
+        onVoice?.invoke(false, bufferedMs(), voiceDetail("音が途切れた"))
+    }
+
+    /** 記録用の説明(dBFS)。次の実走で、しきい値が合っているかを確かめる材料にする。 */
+    private fun voiceDetail(why: String): String {
+        fun db(r: Double) = if (r <= 0.0 || r == Double.MAX_VALUE) "-∞" else Math.round(20 * Math.log10(r / 32768.0)).toString()
+        val ms = (System.nanoTime() - voiceStartNs) / 1_000_000
+        return "$why 声の長さ${ms}ms 塊${voiceChunks} 最大${db(peakRms)}dB 最小${db(minRms)}dB " +
+            "静かな間の最大${db(quietMaxRms)}dB 終わりの基準${db(endRms())}dB"
     }
 
     /** いま書いた音が、スピーカーから聞こえるまでの時間(ms、目安)。 */
@@ -1400,6 +1437,8 @@ private class AudioRenderer(
         /** 声とみなす音の大きさ(RMS、16bit)。約 -40 dBFS で鳴り始め、約 -46 dBFS 未満が続けば鳴り終わり。 */
         const val VOICE_ON_RMS = 330.0
         const val VOICE_OFF_RMS = 165.0
+        /** 鳴り終わりのしきい値を、その声のいちばん大きい音の何倍にするか(0.125 ≒ -18 dB)。 */
+        const val VOICE_END_REL = 0.125
         /** 静かな状態がこれだけ続いたら鳴り終わり(言葉の切れ目で上がったり下がったりしないように)。 */
         const val VOICE_HANG_MS = 600L
         /** 声が鳴っている間、音の塊を待つ区切り(塊が来なくても鳴り終わりを判定するため)。 */

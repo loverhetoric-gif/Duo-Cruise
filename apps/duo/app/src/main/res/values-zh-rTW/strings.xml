@@ -161,9 +161,7 @@
     <string name="rl_dist">亮燈距離</string>
     <string name="rl_color">燈光顏色與強度</string>
     <string name="n_turn_color">轉彎燈光的顏色</string>
-    <string name="ra_on">轉彎前降低音量</string>
-    <string name="ra_dist">降低音量的距離</string>
-    <string name="ra_level">降低後的音量</string>
+    <string name="ra_level">導航語音時的音量</string>
     <string name="rr_on">抵達時 YouTube 全螢幕</string>
     <string name="to_route">至轉彎提示</string>
     <string name="to_route_light">至方向燈光</string>

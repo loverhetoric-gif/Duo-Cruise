@@ -178,14 +178,12 @@ final class Store {
     static int lightDist(Context c) { return p(c).getInt("rtLightDist", 200); }
     static void setLightDist(Context c, int v) { p(c).edit().putInt("rtLightDist", clampDist(v)).apply(); }
 
-    /** 曲がり角の手前で YouTube の音量を下げるか。 */
-    static boolean turnDuck(Context c) { return p(c).getBoolean("rtDuck", false); }
-    static void setTurnDuck(Context c, boolean v) { p(c).edit().putBoolean("rtDuck", v).apply(); }
-    static int duckDist(Context c) { return p(c).getInt("rtDuckDist", 150); }
-    static void setDuckDist(Context c, int v) { p(c).edit().putInt("rtDuckDist", clampDist(v)).apply(); }
-    /** 下げたときの音量(%)。 */
-    static int duckLevel(Context c) { return p(c).getInt("rtDuckLv", 30); }
-    static void setDuckLevel(Context c, int v) { p(c).edit().putInt("rtDuckLv", Math.max(0, Math.min(100, v))).apply(); }
+    /**
+     * ナビの声が鳴っている間の YouTube の音量(%)。音量はナビの声(実音)だけで動かし、
+     * 曲がり角の距離・画面の切り替えでは動かさない(2026-11-10 本人の指定で「曲がり角で下げる」は廃止)。
+     */
+    static int voiceLevel(Context c) { return p(c).getInt("voiceDuckLv", 20); }
+    static void setVoiceLevel(Context c, int v) { p(c).edit().putInt("voiceDuckLv", Math.max(0, Math.min(100, v))).apply(); }
 
     /** 到着したら YouTube を全画面にするか。 */
     static boolean arriveFull(Context c) { return p(c).getBoolean("rtArrive", false); }

@@ -30,6 +30,8 @@ final class Panes {
 
                 /** 記録した内容。画面の記録にだけ出す(更新アプリへは CarPlayPane が送り済み)。 */
                 @Override public void onRecord(String kind, String text) {
+                    // iPhone からの命令は走行記録にだけ(数が多いので画面の記録には出さない)
+                    if (com.yuki.duocruise.carplay.CarPlayPane.KIND_CAR_CMD.equals(kind)) { Trace.event("car-cmd", text); return; }
                     DuoLog.local(kind, "CarPlay: " + text);
                     // 切断の理由(失敗・通信エラー・取り合い)は logcat だと数十秒で流れて吸い出す頃に消える。
                     // 永続の走行記録(Trace)にも残し、外での切断の原因を後から辿れるようにする。
@@ -42,8 +44,8 @@ final class Panes {
                 }
 
                 /** ナビの声が実際に鳴り始めた/鳴り終わった(YouTube とのクロスフェードの合図)。 */
-                @Override public void onVoice(String audioType, boolean speaking, long inMs) {
-                    DuoActivity.carVoice(audioType, speaking, inMs);
+                @Override public void onVoice(String audioType, boolean speaking, long inMs, String detail) {
+                    DuoActivity.carVoice(audioType, speaking, inMs, detail);
                 }
 
                 /** ナビの案内(Duo Cruise Unlimited Edition だけ。リリース版では届かない)。 */

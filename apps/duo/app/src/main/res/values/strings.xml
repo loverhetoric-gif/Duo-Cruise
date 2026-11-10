@@ -167,9 +167,7 @@
     <string name="rl_dist">Light At</string>
     <string name="rl_color">Light Color &amp; Intensity</string>
     <string name="n_turn_color">Turn Light Color</string>
-    <string name="ra_on">Lower YouTube Before Turns</string>
-    <string name="ra_dist">Lower From</string>
-    <string name="ra_level">Lowered Volume</string>
+    <string name="ra_level">Volume during guidance</string>
     <string name="ra_video">Video During Nav Voice</string>
     <string name="ra_video_keep">Keep playing</string>
     <string name="ra_video_pause">Pause</string>

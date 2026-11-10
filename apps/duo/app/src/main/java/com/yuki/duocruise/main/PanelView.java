@@ -736,7 +736,7 @@ final class PanelView extends ViewGroup {
                 items.add(new Item(() -> T(R.string.r_map), () -> onOff(Store.mapFront(c)), () -> show(R_MAP)));
                 items.add(new Item(() -> T(R.string.r_straight), () -> onOff(Store.straightOn(c)), () -> show(R_STRAIGHT)));
                 items.add(new Item(() -> T(R.string.r_light), () -> onOff(Store.turnLight(c)), () -> show(R_LIGHT)));
-                items.add(new Item(() -> T(R.string.r_audio), () -> onOff(Store.turnDuck(c)), () -> show(R_AUDIO)));
+                items.add(new Item(() -> T(R.string.r_audio), () -> Store.voiceLevel(c) + "%", () -> show(R_AUDIO)));
                 items.add(new Item(() -> T(R.string.r_arrive), () -> onOff(Store.arriveFull(c)), () -> show(R_ARRIVE)));
                 items.add(back(T(R.string.to_vehicle)));
                 break;
@@ -804,13 +804,10 @@ final class PanelView extends ViewGroup {
                 break;
             case R_AUDIO:
                 title.setText(T(R.string.r_audio));
-                items.add(new Item(() -> T(R.string.ra_on), () -> onOff(Store.turnDuck(c)),
-                        () -> { Store.setTurnDuck(c, !Store.turnDuck(c)); changed(); }, true));
-                items.add(new Item(() -> T(R.string.ra_dist), () -> {}, distSlider(() -> Store.duckDist(c), v -> Store.setDuckDist(c, v))));
                 items.add(new Item(() -> T(R.string.ra_level), () -> {}, new Slider() {
-                    public int value() { return Store.duckLevel(c); }
+                    public int value() { return Store.voiceLevel(c); }
                     public int max() { return 100; }
-                    public void nudge(int d) { Store.setDuckLevel(c, value() + d * 5); changed(); }
+                    public void nudge(int d) { Store.setVoiceLevel(c, value() + d * 5); changed(); }
                     public String text() { return value() + "%"; }
                     public int tint() { return Theme.NEON_WHITE; }
                 }));
