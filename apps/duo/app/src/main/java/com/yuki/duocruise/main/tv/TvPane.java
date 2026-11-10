@@ -135,6 +135,8 @@ public final class TvPane {
         }
         KeyEvent k = translate(e);
         if (k == null) return false;
+        // 操作すると TV 版の操作の表示が出るので、アンビエントを 6 秒止める(表示を隠さない)
+        if (e.getAction() == KeyEvent.ACTION_DOWN) web.evaluateJavascript("if(window.__duoAmb)__duoAmb.hold=Date.now()+6000", null);
         if (!web.hasFocus()) web.requestFocus();
         web.dispatchKeyEvent(k);
         return true;
@@ -271,6 +273,11 @@ public final class TvPane {
             } catch (NumberFormatException e) {
                 r = "番号は 0〜" + (UA_NAMES.length - 1);
             }
+        } else if (c.startsWith("tv-ambient:")) {
+            boolean on = c.endsWith("1");
+            prefs.edit().putBoolean("ambient", on).apply();
+            injectAmbient();
+            r = "アンビエント: " + (on ? "オン" : "オフ");
         } else if (c.equals("tv-reload")) {
             if (web != null) web.reload();
             r = "読み直します";
@@ -531,10 +538,49 @@ public final class TvPane {
             + "return JSON.stringify({p:!v.paused&&!v.ended,w:v.videoWidth,h:v.videoHeight,"
             + "d:q?q.droppedVideoFrames:-1,f:q?q.totalVideoFrames:-1,m:v.muted,id:id,t:v.currentTime});})()";
 
+
+    /**
+     * アンビエント(2026-11-10、テスト版): YouTube の枠より動画が細いとき(マップクローズなどで上下に黒い帯が出るとき)、
+     * 動画の色をぼかして暗くし、その帯に敷く。動画の上下の縁は少しずつ溶かして境目を消す。
+     * ページの中の canvas に 1 秒 4 回だけ描く(32×18 に縮めてから広げるので軽い)。地図には出ない(この枠の中だけ)。
+     * 一時停止中・操作の直後(6 秒)は出さない(TV 版の操作の表示を隠さないため)。設定は tv-ambient:0/1。
+     */
+    private static final String AMBIENT_JS =
+            "(function(on){var A=window.__duoAmb;if(!A){"
+            + "var c=document.createElement('canvas');c.id='duo-amb';"
+            + "c.style.cssText='position:fixed;left:0;top:0;width:100vw;height:100vh;pointer-events:none;z-index:2147483646;opacity:0;transition:opacity .8s';"
+            + "var s=document.createElement('canvas');s.width=32;s.height=18;var sx=s.getContext('2d'),cx=c.getContext('2d');"
+            + "A=window.__duoAmb={on:on,hold:0};"
+            + "var tick=function(){var show=false;try{"
+            + "if(!c.isConnected)document.documentElement.appendChild(c);"
+            + "var v=document.querySelector('video'),W=innerWidth,H=innerHeight;"
+            + "if(A.on&&v&&v.videoWidth&&v.readyState>=2&&!v.paused&&!v.ended&&Date.now()>A.hold){"
+            + "var r=v.getBoundingClientRect(),ar=v.videoWidth/v.videoHeight,cw=r.width,ch=r.height;"
+            + "if(cw/ch>ar)cw=ch*ar;else ch=cw/ar;"
+            + "var x=r.left+(r.width-cw)/2,y=r.top+(r.height-ch)/2;"
+            + "if(cw>=W*0.9&&ch<H-12){show=true;"
+            + "var w2=Math.max(1,Math.round(W/2)),h2=Math.max(1,Math.round(H/2));if(c.width!==w2||c.height!==h2){c.width=w2;c.height=h2;}"
+            + "var k=c.width/W;sx.drawImage(v,0,0,32,18);"
+            + "cx.globalCompositeOperation='source-over';cx.filter='blur(14px) brightness(0.45) saturate(1.3)';"
+            + "cx.drawImage(s,-c.width*0.1,-c.height*0.1,c.width*1.2,c.height*1.2);cx.filter='none';"
+            + "var fx=x*k,fy=y*k,fw=cw*k,fh=ch*k,e=Math.min(0.15,40*k/fh);"
+            + "cx.globalCompositeOperation='destination-out';var g=cx.createLinearGradient(0,fy,0,fy+fh);"
+            + "g.addColorStop(0,'rgba(0,0,0,0)');g.addColorStop(e,'rgba(0,0,0,1)');g.addColorStop(1-e,'rgba(0,0,0,1)');g.addColorStop(1,'rgba(0,0,0,0)');"
+            + "cx.fillStyle=g;cx.fillRect(fx,fy,fw,fh);cx.globalCompositeOperation='source-over';}}"
+            + "}catch(err){show=false;}c.style.opacity=show?'1':'0';setTimeout(tick,250);};tick();}"
+            + "A.on=on;})(";
+
+    private boolean ambientOn() { return prefs.getBoolean("ambient", true); }
+
+    private void injectAmbient() {
+        if (web != null) web.evaluateJavascript(AMBIENT_JS + ambientOn() + ")", null);
+    }
+
     private final Runnable poller = new Runnable() {
         @Override public void run() {
             if (destroyed) return;
             if (web != null) web.evaluateJavascript(POLL_JS, TvPane.this::onPoll);
+            injectAmbient(); // 読み直しで消えても次の確認で戻る(2回目以降は設定を渡すだけ)
             // 動画が切り替わると音量が戻ることがあるので、下げている間は5秒ごとにかけ直す
             if (web != null && duck < 1f) web.evaluateJavascript(
                     "(function(){var v=document.querySelector('video');if(v&&!window.__duoFade)v.volume=" + duck + ";})()", null);
@@ -664,29 +710,6 @@ public final class TvPane {
             TvLog.state(app, "電話・Siri・ナビの声が終わったので再開");
         }
     }
-
-    // ---------------- ナビの声の間のスロー再生 ----------------
-
-    private boolean slowed;
-
-    /**
-     * ナビの声の間、動画を「限りなくスロー」にする(本人の指定)。止めはしないので、声が終われば途切れずに続く。
-     * 速さは SLOW_RATE。ブラウザは 0.25 倍未満では音を出さないので、スロー中の音は自然に消える
-     * (音量のクロスフェードと重ねても問題ない)。戻すときは、本人が選んでいた速さへ戻す。
-     */
-    public void setSlow(boolean on) {
-        if (on == slowed) return;
-        slowed = on;
-        TvLog.state(app, on ? "ナビの声のためスロー再生" : "ナビの声が終わったので元の速さへ");
-        if (web == null) return;
-        web.evaluateJavascript(on
-                ? "(function(){var v=document.querySelector('video');if(!v)return;"
-                  + "if(!window.__duoSlow){window.__duoRate=v.playbackRate||1;window.__duoSlow=1;}v.playbackRate=" + SLOW_RATE + ";})()"
-                : "(function(){var v=document.querySelector('video');if(!v)return;"
-                  + "if(window.__duoSlow){v.playbackRate=window.__duoRate||1;window.__duoSlow=0;}})()", null);
-    }
-    /** スロー再生の速さ(ブラウザが受け付ける最低は 0.0625)。 */
-    private static final double SLOW_RATE = 0.1;
 
     // ---------------- 前回の続き(エンジンをかけたら、見ていた動画のその位置から) ----------------
 

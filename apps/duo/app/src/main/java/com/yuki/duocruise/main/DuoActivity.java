@@ -783,7 +783,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         if (driveState == DriveWatch.PARKED && Store.parkOn(this)) return ytFit;
         if (driveState >= DriveWatch.STOPPED && Store.stopOn(this)) return ytFit;
         if (straightEngaged) return ytFit;                              // 一本道(クルーズ)
-        if (mapClose) return SplitGeometry.clampYt(100 - ytFit);        // マップクローズ: 反転して地図を大きく
+        if (mapClose) return SplitGeometry.clampYt(100 - ytFit - MAPCLOSE_EXTRA_PCT); // マップクローズ: 反転して地図を大きく(さらに少し広げる)
         return ytFit;                                                   // デフォルト(走行中): YouTube 16:9 + CarPlay を横に
     }
 
@@ -810,6 +810,8 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     private boolean mapClose;
     /** マップクローズの接近帯: コーナー発火距離(mapDist)の外側、この距離までを地図強調にする(仮。実走で詰める)。 */
     private static final int MAPCLOSE_BAND_M = 500;
+    /** マップクローズで、反転(地図 58%)からさらに地図を広げる幅(%)。上下の帯はアンビエントで埋める(2026-11-10 テスト: 地図 62%)。 */
+    private static final int MAPCLOSE_EXTRA_PCT = 4;
     /** Uターン・ロータリー・分岐(寄り=三叉路)は複雑なので、通常より手前からコーナービューにする(仮)。 */
     private static final int SPECIAL_CORNER_EXTRA_M = 150;
 
@@ -1812,11 +1814,9 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         if (turnDucked) level = Math.min(level, Store.duckLevel(this) / 100f); // 曲がり角の手前(Unlimited Edition)
         if (alertDucked) level = Math.min(level, Store.duckLevel(this) / 100f); // Y!カーナビの警告
         fadeDuckTo(level); // 急に切り替えず、自然に上げ下げする
-        // ナビの声の間の動画(本人の指定): そのまま / 限りなくスロー / 一時停止。声の検出は鳴り始め・鳴り終わり(実音)
-        int nv = Store.navVideo(this);
+        // ナビの声の間の動画(本人の指定): そのまま / 一時停止。声の検出は鳴り始め・鳴り終わり(実音)
         boolean voice = !carVoices.isEmpty();
-        tv.hold(call || (voice && nv == Store.NAV_VIDEO_PAUSE)); // 電話・Siri(とナビの声)の間は一時停止。終われば再開
-        tv.slow(!call && voice && nv == Store.NAV_VIDEO_SLOW);
+        tv.hold(call || (voice && Store.navVideo(this) == Store.NAV_VIDEO_PAUSE)); // 電話・Siri(とナビの声)の間は一時停止。終われば再開
     }
 
     /** YouTube の音量を目標へ。下げるのは速く、戻すのはゆっくり。フェードは YouTube の中で1回だけ行う。 */

@@ -62,10 +62,13 @@ final class Store {
     static float pipY(Context c) { return p(c).getFloat("pipY", -1f); }
     static void setPipPos(Context c, float x, float y) { p(c).edit().putFloat("pipX", x).putFloat("pipY", y).apply(); }
 
-    /** ナビの声の間の YouTube の動画: そのまま(音量だけ下げる)/ 限りなくスロー / 一時停止。既定はスロー(本人の指定)。 */
-    static final int NAV_VIDEO_KEEP = 0, NAV_VIDEO_SLOW = 1, NAV_VIDEO_PAUSE = 2;
-    static int navVideo(Context c) { return ((p(c).getInt("navVideo", NAV_VIDEO_SLOW) % 3) + 3) % 3; }
-    static void setNavVideo(Context c, int v) { p(c).edit().putInt("navVideo", ((v % 3) + 3) % 3).apply(); }
+    /**
+     * ナビの声の間の YouTube の動画: そのまま(音量だけ下げる)/ 一時停止。既定はそのまま。
+     * 以前あった「スロー」(1)は、音が間延びして怖かったのでやめた(2026-11-10 本人)。保存が 1 の端末はそのままに読む。
+     */
+    static final int NAV_VIDEO_KEEP = 0, NAV_VIDEO_PAUSE = 2;
+    static int navVideo(Context c) { return p(c).getInt("navVideo", NAV_VIDEO_KEEP) == NAV_VIDEO_PAUSE ? NAV_VIDEO_PAUSE : NAV_VIDEO_KEEP; }
+    static void setNavVideo(Context c, int v) { p(c).edit().putInt("navVideo", v == NAV_VIDEO_PAUSE ? NAV_VIDEO_PAUSE : NAV_VIDEO_KEEP).apply(); }
 
     /** ナビ音声が流れている間の、YouTube の幅の割合(%)。 */
     static int navYt(Context c) { return SplitGeometry.clampYt(p(c).getInt("navYt", 50)); }

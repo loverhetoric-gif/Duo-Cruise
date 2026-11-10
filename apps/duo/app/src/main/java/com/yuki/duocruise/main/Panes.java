@@ -131,7 +131,6 @@ final class Panes {
         @Override public void duck(float level, long fadeMs) { p.setDuck(level, fadeMs); }
         @Override public float videoAspect() { return p.videoAspect(); }
         @Override public void hold(boolean on) { p.setHold(on); }
-        @Override public void slow(boolean on) { p.setSlow(on); }
         @Override public void back() { p.back(); }
         @Override public void typeText(String text) { p.typeText(text); }
         @Override public void typeKey(int keyCode) { p.typeKey(keyCode); }
