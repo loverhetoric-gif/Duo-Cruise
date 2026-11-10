@@ -1831,6 +1831,9 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         long ms = target < curDuck ? DUCK_DOWN_MS : DUCK_UP_MS;
         curDuck = target;
         tv.duck(target, ms);
+        // 実際に YouTube の音量を動かした時刻と理由を走行記録へ(声の流れ・実音との、ずれを数字で確かめるため)
+        Trace.event("duck", Math.round(target * 100) + "% " + ms + "ms 声の流れ=" + carVoices
+                + " 流れ全部=" + carSounds + (alertDucked ? " Y!警告" : ""));
     }
 
     /** 状態が変わったら、少し待ってまとめて1回送る。 */
