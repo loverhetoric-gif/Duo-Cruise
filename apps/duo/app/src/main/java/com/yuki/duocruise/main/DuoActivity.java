@@ -1761,43 +1761,51 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
 
     /** いま流れが開いている CarPlay の音の種類(audioType)。 */
     private final java.util.Set<String> carSounds = new java.util.HashSet<>();
-    /** いま実際に声が鳴っているナビ・通知の音の種類(音の大きさで判定。流れが開いているだけでは入らない)。 */
+    /** いま流れが開いているナビの声・通知音の種類(default・alert など)。この間だけ YouTube を下げる。 */
     private final java.util.Set<String> carVoices = new java.util.HashSet<>();
     private final Runnable applyDuck = this::applyDuck;
-    /** YouTube を下げる速さ(声が聞こえる前に下げ切る)と、戻す速さ(声の余韻に重ねてゆっくり)。 */
+    /** YouTube を下げる速さ(声が聞こえる前に下げ切る)と、戻す速さ。 */
     private static final long DUCK_DOWN_MS = 250, DUCK_UP_MS = 900;
-    /** 声が消えてから戻し始めるまでの間(余韻)。 */
-    private static final long DUCK_RELEASE_MS = 200;
+    /**
+     * 流れが閉じてから戻し始めるまでの間。続けて次の声の流れが開くことがあるので、すぐには戻さない
+     * (初版 10/27 と同じ 1 秒。本人の評価「初版はちゃんと識別できていた」)。
+     */
+    private static final long DUCK_RELEASE_MS = 1000;
 
-    /** CarPlay の音の流れが開いた/閉じた(メインスレッド)。電話・Siri の一時停止と、記録に使う。 */
+    private static boolean isVoiceType(String t) {
+        return !t.equals("media") && !t.equals("telephony") && !t.equals("speechrecognition");
+    }
+
+    /**
+     * CarPlay の音の流れが開いた/閉じた(メインスレッド)。YouTube の音量はこれだけで動かす(初版と同じ)。
+     * ナビの声・通知音: 開いたらすぐ下げ、閉じたら 1 秒おいてゆっくり戻す。電話・Siri: 一時停止。
+     * iPhone は声を鳴らすときに流れを開き、鳴らし終えると閉じる(コードで受け取る合図。音の大きさは測らない)。
+     */
     static void carAudio(String audioType, boolean active) {
         DuoActivity a = live;
         if (a == null) return;
-        if (active) a.carSounds.add(audioType); else { a.carSounds.remove(audioType); a.carVoices.remove(audioType); }
+        boolean voice = isVoiceType(audioType);
+        if (active) { a.carSounds.add(audioType); if (voice) a.carVoices.add(audioType); }
+        else { a.carSounds.remove(audioType); a.carVoices.remove(audioType); }
         Trace.event("car-audio", audioType + (active ? " 開始" : " 終了"));
         a.main.removeCallbacks(a.applyDuck);
-        a.applyDuck();
+        if (!active && voice) a.main.postDelayed(a.applyDuck, DUCK_RELEASE_MS);
+        else a.applyDuck();
         a.updateNavSplit();
     }
 
     /**
-     * ナビの声が実際に鳴り始めた/鳴り終わった(メインスレッド)。inMs 後にスピーカーから聞こえる(目安)。
-     * 鳴り始め: すぐ YouTube を下げ始める(声はまだバッファの中。声の頭はふわっと上がるのでクロスフェードになる)。
-     * 鳴り終わり: 聞こえ終わるのを待ち、余韻をおいてから、ゆっくり戻す。
+     * 声の実音の鳴り始め/鳴り終わり(音の大きさで判定)。音量には使わず、走行記録にだけ残す
+     * (流れの開閉と実際の声のずれを確かめる材料。2026-11-10、音量を流れの開閉だけに戻した)。
      */
     static void carVoice(String audioType, boolean speaking, long inMs, String detail) {
-        DuoActivity a = live;
-        if (a == null) return;
         Trace.event("voice", audioType + (speaking ? " 鳴り始め" : " 鳴り終わり") + " 聞こえるまで" + inMs + "ms"
                 + (detail == null || detail.isEmpty() ? "" : " " + detail));
-        a.main.removeCallbacks(a.applyDuck);
-        if (speaking) { a.carVoices.add(audioType); a.applyDuck(); }
-        else { a.carVoices.remove(audioType); a.main.postDelayed(a.applyDuck, Math.max(0, inMs) + DUCK_RELEASE_MS); }
     }
 
     /**
      * Apple の機器と同じ考え方: 基本は YouTube。CarPlay の
-     * ・ナビの声・通知音(default/alert/compatibility) → 声が実際に鳴っている間だけ YouTube を 20% に下げて重ねる
+     * ・ナビの声・通知音(default/alert/compatibility) → 流れが開いている間だけ YouTube を下げて重ねる(設定の音量、既定 20%)
      * ・電話・Siri(telephony/speechrecognition) → YouTube を一時停止し、終わったら再開
      * ・音楽(media) → 何もしない
      * 鳴り終わったら元の音量に戻す。
@@ -1807,11 +1815,11 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         boolean call = false;
         for (String t : carSounds)
             if (t.equals("telephony") || t.equals("speechrecognition")) { level = 0f; call = true; }
-        // 音量はナビの声(実際に鳴っている間)だけで下げる。曲がり角の距離・画面の切り替えには連動させない
+        // 音量はナビの声の流れ(開いている間)だけで下げる。曲がり角の距離・画面の切り替えには連動させない
         if (!carVoices.isEmpty()) level = Math.min(level, Store.voiceLevel(this) / 100f);
         if (alertDucked) level = Math.min(level, Store.voiceLevel(this) / 100f); // Y!カーナビの警告音
         fadeDuckTo(level); // 急に切り替えず、自然に上げ下げする
-        // ナビの声の間の動画(本人の指定): そのまま / 一時停止。声の検出は鳴り始め・鳴り終わり(実音)
+        // ナビの声の間の動画(本人の指定): そのまま / 一時停止。声の流れが開いている間
         boolean voice = !carVoices.isEmpty();
         tv.hold(call || (voice && Store.navVideo(this) == Store.NAV_VIDEO_PAUSE)); // 電話・Siri(とナビの声)の間は一時停止。終われば再開
     }
