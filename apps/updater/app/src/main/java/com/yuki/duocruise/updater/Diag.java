@@ -24,7 +24,7 @@ import java.util.regex.Pattern;
 /**
  * 記録シートの「指示」から来る診断。受け付けるのは決まった一覧だけ(任意のコマンドは実行しない)。
  *   updater:state / updater:packages / updater:check / updater:test-channel on|off / updater:screenshot
- *   updater:play-install <パッケージ名> … Play ストアでそのアプリの頁を開き、数分間だけ「インストール」を押す
+ *   updater:play-install <パッケージ名> … Play ストアでそのアプリを検索して頁を開き(market://search?q=pname:)、数分間だけ「インストール」を押す
  *   updater:multiplay-log … 機器の CarPlay(MultiPlay)の部品の記録(logcat)を送る(要 READ_LOGS。adb で許可する)
  *   com.yuki.duocruise.main:〜 … 本体へブロードキャスト(キー記録は 2026-10-27 に片付けた)で渡すだけ
  * 結果は kind=result で記録に返す。
