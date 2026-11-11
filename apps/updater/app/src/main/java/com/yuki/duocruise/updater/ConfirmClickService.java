@@ -124,10 +124,23 @@ public class ConfirmClickService extends AccessibilityService {
             for (AccessibilityWindowInfo w : getWindows()) {
                 AccessibilityNodeInfo root = w.getRoot();
                 if (root == null || root.getPackageName() == null || !VENDING.equals(root.getPackageName().toString())) continue;
-                for (String t : PLAY_OK) {
-                    for (AccessibilityNodeInfo n : root.findAccessibilityNodeInfosByText(t)) {
-                        CharSequence txt = n.getText() != null ? n.getText() : n.getContentDescription();
-                        if (txt == null || !t.equalsIgnoreCase(txt.toString().trim())) continue;
+                java.util.List<AccessibilityNodeInfo> all = new java.util.ArrayList<>();
+                java.util.ArrayDeque<AccessibilityNodeInfo> q = new java.util.ArrayDeque<>();
+                q.add(root);
+                while (!q.isEmpty() && all.size() < 3000) {
+                    AccessibilityNodeInfo n = q.poll();
+                    if (n == null) continue;
+                    all.add(n);
+                    for (int i = 0; i < n.getChildCount(); i++) q.add(n.getChild(i));
+                }
+                AccessibilityNodeInfo query = null;
+                StringBuilder seen = new StringBuilder();
+                for (AccessibilityNodeInfo n : all) {
+                    String txt = label(n);
+                    if (txt.isEmpty()) continue;
+                    if (seen.length() < 300) seen.append(txt.replace('\n', ' ')).append(" / ");
+                    for (String t : PLAY_OK) {
+                        if (!t.equalsIgnoreCase(txt)) continue;
                         AccessibilityNodeInfo target = n;
                         for (int i = 0; i < 3 && target != null && !target.isClickable(); i++) target = target.getParent();
                         if (target == null || !target.isClickable() || !target.isEnabled()) continue;
@@ -137,16 +150,16 @@ public class ConfirmClickService extends AccessibilityService {
                         target.performAction(AccessibilityNodeInfo.ACTION_CLICK);
                         return true;
                     }
+                    if (playPkg != null && txt.contains("pname:" + playPkg)) query = n;
                 }
                 // 検索の結果の画面なら、先頭の結果(そのアプリの行)を押してアプリの頁へ進む
-                if (playPkg != null) {
-                    for (AccessibilityNodeInfo q : root.findAccessibilityNodeInfosByText("pname:" + playPkg)) {
-                        Rect qb = new Rect();
-                        q.getBoundsInScreen(qb);
-                        Rect wb = new Rect();
-                        w.getBoundsInScreen(wb);
-                        AccessibilityNodeInfo row = firstRowBelow(root, qb.bottom, wb.width() / 2);
-                        if (row == null) continue;
+                if (query != null) {
+                    Rect qb = new Rect();
+                    query.getBoundsInScreen(qb);
+                    Rect wb = new Rect();
+                    w.getBoundsInScreen(wb);
+                    AccessibilityNodeInfo row = firstRowBelow(root, qb.bottom, wb.width() / 2);
+                    if (row != null) {
                         UpdLog.init(this);
                         UpdLog.add("Play ストアの検索の結果から " + playPkg + " の頁を開きました");
                         lastClick = System.currentTimeMillis();
@@ -154,9 +167,25 @@ public class ConfirmClickService extends AccessibilityService {
                         return true;
                     }
                 }
+                if (!seen.toString().equals(lastSeen)) {
+                    lastSeen = seen.toString();
+                    UpdLog.init(this);
+                    UpdLog.add("Play ストアの窓(部品 " + all.size() + " 個): " + lastSeen);
+                }
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable e) {
+            UpdLog.init(this);
+            UpdLog.add("Play ストアの窓を読めません: " + e);
+        }
         return false;
+    }
+
+    private String lastSeen = "";
+
+    private static String label(AccessibilityNodeInfo n) {
+        CharSequence t = n.getText();
+        if (t == null || t.length() == 0) t = n.getContentDescription();
+        return t == null ? "" : t.toString().trim();
     }
 
     /** top より下にある、幅が minWidth 以上の押せる部品のうち、いちばん上のもの(検索の結果の先頭の行)。 */
