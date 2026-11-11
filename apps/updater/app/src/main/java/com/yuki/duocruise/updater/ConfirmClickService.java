@@ -106,6 +106,7 @@ public class ConfirmClickService extends AccessibilityService {
 
     /**
      * Play ストアの窓の中だけで、文字がちょうど「インストール」(Install)のボタンを押す。押したら true。
+     * 無ければ、検索の結果の画面(pname:<パッケージ名>)の先頭の行を押して、アプリの頁へ進む。
      * 文字の部品そのものが押せないときは、押せる親(3段まで)を押す。「アンインストール」などは文字が違うので押さない。
      */
     private boolean pressPlayInstall() {
@@ -127,13 +128,48 @@ public class ConfirmClickService extends AccessibilityService {
                         return true;
                     }
                 }
+                // 検索の結果の画面なら、先頭の結果(そのアプリの行)を押してアプリの頁へ進む
+                if (playPkg != null) {
+                    for (AccessibilityNodeInfo q : root.findAccessibilityNodeInfosByText("pname:" + playPkg)) {
+                        Rect qb = new Rect();
+                        q.getBoundsInScreen(qb);
+                        Rect wb = new Rect();
+                        w.getBoundsInScreen(wb);
+                        AccessibilityNodeInfo row = firstRowBelow(root, qb.bottom, wb.width() / 2);
+                        if (row == null) continue;
+                        UpdLog.init(this);
+                        UpdLog.add("Play ストアの検索の結果から " + playPkg + " の頁を開きました");
+                        lastClick = System.currentTimeMillis();
+                        row.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+                        return true;
+                    }
+                }
             }
         } catch (Throwable ignored) {}
         return false;
     }
 
+    /** top より下にある、幅が minWidth 以上の押せる部品のうち、いちばん上のもの(検索の結果の先頭の行)。 */
+    private static AccessibilityNodeInfo firstRowBelow(AccessibilityNodeInfo root, int top, int minWidth) {
+        AccessibilityNodeInfo best = null;
+        int bestTop = Integer.MAX_VALUE;
+        java.util.ArrayDeque<AccessibilityNodeInfo> q = new java.util.ArrayDeque<>();
+        q.add(root);
+        while (!q.isEmpty()) {
+            AccessibilityNodeInfo n = q.poll();
+            if (n == null) continue;
+            if (n.isClickable() && n.isEnabled()) {
+                Rect b = new Rect();
+                n.getBoundsInScreen(b);
+                if (b.top >= top && b.width() >= minWidth && b.top < bestTop) { best = n; bestTop = b.top; }
+            }
+            for (int i = 0; i < n.getChildCount(); i++) q.add(n.getChild(i));
+        }
+        return best;
+    }
+
     /**
-     * 指示「updater:play-install <パッケージ名>」: Play ストアでそのアプリの頁を開き、
+     * 指示「updater:play-install <パッケージ名>」: Play ストアでそのアプリを検索して頁を開き、
      * そこから 5 分間だけ Play ストアの「インストール」を押す。入ったら結果を返して止める。
      */
     static void playInstall(Context c, String pkg, int row, String cmd) {
@@ -142,7 +178,9 @@ public class ConfirmClickService extends AccessibilityService {
         if (UpdateEngine.installedVersion(c, pkg) >= 0) { Remote.result(cmd + " → もう入っています(v" + UpdateEngine.installedVersion(c, pkg) + ")", row); return; }
         if (UpdateEngine.installedVersion(c, VENDING) < 0) { Remote.result(cmd + " → Play ストアが入っていません", row); return; }
         android.content.Intent i = new android.content.Intent(android.content.Intent.ACTION_VIEW,
-                android.net.Uri.parse("market://details?id=" + pkg))
+                // market://details は小窓(下から出る頁)で開き、P3 Pro の高さ 480 の画面では文字が崩れて
+                // 「インストール」が窓の外に隠れる(2026-11-11 実機)。検索の結果から頁を開くと通常の画面になる。
+                android.net.Uri.parse("market://search?q=pname:" + pkg + "&c=apps"))
                 .setPackage(VENDING)
                 .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
         playPkg = pkg; playCmd = cmd; playRow = row;
