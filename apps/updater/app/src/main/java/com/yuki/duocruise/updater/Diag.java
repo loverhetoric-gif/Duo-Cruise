@@ -24,6 +24,7 @@ import java.util.regex.Pattern;
 /**
  * 記録シートの「指示」から来る診断。受け付けるのは決まった一覧だけ(任意のコマンドは実行しない)。
  *   updater:state / updater:packages / updater:check / updater:test-channel on|off / updater:screenshot
+ *   updater:play-install <パッケージ名> … Play ストアでそのアプリの頁を開き、数分間だけ「インストール」を押す
  *   updater:multiplay-log … 機器の CarPlay(MultiPlay)の部品の記録(logcat)を送る(要 READ_LOGS。adb で許可する)
  *   com.yuki.duocruise.main:〜 … 本体へブロードキャスト(キー記録は 2026-10-27 に片付けた)で渡すだけ
  * 結果は kind=result で記録に返す。
@@ -34,6 +35,8 @@ final class Diag {
     static final String MAIN = "com.yuki.duocruise.main";
     /** 自作アプリへ渡す指示の中身として許す文字(英数字と - _ . = : 空白、80文字まで)。 */
     private static final Pattern SAFE = Pattern.compile("[A-Za-z0-9 _.=:-]{1,80}");
+    /** updater:play-install に渡せるパッケージ名(英数字と . _ だけ、100文字まで)。 */
+    private static final Pattern PKG = Pattern.compile("[A-Za-z0-9._]{1,100}");
     private static final ExecutorService EXEC = Executors.newSingleThreadExecutor();
 
     private Diag() {}
@@ -86,6 +89,15 @@ final class Diag {
         String target = colon > 0 ? cmd.substring(0, colon).trim() : "";
         String arg = colon > 0 ? cmd.substring(colon + 1).trim() : "";
         if ("updater".equals(target) || BuildConfig.APPLICATION_ID.equals(target)) {
+            if (arg.startsWith("play-install")) {
+                String pkg = arg.substring("play-install".length()).trim();
+                if (!PKG.matcher(pkg).matches()) {
+                    Remote.result(cmd + " → 受け付けない指示です(パッケージ名は英数字と . _ だけ)", row);
+                    return;
+                }
+                ConfirmClickService.playInstall(c, pkg, row, cmd);
+                return;
+            }
             switch (arg) {
                 case "state":
                     Remote.add("state", state(c), BuildConfig.APPLICATION_ID, String.valueOf(BuildConfig.VERSION_CODE), row, 0);
@@ -131,7 +143,7 @@ final class Diag {
                     ConfirmClickService.confirmNow(c, row, cmd);
                     return;
                 default:
-                    Remote.result(cmd + " → 受け付けない指示です(updater:state / packages / check / test-channel on|off / screenshot / confirm / multiplay-log)", row);
+                    Remote.result(cmd + " → 受け付けない指示です(updater:state / packages / check / test-channel on|off / screenshot / confirm / multiplay-log / play-install <パッケージ名>)", row);
                     return;
             }
         }

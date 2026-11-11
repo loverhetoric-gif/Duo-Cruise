@@ -19,6 +19,7 @@ import java.util.concurrent.Executors;
 
 /**
  * 自分のアプリを更新している数分間だけ、インストール確認の肯定ボタンを押す。
+ * 指示「updater:play-install」から数分間だけ、Play ストアの窓の「インストール」を押す。
  * あわせて、指示「updater:screenshot」のときに今の画面を1枚撮る(Android 11 以上)、
  * 指示「updater:state」のときに窓の並び(位置と大きさ)を読む。それ以外では何もしない。
  */
@@ -27,6 +28,14 @@ public class ConfirmClickService extends AccessibilityService {
     private static volatile ConfirmClickService instance;
     private static final Executor SHOT = Executors.newSingleThreadExecutor();
     private long lastClick = 0;
+
+    static final String VENDING = "com.android.vending";
+    /** Play ストアの「インストール」を押してよい期限(指示 updater:play-install から数分間だけ)。 */
+    static volatile long playUntil = 0;
+    static volatile String playPkg = null, playCmd = null;
+    static volatile int playRow = 0;
+    private static final long PLAY_MS = 5 * 60 * 1000L;
+    private static final String[] PLAY_OK = {"インストール", "Install"};
 
     @Override protected void onServiceConnected() {
         super.onServiceConnected();
@@ -45,7 +54,20 @@ public class ConfirmClickService extends AccessibilityService {
     }
 
     @Override public void onAccessibilityEvent(AccessibilityEvent e) {
-        if (System.currentTimeMillis() > UpdateEngine.autoConfirmUntil) return;
+        long now = System.currentTimeMillis();
+        if (now <= playUntil) {
+            if (playPkg != null && UpdateEngine.installedVersion(this, playPkg) >= 0) {
+                String cmd = playCmd; int row = playRow;
+                playUntil = 0;
+                UpdLog.init(this);
+                UpdLog.add("Play ストアから " + playPkg + " が入りました");
+                Remote.result(cmd + " → 入りました(v" + UpdateEngine.installedVersion(this, playPkg) + ")", row);
+                playPkg = null;
+            } else if (now - lastClick >= 1500) {
+                pressPlayInstall();
+            }
+        }
+        if (now > UpdateEngine.autoConfirmUntil) return;
         if (System.currentTimeMillis() - lastClick < 1500) return;
         pressConfirm();
     }
@@ -64,7 +86,8 @@ public class ConfirmClickService extends AccessibilityService {
             }
         } catch (Throwable ignored) {}
         AccessibilityNodeInfo active = getRootInActiveWindow();
-        if (active != null) roots.add(active);
+        // Play ストアの窓は play-install のときだけ(pressPlayInstall)で扱う
+        if (active != null && (active.getPackageName() == null || !VENDING.equals(active.getPackageName().toString()))) roots.add(active);
         for (AccessibilityNodeInfo root : roots) {
             for (String t : OK) {
                 for (AccessibilityNodeInfo n : root.findAccessibilityNodeInfosByText(t)) {
@@ -79,6 +102,69 @@ public class ConfirmClickService extends AccessibilityService {
             }
         }
         return false;
+    }
+
+    /**
+     * Play ストアの窓の中だけで、文字がちょうど「インストール」(Install)のボタンを押す。押したら true。
+     * 文字の部品そのものが押せないときは、押せる親(3段まで)を押す。「アンインストール」などは文字が違うので押さない。
+     */
+    private boolean pressPlayInstall() {
+        try {
+            for (AccessibilityWindowInfo w : getWindows()) {
+                AccessibilityNodeInfo root = w.getRoot();
+                if (root == null || root.getPackageName() == null || !VENDING.equals(root.getPackageName().toString())) continue;
+                for (String t : PLAY_OK) {
+                    for (AccessibilityNodeInfo n : root.findAccessibilityNodeInfosByText(t)) {
+                        CharSequence txt = n.getText() != null ? n.getText() : n.getContentDescription();
+                        if (txt == null || !t.equalsIgnoreCase(txt.toString().trim())) continue;
+                        AccessibilityNodeInfo target = n;
+                        for (int i = 0; i < 3 && target != null && !target.isClickable(); i++) target = target.getParent();
+                        if (target == null || !target.isClickable() || !target.isEnabled()) continue;
+                        UpdLog.init(this);
+                        UpdLog.add("Play ストアの「" + t + "」を押しました(" + playPkg + ")");
+                        lastClick = System.currentTimeMillis();
+                        target.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+                        return true;
+                    }
+                }
+            }
+        } catch (Throwable ignored) {}
+        return false;
+    }
+
+    /**
+     * 指示「updater:play-install <パッケージ名>」: Play ストアでそのアプリの頁を開き、
+     * そこから 5 分間だけ Play ストアの「インストール」を押す。入ったら結果を返して止める。
+     */
+    static void playInstall(Context c, String pkg, int row, String cmd) {
+        ConfirmClickService s = instance;
+        if (s == null) { Remote.result(cmd + " → 押せません(「Duo Cruise Market」のユーザー補助がオフです)", row); return; }
+        if (UpdateEngine.installedVersion(c, pkg) >= 0) { Remote.result(cmd + " → もう入っています(v" + UpdateEngine.installedVersion(c, pkg) + ")", row); return; }
+        if (UpdateEngine.installedVersion(c, VENDING) < 0) { Remote.result(cmd + " → Play ストアが入っていません", row); return; }
+        android.content.Intent i = new android.content.Intent(android.content.Intent.ACTION_VIEW,
+                android.net.Uri.parse("market://details?id=" + pkg))
+                .setPackage(VENDING)
+                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+        playPkg = pkg; playCmd = cmd; playRow = row;
+        playUntil = System.currentTimeMillis() + PLAY_MS;
+        s.lastClick = 0;
+        try {
+            // ユーザー補助のサービスから開く(後ろにいるアプリが画面を開く制限の例外になる)
+            s.startActivity(i);
+        } catch (Throwable e) {
+            playUntil = 0;
+            Remote.result(cmd + " → Play ストアを開けません: " + e.getMessage(), row);
+            return;
+        }
+        UpdLog.init(c);
+        UpdLog.add("Play ストアで " + pkg + " を開きました(5分間「インストール」を押します)");
+        Remote.result(cmd + " → Play ストアを開きました(5分間「インストール」を押します。入ったらもう一度結果を送ります)", row);
+        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+            if (pkg.equals(playPkg) && UpdateEngine.installedVersion(c, pkg) < 0) {
+                playUntil = 0; playPkg = null;
+                Remote.result(cmd + " → 5分たっても入りませんでした(updater:screenshot で画面を確かめてください)", row);
+            }
+        }, PLAY_MS + 1000);
     }
 
     /** 指示「updater:confirm」: 今出ているインストール確認を押す(そのあと3分間は自動で押す)。 */
