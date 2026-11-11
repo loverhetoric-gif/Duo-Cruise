@@ -53,20 +53,30 @@ public class ConfirmClickService extends AccessibilityService {
         super.onDestroy();
     }
 
+    /**
+     * play-install の間、1 秒ごとに Play ストアの画面を見る。Play ストアの画面の変化は
+     * ユーザー補助の知らせ(event)で届かないことがあったため、知らせを待たない(2026-11-11 実機)。
+     */
+    private void playTick() {
+        long now = System.currentTimeMillis();
+        if (now > playUntil || playPkg == null) return;
+        if (UpdateEngine.installedVersion(this, playPkg) >= 0) {
+            String cmd = playCmd; int row = playRow;
+            playUntil = 0;
+            UpdLog.init(this);
+            UpdLog.add("Play ストアから " + playPkg + " が入りました");
+            Remote.result(cmd + " → 入りました(v" + UpdateEngine.installedVersion(this, playPkg) + ")", row);
+            playPkg = null;
+            return;
+        }
+        if (now - lastClick >= 2500) pressPlayInstall();
+        MAIN_H.postDelayed(this::playTick, 1000);
+    }
+
+    private static final android.os.Handler MAIN_H = new android.os.Handler(android.os.Looper.getMainLooper());
+
     @Override public void onAccessibilityEvent(AccessibilityEvent e) {
         long now = System.currentTimeMillis();
-        if (now <= playUntil) {
-            if (playPkg != null && UpdateEngine.installedVersion(this, playPkg) >= 0) {
-                String cmd = playCmd; int row = playRow;
-                playUntil = 0;
-                UpdLog.init(this);
-                UpdLog.add("Play ストアから " + playPkg + " が入りました");
-                Remote.result(cmd + " → 入りました(v" + UpdateEngine.installedVersion(this, playPkg) + ")", row);
-                playPkg = null;
-            } else if (now - lastClick >= 1500) {
-                pressPlayInstall();
-            }
-        }
         if (now > UpdateEngine.autoConfirmUntil) return;
         if (System.currentTimeMillis() - lastClick < 1500) return;
         pressConfirm();
@@ -194,6 +204,8 @@ public class ConfirmClickService extends AccessibilityService {
             Remote.result(cmd + " → Play ストアを開けません: " + e.getMessage(), row);
             return;
         }
+        MAIN_H.removeCallbacksAndMessages(null);
+        MAIN_H.postDelayed(s::playTick, 1500);
         UpdLog.init(c);
         UpdLog.add("Play ストアで " + pkg + " を開きました(5分間「インストール」を押します)");
         Remote.result(cmd + " → Play ストアを開きました(5分間「インストール」を押します。入ったらもう一度結果を送ります)", row);
