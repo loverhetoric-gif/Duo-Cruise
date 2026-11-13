@@ -29,6 +29,8 @@ jobs:
           # ビルド番号は送るたびに増やす必要があるため、日時（UTC）を使う
           BUILD_NUMBER=$(date -u +%Y%m%d%H%M)
           echo "ビルド番号：$BUILD_NUMBER"
+          # 作られる Info.plist は版番号を「1」と直に書くため、ここで今回のビルド番号に書き換える
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" DuoSlate/Info.plist
           OUT="$PWD/build/testflight"
           rm -rf "$OUT" && mkdir -p "$OUT"
           cat > "$OUT/ExportOptions.plist" <<'PLIST'
