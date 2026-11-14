@@ -1,6 +1,6 @@
 # Duo Slate（apps/slate）の iPhone 版を署名して組み立て、TestFlight へ送る。手動実行の時だけ動かす。
 # - アプリの ID は今までと同じ（com.yuki.duocruise.pad）。TestFlight から入れても、今のアプリを上書きする形で入り、設定は残る
-# - apps/ の中は変えない（変えると GitHub Actions が Android 版を作り、車へ正式版として配るため）。
+# - apps/ の中は変えない（Android 版を車へ配る仕組みに影響しないようにするため）。
 #   輸出コンプライアンスの答え（標準の暗号だけを使う）は、組み立ての時に作る Info.plist にだけ書き足す
 # - 署名と送信には App Store Connect API のパス（Upbeater TestFlight Admin）を使う。.p8 ファイルはこの Mac の
 #   ~/.appstoreconnect/private_keys/ にだけ置き、リポジトリには入れない
