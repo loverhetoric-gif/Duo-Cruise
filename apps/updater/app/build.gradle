@@ -18,7 +18,18 @@ android {
         buildConfigField "String", "LOG_URL", "\"" + logUrl.replace('"', '') + "\""
         // リアルタイムの更新の合図の口(ntfy.sh)。CI の秘密 DUO_PUSH_TOPIC から入る(Duo Cruise と同じ)。手元のビルドでは空(使わない)
         buildConfigField "String", "PUSH_TOPIC", "\"" + (System.getenv('DUO_PUSH_TOPIC') ?: '').replace('"', '') + "\""
+        // 受け取り先(Upbeater)と、その署名の公開鍵(世代番号 → base64url)。公開鍵は Upbeater の GET /v1/keys の値を
+        // 組み立てのときに渡す(.upbeater/android.yml)。空なら署名を確かめられないので、何も入れない
+        buildConfigField "String", "UPBEATER_HUB", "\"https://upbeater-hub.twilight-star-9d9d.workers.dev\""
+        buildConfigField "String", "UPBEATER_PUBLIC_KEYS", "\"" + (System.getenv('UPBEATER_PUBLIC_KEYS') ?: '').replace('\\', '').replace('"', '\\"') + "\""
+        buildConfigField "String", "UPBEATER_REVOKED", "\"" + (System.getenv('UPBEATER_REVOKED_GENERATIONS') ?: '').replaceAll('[^0-9,]', '') + "\""
     }
     buildFeatures { buildConfig true }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+}
+
+dependencies {
+    // 署名の確かめ・受け取りの決まりのテスト(gradle test。Android の機器は要らない)
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.json:json:20231013'
 }

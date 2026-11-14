@@ -1,0 +1,155 @@
+# Android 版（Duo Cruise Market・本体）を組み立てて署名し、Upbeater から車へ配る（docs/Upbeater配布_設計書.md）。
+# - 自宅の Mac の実行役（macos）で動く。GitHub Actions は使わない
+# - 配るのは1つのまとめ（duo-bundle.zip：manifest.json・duo-updater.apk・duo-main.apk・戻す用の prev-*.apk）
+# - 版番号（versionCode）は 2000 + Upbeater の実行番号（前の鍵の版 1199〜1201 より必ず大きい）
+# - 署名の鍵は Mac の ~/.duo-cruise/signing（.upbeater/android-keygen.yml で作る）。リポジトリ・ログに出さない
+# - 車の Market に埋め込む Upbeater の公開鍵は、組み立てのたびに Hub の GET /v1/keys から取る
+# - 最初の版を車で確かめるまでは手動実行だけ（確かめたら push を足す：設計書 6 の 7）
+name: android
+on:
+  manual: {}
+jobs:
+  build:
+    name: 組み立て・署名・配布
+    runs-on: macos
+    timeout: 90
+    concurrency: { group: duo-android, cancel-in-progress: false }
+    secrets: [DUO_PUSH_TOPIC, DUO_UPLOAD_URL, DUO_UPLOAD_TOKEN]
+    env:
+      BT_SIGN: "34.0.0"
+      BT_READ: "37.0.0"
+      HUB: https://upbeater-hub.twilight-star-9d9d.workers.dev
+    steps:
+      - uses: checkout
+        with:
+          fetch-depth: 0
+
+      - name: 道具を確かめる（Java 17・21・25、Gradle、Android SDK）
+        run: |
+          set -euo pipefail
+          for v in 17 21 25; do /usr/libexec/java_home -v "$v" >/dev/null 2>&1 || { echo "Java $v が入っていません（例：brew install --cask temurin@$v）"; exit 1; }; done
+          JAVA_PATHS="$(/usr/libexec/java_home -v 17),$(/usr/libexec/java_home -v 21),$(/usr/libexec/java_home -v 25)"
+          echo "JAVA_HOME=$(/usr/libexec/java_home -v 21)" >> "$GITHUB_ENV"
+          echo "GRADLE_OPTS=-Dorg.gradle.java.installations.paths=$JAVA_PATHS -Dorg.gradle.java.installations.auto-download=false" >> "$GITHUB_ENV"
+          command -v gradle >/dev/null || { echo "Gradle が入っていません（例：brew install gradle）"; exit 1; }
+          gradle --version | grep -E "^Gradle " || true
+          SDK="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
+          SDKM="$SDK/cmdline-tools/latest/bin/sdkmanager"
+          [ -x "$SDKM" ] || { echo "Android SDK の cmdline-tools がありません：$SDKM（Android Studio の SDK Manager で入れてください）"; exit 1; }
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          yes | "$SDKM" --licenses > /dev/null || true
+          "$SDKM" "platforms;android-34" "platforms;android-37.0" "build-tools;$BT_SIGN" "build-tools;$BT_READ" \
+            "ndk;27.0.12077973" "ndk;28.2.13676358" "cmake;3.22.1" > /dev/null
+
+      - name: Upbeater の公開鍵と版番号
+        run: |
+          set -euo pipefail
+          KEYS="$(curl -fsS --max-time 20 "$HUB/v1/keys")" || { echo "Upbeater の公開鍵を取れません（Hub の署名鍵が未設定なら、Upbeater の .upbeater/hub-signing-key.yml を先に実行）"; exit 1; }
+          PUB="$(printf '%s' "$KEYS" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(json.dumps({str(k["gen"]): k["jwk"]["x"] for k in d["keys"] if k["status"] != "revoked"}, separators=(",",":")))')"
+          REV="$(printf '%s' "$KEYS" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(",".join(str(k["gen"]) for k in d["keys"] if k["status"] == "revoked"))')"
+          [ "$PUB" != "{}" ] || { echo "使える公開鍵がありません"; exit 1; }
+          echo "UPBEATER_PUBLIC_KEYS=$PUB" >> "$GITHUB_ENV"
+          echo "UPBEATER_REVOKED_GENERATIONS=$REV" >> "$GITHUB_ENV"
+          echo "公開鍵：$PUB"
+          echo "VC=$((2000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
+          if [ -f apps/duo/settings.gradle ] || [ -f apps/duo/settings.gradle.kts ]; then echo "HAS_DUO=1" >> "$GITHUB_ENV"; else echo "HAS_DUO=0" >> "$GITHUB_ENV"; fi
+
+      - name: 更新アプリ（Duo Cruise Market）のテスト
+        working-directory: apps/updater
+        run: |
+          set -euo pipefail
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          gradle --no-daemon testDebugUnitTest -Pvc=$VC
+
+      - name: Duo Cruise Market を作る
+        working-directory: apps/updater
+        env:
+          DUO_PUSH_TOPIC: ${{ secrets.DUO_PUSH_TOPIC }}
+        run: |
+          set -euo pipefail
+          gradle --no-daemon assembleDebug -Pvc=$VC
+
+      - name: Duo Cruise 本体を作る（apps/duo があるときだけ）
+        working-directory: apps/duo
+        env:
+          DUO_PUSH_TOPIC: ${{ secrets.DUO_PUSH_TOPIC }}
+          DUO_UPLOAD_URL: ${{ secrets.DUO_UPLOAD_URL }}
+          DUO_UPLOAD_TOKEN: ${{ secrets.DUO_UPLOAD_TOKEN }}
+        run: |
+          set -euo pipefail
+          [ "$HAS_DUO" = 1 ] || { echo "apps/duo が無いので、本体は作りません"; exit 0; }
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          if [ -f gradlew ]; then chmod +x gradlew; ./gradlew --no-daemon assembleDebug -Pvc=$VC; else gradle --no-daemon assembleDebug -Pvc=$VC; fi
+
+      # 1つ前に配った版の中身を、今と同じ版番号で作り直す（「1つ前の版に戻す」用。中身が変わったアプリだけ）
+      - name: 1つ前の版を作り直す（戻す用）
+        env:
+          DUO_PUSH_TOPIC: ${{ secrets.DUO_PUSH_TOPIC }}
+          DUO_UPLOAD_URL: ${{ secrets.DUO_UPLOAD_URL }}
+          DUO_UPLOAD_TOKEN: ${{ secrets.DUO_UPLOAD_TOKEN }}
+        run: |
+          set -euo pipefail
+          LAST="$HOME/.duo-cruise/last-release-sha"
+          mkdir -p prev-out
+          [ -f "$LAST" ] || { echo "1つ前に配った版が無いので、戻す用は作りません"; exit 0; }
+          PREV_SHA="$(cat "$LAST")"
+          git rev-parse -q --verify "$PREV_SHA^{commit}" >/dev/null || { echo "1つ前の版のコミットが見つからないので、戻す用は作りません"; exit 0; }
+          echo "PREV_SHA=$PREV_SHA" >> "$GITHUB_ENV"
+          git worktree add -f prev-src "$PREV_SHA"
+          for app in updater duo; do
+            [ -d "prev-src/apps/$app" ] && [ -d "apps/$app" ] || continue
+            if git diff --quiet "$PREV_SHA" HEAD -- "apps/$app"; then echo "$app: 中身が同じなので省きます"; continue; fi
+            echo "$app: 1つ前の中身を版番号 $VC で作り直します"
+            (
+              cd "prev-src/apps/$app"
+              echo "sdk.dir=$ANDROID_HOME" > local.properties
+              if [ -f gradlew ]; then chmod +x gradlew; ./gradlew --no-daemon assembleDebug -Pvc=$VC; else gradle --no-daemon assembleDebug -Pvc=$VC; fi
+            ) && cp "prev-src/apps/$app/app/build/outputs/apk/debug/app-debug.apk" "prev-out/$app.apk" \
+              || echo "$app: 1つ前の中身を作れませんでした（戻す用から省きます）"
+          done
+
+      - name: 署名して、まとめを作る
+        run: |
+          set -euo pipefail
+          DIR="$HOME/.duo-cruise/signing"
+          [ -f "$DIR/mx.jks" ] && [ -f "$DIR/pass" ] || { echo "署名の鍵がありません。先に .upbeater/android-keygen.yml を実行してください"; exit 1; }
+          export KS_PASS="$(cat "$DIR/pass")"
+          BT="$ANDROID_HOME/build-tools/$BT_SIGN"
+          rm -rf out && mkdir -p out
+          sign() {
+            "$BT/zipalign" -f -p 4 "$1" "$RUNNER_TEMP/aligned.apk"
+            "$BT/apksigner" sign --ks "$DIR/mx.jks" --ks-key-alias mx --ks-pass env:KS_PASS --key-pass env:KS_PASS \
+              --v4-signing-enabled false --out "out/$2" "$RUNNER_TEMP/aligned.apk"
+            "$BT/apksigner" verify "out/$2"
+          }
+          sign apps/updater/app/build/outputs/apk/debug/app-debug.apk duo-updater.apk
+          if [ "$HAS_DUO" = 1 ]; then sign apps/duo/app/build/outputs/apk/debug/app-debug.apk duo-main.apk; fi
+          if [ -f prev-out/updater.apk ]; then sign prev-out/updater.apk prev-duo-updater.apk; fi
+          if [ -f prev-out/duo.apk ]; then sign prev-out/duo.apk prev-duo-main.apk; fi
+          rm -f out/*.idsig "$RUNNER_TEMP/aligned.apk"
+          python3 tools/make_manifest.py out "$ANDROID_HOME/build-tools/$BT_READ/aapt2" "$VC" "${PREV_SHA:-}"
+          (cd out && zip -q -X ../duo-bundle.zip manifest.json *.apk)
+          ls -la out duo-bundle.zip
+          cat out/manifest.json
+
+      - distribute:
+          platform: android
+          file: duo-bundle.zip
+          install:
+            package: com.yuki.duocruise.updater
+
+      # 配れたら、この版を「1つ前の版」として覚える（次の組み立てで戻す用を作るため）
+      - name: 配った版を覚える
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.duo-cruise"
+          git rev-parse HEAD > "$HOME/.duo-cruise/last-release-sha"
+          echo "配りました：versionCode $VC（$(git rev-parse --short HEAD)）"
+
+      # リアルタイムの更新：車の Duo Cruise が待っている口（ntfy.sh）へ「check」を送る（中身は check の一言だけ）
+      - name: 車に新しい版を知らせる
+        continue-on-error: true
+        env:
+          TOPIC: ${{ secrets.DUO_PUSH_TOPIC }}
+        run: |
+          if [ -n "${TOPIC:-}" ]; then curl -fsS -d check "https://ntfy.sh/$TOPIC" >/dev/null && echo "知らせました"; else echo "DUO_PUSH_TOPIC が無いので知らせません（車は15分ごとに確かめます）"; fi

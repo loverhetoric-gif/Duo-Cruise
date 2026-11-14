@@ -24,14 +24,14 @@ Upbeater の配布は「1つのリポジトリ・1つの OS に1つのファイ�
 | `duo-updater.apk`・`duo-main.apk` | Market と本体（新しい鍵で署名） |
 | `prev-*.apk` | 1つ前の版の中身を、今と同じ版番号で作り直したもの（「1つ前の版に戻す」用。Android は版番号を下げられないため） |
 
-- 版番号（versionCode）は `2000 + Upbeater の通番` とする（前の鍵の版 1199〜1201 より必ず大きく、入れ直し後の版と重ならない）。
-- テスト版は配らない（Upbeater は既定ブランチの版だけを配る）。試すときは手動実行で配る前に、Upbeater の一時停止・段階配信で1台に限って確かめる。
+- 版番号（versionCode）は `2000 + Upbeater の実行番号`（`GITHUB_RUN_NUMBER`）とする。前の鍵の版 1199〜1201 より必ず大きく、実行のたびに増える（配布の通番は組み立てが成功してから決まるため、組み立て中には使えない）。
+- テスト版は配らない（Upbeater は既定ブランチの版だけを配る）。Market の「テスト版を受け取る」と指示 `updater:test-channel` は消した。試すときは Upbeater の一時停止・段階配信を使う。
 
 ## 4. 組み立て（`.upbeater/android.yml`、Mac の実行役 `macos`）
 
 - 合図：main の `apps/**`・`patches/**`・`tools/**` の変更と、手動実行。同時に1つだけ（concurrency）。
-- 手順：取り出し（履歴ごと）→ Java 17/21/25・Gradle 8.14.3・Android SDK の確認 → Market と本体の組み立て → 1つ前の版の作り直し → 署名（`zipalign`・`apksigner`）と確かめ → `manifest.json` → zip → `distribute`（`platform: android`、`install` に `package` を書く）→ ntfy で車に「check」を送る。
-- 署名の鍵：Mac の `~/.duo-cruise/signing/mx.jks` に置き、パスワードは Mac のキーチェーン（`duo-cruise-keystore`）。リポジトリ・ログ・チャットに出さない。鍵を作る手順は別の手動実行（`.upbeater/android-keygen.yml`。あれば上書きしない）。**鍵を失うと今回と同じ入れ直しが要るため、作ったら利用者が控えを取る**（Mac の Time Machine など）。
+- 手順：取り出し（履歴ごと）→ Java 17/21/25・Gradle・Android SDK の確認 → Upbeater の公開鍵（`GET /v1/keys`）を取る → Market のテスト → Market と本体の組み立て → 1つ前の版の作り直し（前に配ったコミットを Mac の `~/.duo-cruise/last-release-sha` に覚えておく）→ 署名（`zipalign`・`apksigner`）と確かめ → `manifest.json` → zip → `distribute`（`platform: android`）→ 配ったコミットを覚える → ntfy で車に「check」を送る（失敗しても配布は止めない）。
+- 署名の鍵：Mac の `~/.duo-cruise/signing/mx.jks`、パスワードは同じ場所の `pass`（どちらも権限 600。実行役はログインの画面の外でも動くため、鍵の束（キーチェーン）は使わない）。リポジトリ・ログ・チャットに出さない。鍵を作る手順は別の手動実行（`.upbeater/android-keygen.yml`。あれば上書きしない）。**鍵を失うと今回と同じ入れ直しが要るため、作ったら利用者が控えを取る**（Mac の Time Machine など）。
 - `DUO_PUSH_TOPIC`・`DUO_UPLOAD_URL`・`DUO_UPLOAD_TOKEN` は Upbeater の秘密情報（`request_secrets` の入力ページで利用者が入れる）。
 
 ## 5. 車の Market の受け取り
@@ -46,10 +46,10 @@ Upbeater の配布は「1つのリポジトリ・1つの OS に1つのファイ�
 
 ## 6. 進める順番
 
-1. Upbeater の Hub に署名鍵（`MANIFEST_SIGNING_KEYS`）を入れ、公開鍵を `GET /v1/keys` で取る（Mac の実行役の手動実行。秘密の部分は Mac の `~/.upbeater/hub-secrets.json` にだけ置く）。
-2. 新しい Android の署名の鍵を作る（`android-keygen.yml`）。
-3. Market に Upbeater の受け取りを足し、GitHub を見る処理を消す。Mac で組み立てて確かめる。
-4. `android.yml` を手動で実行し、最初の版を Upbeater に置く。
+1. Upbeater の Hub に署名鍵（`MANIFEST_SIGNING_KEYS`）を入れる：Upbeater の `.upbeater/hub-signing-key.yml` を手動実行（秘密の部分は Mac の `~/.upbeater/hub-secrets.json` にだけ置く）。公開鍵は組み立てのたびに `GET /v1/keys` から取る。
+2. 新しい Android の署名の鍵を作る：`.upbeater/android-keygen.yml` を手動実行。
+3. Market に Upbeater の受け取りを足し、GitHub を見る処理を消す（済み。署名の確かめ・受け取りの決まり・まとめの取り出しはテストで確認。Android の部品の定義に対しての組み立ても確認）。
+4. `.upbeater/android.yml` を手動で実行し、最初の版を Upbeater に置く（Mac の道具が足りなければ、手順の表示に従って入れる）。
 5. **車で今の Market と本体を消し**、新しい Market を入れる（最初の1回だけ。入れ方は Mac から作った APK を車へ渡す。手順は利用者と決める）。
 6. 記録シートの指示で登録し、Market が本体を入れることを確かめる。
 7. `android.yml` を main の変更で自動に動かす。
