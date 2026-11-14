@@ -61,6 +61,8 @@ MAZDA MX-30 の CarPlay 口につないだ OTTOCAST OttoAibox P3 Pro(以下 OTTO
 
 ## 4. 配布と更新
 
+> 2026-11-14：GitHub Actions を外し、GitHub のリリースも無くなったため、配布は Upbeater に移す（[設計書](Upbeater配布_設計書.md)）。移し終えるまで、下の流れは止まっている。
+
 1. GitHub(loverhetoric-gif/Duo-Cruise)に変更を入れる
 2. 自動ビルドが作って署名する。main に入ったら正式版(build-番号)、PR のときはテスト版(test-番号)
 3. OTTO の Duo Cruise Market が新しい版を取って入れる
