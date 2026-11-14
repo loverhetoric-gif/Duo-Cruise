@@ -24,22 +24,62 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: 道具を確かめる（Java 17・21・25、Gradle、Android SDK）
+      # 道具は Mac の全体には入れず、足りないものだけを ~/.duo-cruise/tools に取り寄せる（2回目からは取り寄せない）
+      - name: 道具をそろえる（Java 17・21・25、Gradle、Android SDK）
         run: |
           set -euo pipefail
           for v in 17 21 25; do /usr/libexec/java_home -v "$v" >/dev/null 2>&1 || { echo "Java $v が入っていません（例：brew install --cask temurin@$v）"; exit 1; }; done
           JAVA_PATHS="$(/usr/libexec/java_home -v 17),$(/usr/libexec/java_home -v 21),$(/usr/libexec/java_home -v 25)"
           echo "JAVA_HOME=$(/usr/libexec/java_home -v 21)" >> "$GITHUB_ENV"
           echo "GRADLE_OPTS=-Dorg.gradle.java.installations.paths=$JAVA_PATHS -Dorg.gradle.java.installations.auto-download=false" >> "$GITHUB_ENV"
-          command -v gradle >/dev/null || { echo "Gradle が入っていません（例：brew install gradle）"; exit 1; }
-          gradle --version | grep -E "^Gradle " || true
+          TOOLS="$HOME/.duo-cruise/tools"
+          mkdir -p "$TOOLS"
+          # Gradle（Actions のときと同じ 8.14.3。配布元の SHA-256 と照らし合わせてから使う）
+          GV=8.14.3
+          if [ ! -x "$TOOLS/gradle-$GV/bin/gradle" ]; then
+            echo "Gradle $GV を取り寄せます"
+            T="$(mktemp -d)"
+            curl -fsSL -o "$T/g.zip" "https://services.gradle.org/distributions/gradle-$GV-bin.zip"
+            WANT="$(curl -fsSL "https://services.gradle.org/distributions/gradle-$GV-bin.zip.sha256" | tr -d '[:space:]')"
+            GOT="$(shasum -a 256 "$T/g.zip" | cut -d' ' -f1)"
+            [ -n "$WANT" ] && [ "$WANT" = "$GOT" ] || { echo "Gradle の SHA-256 が合いません"; exit 1; }
+            unzip -q "$T/g.zip" -d "$TOOLS"
+            rm -rf "$T"
+          fi
+          echo "$TOOLS/gradle-$GV/bin" >> "$GITHUB_PATH"
+          "$TOOLS/gradle-$GV/bin/gradle" --version | grep -E "^Gradle "
+          # Android SDK（あればそれを使う。無ければ Google の一覧から cmdline-tools を取り寄せ、SHA-1 を照らし合わせる）
           SDK="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
           SDKM="$SDK/cmdline-tools/latest/bin/sdkmanager"
-          [ -x "$SDKM" ] || { echo "Android SDK の cmdline-tools がありません：$SDKM（Android Studio の SDK Manager で入れてください）"; exit 1; }
+          if [ ! -x "$SDKM" ]; then
+            echo "Android SDK の cmdline-tools を取り寄せます：$SDK"
+            T="$(mktemp -d)"
+            curl -fsSL -o "$T/repo.xml" https://dl.google.com/android/repository/repository2-3.xml
+            PICK="$(python3 -c 'import sys, xml.etree.ElementTree as ET
+          r = ET.parse(sys.argv[1]).getroot()
+          for p in r.iter():
+              if p.tag.endswith("remotePackage") and p.get("path") == "cmdline-tools;latest":
+                  for a in p.iter():
+                      if a.tag.endswith("archive") and next((x.text for x in a.iter() if x.tag.endswith("host-os")), "") == "macosx":
+                          print(next(x.text for x in a.iter() if x.tag.endswith("url")), next(x.text for x in a.iter() if x.tag.endswith("checksum"))); sys.exit(0)
+          sys.exit("cmdline-tools が一覧に見つかりません")' "$T/repo.xml")"
+            URL="${PICK%% *}"; SHA1="${PICK##* }"
+            curl -fsSL -o "$T/c.zip" "https://dl.google.com/android/repository/$URL"
+            [ "$(shasum -a 1 "$T/c.zip" | cut -d' ' -f1)" = "$SHA1" ] || { echo "cmdline-tools の SHA-1 が合いません"; exit 1; }
+            mkdir -p "$SDK/cmdline-tools"
+            rm -rf "$SDK/cmdline-tools/latest"
+            unzip -q "$T/c.zip" -d "$T/x"
+            mv "$T/x/cmdline-tools" "$SDK/cmdline-tools/latest"
+            rm -rf "$T"
+          fi
           echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
           yes | "$SDKM" --licenses > /dev/null || true
           "$SDKM" "platforms;android-34" "platforms;android-37.0" "build-tools;$BT_SIGN" "build-tools;$BT_READ" \
             "ndk;27.0.12077973" "ndk;28.2.13676358" "cmake;3.22.1" > /dev/null
+          echo "道具がそろいました"
+          # 車への即時の知らせの合言葉（ntfy の口）。秘密情報 DUO_PUSH_TOPIC が無ければ、Mac に1回だけ作って覚える
+          TF="$HOME/.duo-cruise/push-topic"
+          if [ -z "${DUO_PUSH_TOPIC:-}" ] && [ ! -s "$TF" ]; then (umask 077; echo "duo-$(openssl rand -hex 16)" > "$TF"); echo "知らせの合言葉を作りました（$TF）"; fi
 
       - name: Upbeater の公開鍵と版番号
         run: |
@@ -52,6 +92,7 @@ jobs:
           echo "UPBEATER_REVOKED_GENERATIONS=$REV" >> "$GITHUB_ENV"
           echo "公開鍵：$PUB"
           echo "VC=$((2000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
+          if [ -z "${DUO_PUSH_TOPIC:-}" ] && [ -s "$HOME/.duo-cruise/push-topic" ]; then echo "DUO_PUSH_TOPIC=$(cat "$HOME/.duo-cruise/push-topic")" >> "$GITHUB_ENV"; fi
           if [ -f apps/duo/settings.gradle ] || [ -f apps/duo/settings.gradle.kts ]; then echo "HAS_DUO=1" >> "$GITHUB_ENV"; else echo "HAS_DUO=0" >> "$GITHUB_ENV"; fi
 
       - name: 更新アプリ（Duo Cruise Market）のテスト
@@ -63,18 +104,12 @@ jobs:
 
       - name: Duo Cruise Market を作る
         working-directory: apps/updater
-        env:
-          DUO_PUSH_TOPIC: ${{ secrets.DUO_PUSH_TOPIC }}
         run: |
           set -euo pipefail
           gradle --no-daemon assembleDebug -Pvc=$VC
 
       - name: Duo Cruise 本体を作る（apps/duo があるときだけ）
         working-directory: apps/duo
-        env:
-          DUO_PUSH_TOPIC: ${{ secrets.DUO_PUSH_TOPIC }}
-          DUO_UPLOAD_URL: ${{ secrets.DUO_UPLOAD_URL }}
-          DUO_UPLOAD_TOKEN: ${{ secrets.DUO_UPLOAD_TOKEN }}
         run: |
           set -euo pipefail
           [ "$HAS_DUO" = 1 ] || { echo "apps/duo が無いので、本体は作りません"; exit 0; }
@@ -83,10 +118,6 @@ jobs:
 
       # 1つ前に配った版の中身を、今と同じ版番号で作り直す（「1つ前の版に戻す」用。中身が変わったアプリだけ）
       - name: 1つ前の版を作り直す（戻す用）
-        env:
-          DUO_PUSH_TOPIC: ${{ secrets.DUO_PUSH_TOPIC }}
-          DUO_UPLOAD_URL: ${{ secrets.DUO_UPLOAD_URL }}
-          DUO_UPLOAD_TOKEN: ${{ secrets.DUO_UPLOAD_TOKEN }}
         run: |
           set -euo pipefail
           LAST="$HOME/.duo-cruise/last-release-sha"
@@ -149,7 +180,5 @@ jobs:
       # リアルタイムの更新：車の Duo Cruise が待っている口（ntfy.sh）へ「check」を送る（中身は check の一言だけ）
       - name: 車に新しい版を知らせる
         continue-on-error: true
-        env:
-          TOPIC: ${{ secrets.DUO_PUSH_TOPIC }}
         run: |
-          if [ -n "${TOPIC:-}" ]; then curl -fsS -d check "https://ntfy.sh/$TOPIC" >/dev/null && echo "知らせました"; else echo "DUO_PUSH_TOPIC が無いので知らせません（車は15分ごとに確かめます）"; fi
+          if [ -n "${DUO_PUSH_TOPIC:-}" ]; then curl -fsS -d check "https://ntfy.sh/$DUO_PUSH_TOPIC" >/dev/null && echo "知らせました"; else echo "知らせの合言葉が無いので知らせません（車は15分ごとに確かめます）"; fi
