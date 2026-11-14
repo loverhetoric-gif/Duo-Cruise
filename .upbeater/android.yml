@@ -28,10 +28,22 @@ jobs:
       - name: 道具をそろえる（Java 17・21・25、Gradle、Android SDK）
         run: |
           set -euo pipefail
-          for v in 17 21 25; do /usr/libexec/java_home -v "$v" >/dev/null 2>&1 || { echo "Java $v が入っていません（例：brew install --cask temurin@$v）"; exit 1; }; done
-          JAVA_PATHS="$(/usr/libexec/java_home -v 17),$(/usr/libexec/java_home -v 21),$(/usr/libexec/java_home -v 25)"
+          # Java は「その版の JDK（javac を持つもの）」を選ぶ。java_home が古いブラウザ用の Java などを返したときは止める
+          JAVA_PATHS=""
+          for v in 17 21 25; do
+            H="$(/usr/libexec/java_home -v "$v" 2>/dev/null || true)"
+            if [ -z "$H" ] || [ ! -x "$H/bin/javac" ] || ! "$H/bin/java" -version 2>&1 | grep -qE "version \"$v[\".]"; then
+              echo "Java $v の JDK が見つかりません（見つかった場所：${H:-なし}）。例：brew install --cask temurin@$v"; exit 1
+            fi
+            echo "Java $v：$H"
+            JAVA_PATHS="${JAVA_PATHS:+$JAVA_PATHS,}$H"
+          done
           echo "JAVA_HOME=$(/usr/libexec/java_home -v 21)" >> "$GITHUB_ENV"
-          echo "GRADLE_OPTS=-Dorg.gradle.java.installations.paths=$JAVA_PATHS -Dorg.gradle.java.installations.auto-download=false" >> "$GITHUB_ENV"
+          # Gradle の設定は、この組み立て専用の置き場所のファイルで渡す（場所に空白があっても崩れない）
+          GH="$HOME/.duo-cruise/gradle-home"
+          mkdir -p "$GH"
+          printf 'org.gradle.java.installations.paths=%s\norg.gradle.java.installations.auto-download=false\n' "$JAVA_PATHS" > "$GH/gradle.properties"
+          echo "GRADLE_USER_HOME=$GH" >> "$GITHUB_ENV"
           TOOLS="$HOME/.duo-cruise/tools"
           mkdir -p "$TOOLS"
           # Gradle（Actions のときと同じ 8.14.3。配布元の SHA-256 と照らし合わせてから使う）
