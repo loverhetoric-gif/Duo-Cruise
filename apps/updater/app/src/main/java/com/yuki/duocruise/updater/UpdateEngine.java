@@ -13,11 +13,8 @@ import org.json.JSONObject;
 
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
 import java.security.MessageDigest;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -26,22 +23,15 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * GitHub のリリースを見て、入っているアプリより新しければ、取得して入れる。
- * ・ふだんは正式版(latest)だけを見る
- * ・「テスト版を受け取る」がオンなら、テスト版(prerelease)も含めた一番新しいものを見る
- * ・「1つ前の版に戻す」は、正式版に付いている「1つ前の版を同じ版番号で作り直したもの」を入れる
+ * Upbeater から新しい版のまとめ(zip)を受け取り、入っているアプリより新しければ入れる(docs/Upbeater配布_設計書.md)。
+ * ・まとめの中の manifest.json(tools/make_manifest.py の形)に、アプリごとのパッケージ・版番号・ファイル・SHA-256 がある
+ * ・受け取ったまとめは、次の版が来るまで端末に置いておく(未導入のアプリを入れる・1つ前に戻すときに使う)
+ * ・「1つ前の版に戻す」は、まとめに付いている「1つ前の版を同じ版番号で作り直したもの」を入れる
  *   (Android は版番号を下げられないため、版番号は今と同じにして中身だけ1つ前にする)
  */
 final class UpdateEngine {
-    static final String REPO_API = "https://api.github.com/repos/loverhetoric-gif/Duo-Cruise";
-    static final String RELEASE_API = REPO_API + "/releases/latest";
-    /** テスト版(変更の提案の段階で作ったもの)も含めた、新しい順の一覧。 */
-    static final String RELEASES_API = REPO_API + "/releases?per_page=50";
     static final String ACTION = "com.yuki.duocruise.updater.INSTALL_RESULT";
 
-    /** true のとき、テスト版も受け取る。 */
-    static boolean testChannel(Context c) { return prefs(c).getBoolean("test", false); }
-    static void setTestChannel(Context c, boolean v) { prefs(c).edit().putBoolean("test", v).apply(); }
     private static android.content.SharedPreferences prefs(Context c) { return c.getSharedPreferences("upd", Context.MODE_PRIVATE); }
 
     /** この時刻まで、ユーザー補助がインストール確認を自動で押す。 */
@@ -52,14 +42,17 @@ final class UpdateEngine {
     private static final Object LOCK = new Object();
 
     static final class Item {
-        String pkg, label, file, sha256, url;
+        String pkg, label, file, sha256;
+        File local;
         long versionCode, installed = -1, size;
         boolean needsUpdate() { return installed >= 0 && versionCode > installed; }
     }
 
+    /** 端末に置いてある、受け取り済みのまとめ。 */
     static final class Release {
         String name;
-        JSONArray assets;
+        long seq;
+        File dir;
         JSONObject manifest;
     }
 
@@ -70,56 +63,51 @@ final class UpdateEngine {
         } catch (PackageManager.NameNotFoundException e) { return -1; }
     }
 
-    private static byte[] get(String u, int max) throws Exception {
-        HttpURLConnection h = (HttpURLConnection) new URL(u).openConnection();
-        h.setConnectTimeout(15000);
-        h.setReadTimeout(30000);
-        h.setRequestProperty("User-Agent", "duo-updater");
-        h.setRequestProperty("Accept", "application/vnd.github+json");
-        if (h.getResponseCode() != 200) throw new Exception("HTTP " + h.getResponseCode() + " " + u);
-        try (InputStream in = h.getInputStream()) {
-            java.io.ByteArrayOutputStream b = new java.io.ByteArrayOutputStream();
-            byte[] buf = new byte[16384]; int n;
-            while ((n = in.read(buf)) > 0) { b.write(buf, 0, n); if (b.size() > max) throw new Exception("too large"); }
-            return b.toByteArray();
-        }
+    private static File bundleRoot(Context c) {
+        File base = c.getExternalCacheDir() != null ? c.getExternalCacheDir() : c.getCacheDir();
+        return new File(base, "upbeater");
     }
 
-    private static String assetUrl(JSONArray assets, String name) throws Exception {
-        for (int i = 0; i < assets.length(); i++) {
-            JSONObject a = assets.getJSONObject(i);
-            if (name.equals(a.getString("name"))) {
-                String u = a.getString("browser_download_url");
-                return u.startsWith("https://") ? u : null;
-            }
-        }
-        return null;
-    }
-
-    /** 見に行くリリースを1つ決めて、manifest.json まで読む。test=true ならテスト版も含めて一番新しいもの。 */
-    static Release release(Context c, boolean test) throws Exception {
-        JSONObject rel = null;
-        if (test) {
-            // GitHub の一覧は公開の新しい順に並ばない(正式版が先に来る)ので、公開時刻で一番新しいものを選ぶ
-            JSONArray list = new JSONArray(new String(get(RELEASES_API, 4 << 20), "UTF-8"));
-            String newest = "";
-            for (int i = 0; i < list.length(); i++) {
-                JSONObject o = list.getJSONObject(i);
-                if (o.optBoolean("draft", false)) continue;
-                String at = o.optString("published_at", "");
-                if (rel == null || at.compareTo(newest) > 0) { rel = o; newest = at; }
-            }
-            if (rel == null) throw new Exception("リリースがありません");
-        } else {
-            rel = new JSONObject(new String(get(RELEASE_API, 1 << 20), "UTF-8"));
-        }
+    /** 置いてあるまとめを読む。無ければ null。 */
+    static Release cached(Context c) throws Exception {
+        long seq = prefs(c).getLong("bundle_seq", 0);
+        if (seq <= 0) return null;
+        File dir = new File(bundleRoot(c), "current");
+        File m = new File(dir, "manifest.json");
+        if (!m.isFile()) return null;
         Release r = new Release();
-        r.name = rel.optString("tag_name", rel.optString("name", "?")) + (rel.optBoolean("prerelease", false) ? "(テスト版)" : "");
-        r.assets = rel.getJSONArray("assets");
-        String manifestUrl = assetUrl(r.assets, "manifest.json");
-        if (manifestUrl == null) throw new Exception("manifest.json が見つかりません");
-        r.manifest = new JSONObject(new String(get(manifestUrl, 1 << 20), "UTF-8"));
+        r.seq = seq;
+        r.dir = dir;
+        r.name = "版 " + seq;
+        byte[] b = new byte[(int) Math.min(m.length(), 1 << 20)];
+        try (InputStream in = new FileInputStream(m)) { int off = 0, n; while (off < b.length && (n = in.read(b, off, b.length - off)) > 0) off += n; }
+        r.manifest = new JSONObject(new String(b, "UTF-8"));
         return r;
+    }
+
+    /**
+     * Upbeater に照合し、新しい版があれば取得して置き換える。無ければ置いてあるまとめを使う。
+     * 同じ版を取り直さない(入れ終わるまで通番は進めないため、同じ版を何度も勧められる)。
+     */
+    static Release release(Context c) throws Exception {
+        Release have = cached(c);
+        Upbeater.Offer o = Upbeater.check(c);
+        if (o != null && (have == null || have.seq != o.seq)) {
+            UpdLog.add("Upbeater に新しい版(版 " + o.seq + (o.rollback ? "・巻き戻し" : "") + ")があります。取得します");
+            Upbeater.report(c, o.seq, "downloading", null);
+            File root = bundleRoot(c);
+            root.mkdirs();
+            File next = new File(root, "next");
+            Upbeater.download(c, o, next);
+            File cur = new File(root, "current");
+            Upbeater.deleteTree(cur);
+            if (!next.renameTo(cur)) throw new Exception("まとめを置き換えられません");
+            prefs(c).edit().putLong("bundle_seq", o.seq).apply();
+            Upbeater.report(c, o.seq, "verifying", "まとめの署名・SHA-256 を確かめました");
+            have = cached(c);
+        }
+        if (have == null) throw new Exception("Upbeater に配る版がまだありません");
+        return have;
     }
 
     /** manifest の一覧(apps または rollback)を Item にする。自分自身(更新アプリ)は最後に回す。 */
@@ -137,8 +125,8 @@ final class UpdateEngine {
             it.file = o.getString("file");
             it.sha256 = o.getString("sha256").toLowerCase(Locale.ROOT);
             it.size = o.optLong("size", 0);
-            it.url = assetUrl(r.assets, it.file);
-            if (it.url == null) continue;
+            it.local = new File(r.dir, it.file);
+            if (it.file.contains("/") || !it.local.isFile()) continue;
             it.installed = installedVersion(c, it.pkg);
             // 自分を入れると、その場でこのアプリが止まる。ほかを先に入れる
             if (it.pkg.equals(c.getPackageName())) self = it; else out.add(it);
@@ -149,12 +137,14 @@ final class UpdateEngine {
 
     /** 最新の一覧を取得する(入れはしない)。 */
     static List<Item> fetch(Context c) throws Exception {
-        boolean test = testChannel(c);
-        Release r = release(c, test);
+        Release r = release(c);
         lastRelease = r.name;
-        if (test) UpdLog.add("テスト版も含めて確認: " + r.name);
+        current = r;
         return items(c, r, "apps");
     }
+
+    /** いま使っているまとめ(入れ終わったかの判定と報告に使う)。 */
+    private static Release current;
 
     private static String now() { return new SimpleDateFormat("MM/dd HH:mm", Locale.JAPAN).format(new Date()); }
 
@@ -165,7 +155,7 @@ final class UpdateEngine {
     /**
      * 新しい版ができた合図を受けたときの確認(リアルタイムの更新)。呼んだスレッドで最後まで動く。
      * 合図は更新アプリ自身(PushListener)と Duo Cruise の中継(CheckReceiver)の両方から届くので、
-     * 確認中に届いた分は捨てる。公開の直後は GitHub の一覧に新しい版がまだ出ないことがある(10-29 に 1 回)ため、
+     * 確認中に届いた分は捨てる。公開の直後は新しい版がまだ配れる状態になっていないことがあるため、
      * 何も入らなければ少し待って確かめ直す。結果はすぐ記録シートへ送る。
      * @param from 合図の届き方(記録用)
      */
@@ -234,24 +224,42 @@ final class UpdateEngine {
                 }
                 UpdLog.add("確認を終了しました(インストール開始 " + started + " 件)");
                 lastResult = now() + " " + lastRelease + " を確認、インストール開始 " + started + " 件";
+                settle(c, started);
             } catch (Exception e) {
                 UpdLog.add("失敗: " + e.getMessage());
                 lastResult = now() + " 失敗: " + e.getMessage();
+                Release r = current;
+                if (r != null && r.seq > Upbeater.appliedSeq(c)) Upbeater.report(c, r.seq, "failed", e.getMessage());
             }
             return started;
         }
     }
 
     /**
-     * 1つ前の正式版に戻す。正式版の manifest の rollback(1つ前の中身・今と同じ版番号)を入れる。
-     * 今の正式版が入っているアプリだけが対象(テスト版が入っているもの・古いものは触らない)。
+     * まとめの中のアプリが、すべてまとめの版(以上)になっていれば、その版を入れ終えたとして Upbeater に知らせる。
+     * 入れ始めたものがあるときは結果を待つ(次の確認で判定する。更新アプリ自身は入れ替えで止まるため)。
+     */
+    private static void settle(Context c, int started) throws Exception {
+        Release r = current;
+        if (r == null || r.seq <= Upbeater.appliedSeq(c)) return;
+        if (started > 0) { Upbeater.report(c, r.seq, "installing", started + " 件のインストールを始めました"); return; }
+        for (Item it : items(c, r, "apps")) if (it.installed < it.versionCode) return;
+        Upbeater.markApplied(c, r.seq);
+        Upbeater.report(c, r.seq, "installed", "まとめのアプリをすべて入れ終えました");
+        UpdLog.add("版 " + r.seq + " を入れ終えました(Upbeater に知らせました)");
+    }
+
+    /**
+     * 1つ前の版に戻す。置いてあるまとめの manifest の rollback(1つ前の中身・今と同じ版番号)を入れる。
+     * 今のまとめの版が入っているアプリだけが対象(古いものは触らない)。
      */
     static int rollback(Context c) {
         synchronized (LOCK) {
             UpdLog.init(c);
             int started = 0;
             try {
-                Release r = release(c, false);
+                Release r = cached(c);
+                if (r == null) { UpdLog.add("戻せる版がありません(まだ版を受け取っていません)"); return 0; }
                 String of = r.manifest.optString("rollbackOf", "");
                 List<Item> list = items(c, r, "rollback");
                 if (list.isEmpty()) {
@@ -261,7 +269,7 @@ final class UpdateEngine {
                 UpdLog.add("1つ前の版(" + (of.isEmpty() ? "?" : of) + ")に戻します");
                 for (Item it : list) {
                     if (it.installed != it.versionCode) {
-                        UpdLog.add(it.label + ": 今の正式版(v" + it.versionCode + ")ではないので戻しません (入っているのは v" + it.installed + ")");
+                        UpdLog.add(it.label + ": 今の版(v" + it.versionCode + ")ではないので戻しません (入っているのは v" + it.installed + ")");
                         continue;
                     }
                     File f = download(c, it);
@@ -277,23 +285,15 @@ final class UpdateEngine {
         }
     }
 
+    /** まとめから取り出したファイルの SHA-256 を、manifest の値と照らし合わせる。 */
     private static File download(Context c, Item it) throws Exception {
-        File dir = c.getExternalCacheDir() != null ? c.getExternalCacheDir() : c.getCacheDir();
-        File f = new File(dir, it.file);
-        HttpURLConnection h = (HttpURLConnection) new URL(it.url).openConnection();
-        h.setConnectTimeout(15000);
-        h.setReadTimeout(60000);
-        h.setRequestProperty("User-Agent", "duo-updater");
-        if (h.getResponseCode() != 200) throw new Exception("HTTP " + h.getResponseCode());
         MessageDigest md = MessageDigest.getInstance("SHA-256");
-        try (InputStream in = h.getInputStream(); OutputStream out = new FileOutputStream(f)) {
+        try (InputStream in = new FileInputStream(it.local)) {
             byte[] buf = new byte[65536]; int n;
-            while ((n = in.read(buf)) > 0) { out.write(buf, 0, n); md.update(buf, 0, n); }
+            while ((n = in.read(buf)) > 0) md.update(buf, 0, n);
         }
-        StringBuilder sb = new StringBuilder();
-        for (byte b : md.digest()) sb.append(String.format("%02x", b));
-        if (!sb.toString().equals(it.sha256)) { f.delete(); throw new Exception(it.label + ": ハッシュ不一致(破棄しました)"); }
-        return f;
+        if (!Upbeater.hex(md.digest()).equals(it.sha256)) throw new Exception(it.label + ": ハッシュ不一致(入れません)");
+        return it.local;
     }
 
     /**

@@ -50,7 +50,7 @@ MAZDA MX-30 の CarPlay 口につないだ OTTOCAST OttoAibox P3 Pro(以下 OTTO
 | アプリ | パッケージ | 役割 |
 |---|---|---|
 | Duo Cruise(本体) | com.yuki.duocruise.main | 2 画面・メニュー・自作 CarPlay・TV 版 YouTube・Duo Slate の受け口。GPL-3.0 |
-| Duo Cruise Market | com.yuki.duocruise.updater | 新しい版を GitHub から取って入れる。記録の送信と、決まった診断の受付 |
+| Duo Cruise Market | com.yuki.duocruise.updater | 新しい版を Upbeater から取って入れる。記録の送信と、決まった診断の受付 |
 | Duo Slate | com.yuki.duocruise.pad | iPhone・Mac のタッチパッド(別の仕様書) |
 
 - Duo Cruise AirPlay は使わないため 10-28 にやめた(配布・ビルド・Market の一覧から外し、本体からも削除)。
@@ -61,22 +61,22 @@ MAZDA MX-30 の CarPlay 口につないだ OTTOCAST OttoAibox P3 Pro(以下 OTTO
 
 ## 4. 配布と更新
 
-> 2026-11-14：GitHub Actions を外し、GitHub のリリースも無くなったため、配布は Upbeater に移す（[設計書](Upbeater配布_設計書.md)）。移し終えるまで、下の流れは止まっている。
+> 2026-11-14：GitHub Actions を外し、GitHub のリリースも無くなったため、配布を Upbeater に移した（[設計書](Upbeater配布_設計書.md)）。新しい署名の鍵で作るため、最初の1回だけ車で Market と本体を入れ直す。
 
 1. GitHub(loverhetoric-gif/Duo-Cruise)に変更を入れる
-2. 自動ビルドが作って署名する。main に入ったら正式版(build-番号)、PR のときはテスト版(test-番号)
-3. OTTO の Duo Cruise Market が新しい版を取って入れる
-   - **リアルタイム**: 新しい版を公開した直後に、CI が ntfy.sh の秘密の口(GitHub の Secrets `DUO_PUSH_TOPIC`)へ「check」を送る。車の Duo Cruise はその口を開いたまま待っていて、届いたら更新アプリに今すぐ確認を頼む(中身は check の一言だけ。入るのは署名済みの版だけ)
+2. 自宅の Mac の実行役(Upbeater の `.upbeater/android.yml`)が作って署名し、まとめ(zip)を Upbeater に置く。版番号は 2000 + Upbeater の実行番号
+3. OTTO の Duo Cruise Market が Upbeater から新しい版を取って入れる(署名と SHA-256 を確かめてから)
+   - **登録**: 記録シートの指示 `updater:register <コード>`(コードは Claude に頼むと Upbeater が出す。15 分で切れる一回限り)
+   - **リアルタイム**: 新しい版を置いた直後に、Mac が ntfy.sh の秘密の口(Upbeater の秘密情報 `DUO_PUSH_TOPIC`)へ「check」を送る。車の Duo Cruise はその口を開いたまま待っていて、届いたら更新アプリに今すぐ確認を頼む(中身は check の一言だけ。入るのは署名を確かめた版だけ)
    - ほかに 15 分ごと(Android の最短)の定期確認と、記録シートの指示 `updater:check`(30 秒ごとに取りに行く)
    - 確認画面なしで更新する(UPDATE_PACKAGES_WITHOUT_USER_ACTION)。確認画面が出たときは、Duo Cruise が前にいても後ろの確認を見つけて押す(指示 `updater:confirm` でも押せる)
    - 新しい版があれば、本体もその場で入れ替え、入れ替えたら本体を開き直す(更新は停車中の検証で行う。2026-10-29 に「起動後 10 分以内だけ」の制限を外した)
-   - 「テスト版を受け取る」がオンなら、公開時刻がいちばん新しい版を見る
    - 「1 つ前の版に戻す」ができる
    - Play プロテクトの画面は自動では押さない(本人が操作する)
 
 ### 記録シート(本人の Google アカウント)
 - シート「Duo Cruise 記録」の「記録」と「指示」の 2 枚。OTTO が受け口(GAS)に送る
-- 指示で使える診断: `updater:state` / `check` / `confirm` / `screenshot` / `packages` / `test-channel on|off`、`com.yuki.duocruise.main:state` / `panel` / `swap` / `side` / `car-stop` / `tv-…` など
+- 指示で使える診断: `updater:state` / `check` / `register <コード>` / `confirm` / `screenshot` / `packages`、`com.yuki.duocruise.main:state` / `panel` / `swap` / `side` / `car-stop` / `tv-…` など
 - **チップに触れる指示と CarPlay の開始は、遠くからは受け付けない**
 - 本体が落ちたときは、版・スレッド・例外の先頭 30 行を手元に書き残し、次に開いたときに記録として送る
 

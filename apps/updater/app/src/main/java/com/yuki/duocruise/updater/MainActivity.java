@@ -3,7 +3,6 @@ package com.yuki.duocruise.updater;
 import android.app.Activity;
 import android.content.ComponentName;
 import android.content.Intent;
-import android.content.res.ColorStateList;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -21,7 +20,6 @@ import android.widget.Button;
 import android.widget.GridLayout;
 import android.widget.LinearLayout;
 import android.widget.ListView;
-import android.widget.Switch;
 import android.widget.TextView;
 
 import java.util.List;
@@ -48,8 +46,7 @@ public class MainActivity extends Activity {
 
     private TextView versionLine;
     private ArrayAdapter<String> adapter;
-    private Button checkBtn, allBtn, rollbackBtn, installBtn, selfA11yBtn, mainBtn, sendBtn;
-    private Switch testSwitch;
+    private Button checkBtn, allBtn, rollbackBtn, upbeaterBtn, installBtn, selfA11yBtn, mainBtn, sendBtn;
     private long rollbackArmedUntil = 0;
     private boolean busy = false;
     private boolean wide;
@@ -145,20 +142,8 @@ public class MainActivity extends Activity {
         checkBtn = tile(v -> runCheck(false));
         allBtn = tile(v -> runCheck(true));
         rollbackBtn = tile(v -> onRollback());
-        testSwitch = new Switch(this);
-        testSwitch.setText("テスト版を\n受け取る");
-        testSwitch.setTextColor(Color.WHITE);
-        testSwitch.setTextSize(wide ? 15 : 13);
-        testSwitch.setTypeface(Typeface.DEFAULT_BOLD);
-        testSwitch.setPadding(dp(12), 0, dp(10), 0);
-        testSwitch.setFocusable(true);
-        testSwitch.setThumbTintList(ColorStateList.valueOf(Color.WHITE));
-        testSwitch.setOnCheckedChangeListener((s, on) -> {
-            if (on == UpdateEngine.testChannel(this)) return;
-            UpdateEngine.setTestChannel(this, on);
-            UpdLog.add("テスト版を受け取る: " + (on ? "オン" : "オフ"));
-            refresh();
-        });
+        // Upbeater への登録の状態(登録は記録シートの指示 updater:register <コード> で行う)
+        upbeaterBtn = tile(v -> runCheck(false));
         installBtn = tile(v -> openInstallPermission());
         selfA11yBtn = tile(v -> openA11y(getPackageName()));
         mainBtn = tile(v -> openA11y(Diag.MAIN));
@@ -166,7 +151,7 @@ public class MainActivity extends Activity {
 
         GridLayout grid = new GridLayout(this);
         grid.setColumnCount(3);
-        View[] tiles = {checkBtn, allBtn, rollbackBtn, testSwitch, installBtn, selfA11yBtn, mainBtn, sendBtn};
+        View[] tiles = {checkBtn, allBtn, rollbackBtn, upbeaterBtn, installBtn, selfA11yBtn, mainBtn, sendBtn};
         for (int i = 0; i < tiles.length; i++) {
             GridLayout.LayoutParams lp = new GridLayout.LayoutParams(
                     GridLayout.spec(i / 3), GridLayout.spec(i % 3, 1f));
@@ -290,17 +275,15 @@ public class MainActivity extends Activity {
 
     private void refresh() {
         if (checkBtn == null) return;
-        boolean test = UpdateEngine.testChannel(this);
+        boolean reg = Upbeater.registered(this);
         versionLine.setText("更新 " + ver(getPackageName()) + "  /  本体 " + ver(Diag.MAIN)
-                + "   " + (test ? "テスト版も受け取る" : "正式版のみ") + "・15分ごとに自動で確認");
+                + "   Upbeater から受け取る・15分ごとに自動で確認");
+        setTile(upbeaterBtn, reg ? "Upbeater\n" + Upbeater.status(this) : "Upbeater 未登録\n記録シートで登録", reg ? GREEN : AMBER, !busy && reg);
 
         setTile(checkBtn, busy ? "処理中…" : "今すぐ確認\nして更新", ACCENT, !busy);
         setTile(allBtn, "未導入も\n入れる", GREY, !busy);
         boolean armed = System.currentTimeMillis() < rollbackArmedUntil;
         setTile(rollbackBtn, armed ? "もう一度押すと\n戻します" : "1つ前の版に\n戻す", armed ? Color.parseColor("#B04A4A") : GREY, !busy);
-
-        testSwitch.setChecked(test);
-        testSwitch.setBackground(tileBg(test ? Color.parseColor("#6A4FC8") : GREY));
 
         boolean can = Build.VERSION.SDK_INT < 26 || getPackageManager().canRequestPackageInstalls();
         setTile(installBtn, can ? "インストール許可\n済" : "インストール許可 未\n押して設定を開く", can ? GREEN : AMBER, true);
