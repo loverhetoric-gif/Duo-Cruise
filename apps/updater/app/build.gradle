@@ -20,7 +20,7 @@ android {
         buildConfigField "String", "PUSH_TOPIC", "\"" + (System.getenv('DUO_PUSH_TOPIC') ?: '').replace('"', '') + "\""
         // 受け取り先(Upbeater)と、その署名の公開鍵(世代番号 → base64url)。公開鍵は Upbeater の GET /v1/keys の値を
         // 組み立てのときに渡す(.upbeater/android.yml)。空なら署名を確かめられないので、何も入れない
-        buildConfigField "String", "UPBEATER_HUB", "\"https://upbeater-hub.twilight-star-9d9d.workers.dev\""
+        buildConfigField "String", "UPBEATER_HUB", "\"https://upbeater.loverhetoric.com\""
         buildConfigField "String", "UPBEATER_PUBLIC_KEYS", "\"" + (System.getenv('UPBEATER_PUBLIC_KEYS') ?: '').replace('\\', '').replace('"', '\\"') + "\""
         buildConfigField "String", "UPBEATER_REVOKED", "\"" + (System.getenv('UPBEATER_REVOKED_GENERATIONS') ?: '').replaceAll('[^0-9,]', '') + "\""
     }
