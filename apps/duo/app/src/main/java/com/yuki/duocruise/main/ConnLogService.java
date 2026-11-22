@@ -183,8 +183,7 @@ public final class ConnLogService extends Service {
             Collections.reverse(fresh);                                              // 古い順に書く
             for (ApplicationExitInfo e : fresh) {
                 newest = Math.max(newest, e.getTimestamp());
-                ConnLog.event("sys", "app-exit", "at", new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSZZZZZ",
-                                java.util.Locale.ROOT).format(new java.util.Date(e.getTimestamp())),
+                ConnLog.event("sys", "app-exit", "at", iso(e.getTimestamp()),
                         "reason", exitReason(e.getReason()), "sub", e.getStatus(), "desc", e.getDescription(),
                         "process", e.getProcessName(), "pid", e.getPid(), "importance", e.getImportance());
             }
@@ -209,6 +208,9 @@ public final class ConnLogService extends Service {
             case ApplicationExitInfo.REASON_USER_STOPPED: return "user-stopped";
             case ApplicationExitInfo.REASON_DEPENDENCY_DIED: return "dependency-died";
             case ApplicationExitInfo.REASON_OTHER: return "other";
+            case 14: return "freezer";
+            case 15: return "package-state-change";
+            case 16: return "package-updated(本体の入れ替え)";
             default: return "unknown(" + r + ")";
         }
     }
@@ -358,7 +360,7 @@ public final class ConnLogService extends Service {
         ConnLog.eventNow("sys", "shutdown", "action", action, "uptimeS", SystemClock.elapsedRealtime() / 1000);
         try {
             c.getSharedPreferences(PREFS, MODE_PRIVATE).edit()
-                    .putString("shutdownAt", new java.util.Date().toString()).commit();
+                    .putString("shutdownAt", iso(System.currentTimeMillis())).commit();
         } catch (Throwable ignored) { }
     }
 
@@ -483,7 +485,7 @@ public final class ConnLogService extends Service {
             if (!ifs.equals(lastIfaces)) { if (!lastIfaces.isEmpty()) ConnLog.event("net", "ifaces", "ifaces", ap.optJSONArray("ifaces")); lastIfaces = ifs; }
             ConnLog.event("snap", "state", "car", ConnLog.carSnap(), "yt", ConnLog.ytSnap(), "wifi", w, "ap", ap,
                     "nets", nl, "default", defText, "bt", bt, "screen", DuoActivity.live != null);
-            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString("lastAlive", new java.util.Date().toString()).apply();
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString("lastAlive", iso(System.currentTimeMillis())).apply();
         } catch (Throwable t) {
             ConnLog.event("sys", "snap-error", "err", DuoLog.why(t));
         }
@@ -700,6 +702,10 @@ public final class ConnLogService extends Service {
                 return v == null || v.isEmpty() ? null : v.trim();
             }
         } catch (Throwable t) { return null; }
+    }
+
+    private static String iso(long ms) {
+        return new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSZZZZZ", java.util.Locale.ROOT).format(new java.util.Date(ms));
     }
 
     private static String readLine(String path) {
