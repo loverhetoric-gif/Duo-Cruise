@@ -372,6 +372,7 @@ public final class TvPane {
         @Override public void onReceivedError(WebView v, WebResourceRequest r, WebResourceError e) {
             if (r.isForMainFrame()) {
                 loadState = "失敗";
+                com.yuki.duocruise.main.ConnLog.ytError("読み込み失敗 " + e.getErrorCode() + " " + e.getDescription());
                 TvLog.error(app, "読み込み失敗: " + e.getErrorCode() + " " + e.getDescription() + " URL=" + shortUrl(r.getUrl().toString()));
             }
         }
@@ -379,6 +380,7 @@ public final class TvPane {
         @Override public boolean onRenderProcessGone(WebView v, RenderProcessGoneDetail d) {
             if (v != web) return true;
             final String why = d.didCrash() ? "クラッシュ" : "メモリ不足で止められた";
+            com.yuki.duocruise.main.ConnLog.ytError("WebView の描画が止まった: " + why);
             main.post(() -> rebuildWebView(why));
             return true;
         }
@@ -534,7 +536,9 @@ public final class TvPane {
             + "if(!v)return JSON.stringify({nv:1,id:id});"
             + "var q=v.getVideoPlaybackQuality?v.getVideoPlaybackQuality():null;"
             + "return JSON.stringify({p:!v.paused&&!v.ended,w:v.videoWidth,h:v.videoHeight,"
-            + "d:q?q.droppedVideoFrames:-1,f:q?q.totalVideoFrames:-1,m:v.muted,id:id,t:v.currentTime});})()";
+            + "d:q?q.droppedVideoFrames:-1,f:q?q.totalVideoFrames:-1,m:v.muted,id:id,t:v.currentTime,"
+            + "rs:v.readyState,sk:v.seeking,en:v.ended,"
+            + "ec:v.error?v.error.code:0,em:v.error?(v.error.message||''):''});})()";
 
 
     /**
@@ -586,12 +590,18 @@ public final class TvPane {
             if (!(v instanceof String) || ((String) v).isEmpty()) return;
             JSONObject o = new JSONObject((String) v);
             remember(o);
-            if (o.optInt("nv") == 1) return;
+            if (o.optInt("nv") == 1) { com.yuki.duocruise.main.ConnLog.yt("no-video", null, null); return; }
             boolean p = o.optBoolean("p");
             String res = o.optInt("w") + "x" + o.optInt("h");
             if (o.optInt("w") > 0 && o.optInt("h") > 0) { videoW = o.optInt("w"); videoH = o.optInt("h"); }
             int dropped = o.optInt("d", -1), total = o.optInt("f", -1);
             String now = (p ? "再生中 " : "停止 ") + res + (o.optBoolean("m") ? " 消音" : "");
+            // 接続の記録: 再生・一時停止・読み込み待ち・エラー(MediaError の番号と文)・画質
+            int ec = o.optInt("ec");
+            String ytState = ec != 0 ? "error" : o.optBoolean("en") ? "ended"
+                    : (!o.optBoolean("p") && o.optInt("rs", 4) < 3 && !o.optBoolean("sk")) ? "paused"
+                    : (o.optInt("rs", 4) < 3 || o.optBoolean("sk")) ? "loading" : p ? "playing" : "paused";
+            com.yuki.duocruise.main.ConnLog.yt(ytState, res, ec != 0 ? "MediaError " + ec + " " + o.optString("em") : null);
             boolean changed = !now.equals(playState);
             playState = now;
             if (changed) TvLog.state(app, "再生の状態: " + now);

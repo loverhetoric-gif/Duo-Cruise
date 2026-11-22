@@ -25,6 +25,7 @@ final class Panes {
                 /** 状態が変わった。画面の記録にだけ出す(更新アプリへは CarPlayPane が送り済み)。 */
                 @Override public void onStatus(String status) {
                     DuoLog.local("state", "CarPlay の状態: " + status);
+                    ConnLog.carStatus(status);
                     DuoActivity.stateChanged();
                 }
 
@@ -32,6 +33,9 @@ final class Panes {
                 @Override public void onRecord(String kind, String text) {
                     // iPhone からの命令は走行記録にだけ(数が多いので画面の記録には出さない)
                     if (com.yuki.duocruise.carplay.CarPlayPane.KIND_CAR_CMD.equals(kind)) { Trace.event("car-cmd", text); return; }
+                    // 通信の道(iPhone の IP・こちらの IP・口・CarPlay 用の Wi-Fi・描く範囲)は接続の記録へだけ
+                    if (com.yuki.duocruise.carplay.CarPlayPane.KIND_CONN.equals(kind)) { ConnLog.carNet(text); return; }
+                    if ("error".equals(kind)) ConnLog.event("carplay", "error", "text", text);
                     DuoLog.local(kind, "CarPlay: " + text);
                     // 切断の理由(失敗・通信エラー・取り合い)は logcat だと数十秒で流れて吸い出す頃に消える。
                     // 永続の走行記録(Trace)にも残し、外での切断の原因を後から辿れるようにする。
@@ -55,6 +59,7 @@ final class Panes {
 
                 /** 映像が届き始めた/止まった。つながるまでの演出を出し入れする。 */
                 @Override public void onStream(boolean active) {
+                    ConnLog.carStream(active);
                     DuoActivity.stateChanged();
                 }
             }, BuildConfig.UNLIMITED, Store.rightHand(a)));

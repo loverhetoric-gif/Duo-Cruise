@@ -89,6 +89,10 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         DuoLog.init(this);
         Tx.init(this);
         Crash.install(this);
+        // 接続の記録(常に残す)。機器の起動で始まっているはずだが、止まっていても画面を開いたら必ず始める
+        ConnLog.init(this);
+        ConnLogService.start(this, "画面を開いた");
+        ConnLog.event("sys", "screen-open", "restored", b != null);
         // 二重に開かれたら、前の画面を閉じる(CarPlay の Wi-Fi・Bluetooth とタッチパッドの口を取り合わないように)
         DuoActivity old = live;
         if (old != null && old != this && !old.isFinishing()) {
@@ -356,6 +360,8 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     }
 
     @Override protected void onDestroy() {
+        ConnLog.event("sys", "screen-close", "finishing", isFinishing(), "changing", isChangingConfigurations());
+        if (live == this) ConnLog.screenGone();
         Trace.detach(traceCtx);
         if (front == this) front = null;
         if (live == this) live = null;
@@ -602,6 +608,9 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         root.setRails(railsWanted());  // クルーズ/停車/駐車/案内: YouTube を中央全画面にし、左右の余白へ情報レール
         root.apply(Store.swapped(this), Store.side(this), Store.panelHalf(this), curYt);
         if (ytAnim == null || !ytAnim.isRunning()) fitCar(curYt);
+        // 接続の記録: CarPlay が画面に見えているか(1 画面で YouTube 側・情報レールで隠している間は見えていない)
+        boolean carShown = Store.single(this) ? active() == car : !railsWanted() && root.carWidth(curYt) > 0;
+        ConnLog.carVisible(carShown, layoutText());
         padLayoutState();
         updateHint();
         pushRail();
@@ -662,7 +671,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
 
     /** CarPlay の枠が落ち着く幅を伝え、iPhone に描く範囲を合わせてもらう(動く前に、行き先の幅で)。 */
     private void fitCar(int yt) {
-        if (car != null) car.fitWidth(root.carWidth(yt));
+        if (car != null) { int px = root.carWidth(yt); car.fitWidth(px); ConnLog.carWidth(px); }
     }
 
     /** CarPlay の接続状態(前回値)。変化した瞬間だけ、メインビューを色で知らせる。 */
@@ -673,6 +682,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     /** 接続状態が変わったら、メインビューの縁を一瞬だけ光らせる(完了=青／不良=赤)。 */
     private void onConnChanged() {
         boolean conn = carOn() && carBluetooth(safeStatus(car));
+        ConnLog.carConn(conn, safeStatus(car) + " | " + wifiSnap());
         if (conn == lastConn) return;
         lastConn = conn;
         // 切断の精密ログ: いつ・どれだけ保って・なぜ(状態文)・そのとき箱の Wi-Fi(STA)は何をしていたか。
@@ -1482,6 +1492,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         nameBluetooth();
         DuoLog.log("CarPlay を開始します(" + why + ")");
         carOn = true;
+        ConnLog.carOn(true, why);
         carRetryMs = CAR_RETRY_MIN_MS;
         try { car.start(); } catch (Throwable t) { DuoLog.error("CarPlay を始められません: " + DuoLog.why(t)); }
         stateChanged();
@@ -1516,6 +1527,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     void stopCar() {
         DuoLog.log("CarPlay を止めます");
         carOn = false;
+        ConnLog.carOn(false, "操作盤・指示で止めた");
         carSounds.clear();
         applyDuck();
         try { car.destroy(); } catch (Throwable t) { DuoLog.error("CarPlay を止められません: " + DuoLog.why(t)); }
@@ -1857,6 +1869,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         }
         tv.voice(voice, pause);
         tv.hold(call); // 電話・Siri の間は一時停止。終われば再開
+        ConnLog.ytVoice(voice, call);
     }
 
     /** YouTube の音量を目標へ。下げるのは速く、戻すのはゆっくり。フェードは YouTube の中で1回だけ行う。 */
@@ -1866,6 +1879,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         long ms = target < curDuck ? DUCK_DOWN_MS : DUCK_UP_MS;
         curDuck = target;
         tv.duck(target, ms);
+        ConnLog.ytDuck(target, "声の流れ=" + carVoices + " 流れ全部=" + carSounds + (alertDucked ? " Y!警告" : ""));
         // 実際に YouTube の音量を動かした時刻と理由を走行記録へ(声の流れ・実音との、ずれを数字で確かめるため)
         Trace.event("duck", Math.round(target * 100) + "% " + ms + "ms 声の流れ=" + carVoices
                 + " 流れ全部=" + carSounds + (alertDucked ? " Y!警告" : ""));
@@ -1970,6 +1984,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
             return r == null ? "YouTube の部品は「" + cmd + "」を扱いません" : r;
         }
         if (cmd.equals("trace") || cmd.startsWith("trace ")) return traceCommand(cmd);
+        if (cmd.equals("connlog")) return ConnLog.where();
         switch (cmd) {
             case "state": return stateText();
             case "swap": swap(); return "入れ替えました: " + layoutText();
