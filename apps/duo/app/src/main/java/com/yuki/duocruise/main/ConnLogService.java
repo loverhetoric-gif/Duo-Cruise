@@ -69,7 +69,7 @@ public final class ConnLogService extends Service {
     private final Map<Network, NetworkCapabilities> caps = new ConcurrentHashMap<>();
     private final Map<Network, LinkProperties> links = new ConcurrentHashMap<>();
     private final Map<Integer, BluetoothProfile> proxies = new ConcurrentHashMap<>();
-    private String lastWifiKey = "", lastIfaces = "";
+    private String lastWifiKey = "", lastIfaces = "", lastBonded = "";
     private boolean started;
 
     private final Runnable snap = new Runnable() {
@@ -539,7 +539,7 @@ public final class ConnLogService extends Service {
             try {
                 java.lang.reflect.Method m = WifiManager.class.getMethod("getWifiApState");
                 o.put("state", apState((Integer) m.invoke(wm)));
-            } catch (Throwable t) { o.put("state", "unreadable"); }
+            } catch (Throwable t) { o.put("state", "unreadable"); } // Android の制限で読めないときは下の口から推定する
             JSONArray ifaces = new JSONArray();
             List<String> apIfaces = new ArrayList<>();
             for (NetworkInterface ni : Collections.list(NetworkInterface.getNetworkInterfaces())) {
@@ -552,6 +552,8 @@ public final class ConnLogService extends Service {
                 if (n.startsWith("ap") || n.startsWith("swlan") || n.startsWith("wlan1") || n.startsWith("p2p")) apIfaces.add(n);
             }
             o.put("ifaces", ifaces);
+            if ("unreadable".equals(o.optString("state")))
+                o.put("state", apIfaces.isEmpty() ? "off(口から推定)" : "on(口から推定 " + apIfaces + ")");
             // つながっている機器: ARP の表(読めるかは機器しだい。Android 10 以降の普通のアプリは読めないことが多い)
             JSONArray clients = new JSONArray();
             boolean arpOk = false;
@@ -604,7 +606,10 @@ public final class ConnLogService extends Service {
             JSONArray bonded = new JSONArray();
             try { for (BluetoothDevice d : a.getBondedDevices()) bonded.put(dev(d)); }
             catch (SecurityException e) { bonded.put("権限なし(BLUETOOTH_CONNECT)"); }
-            o.put("bonded", bonded);
+            // ペアリング済みの一覧は変わったときだけ 1 行(まとめには数だけ。記録を軽くする)
+            String bs = bonded.toString();
+            if (!bs.equals(lastBonded)) { lastBonded = bs; ConnLog.event("bt", "bonded", "devices", bonded); }
+            o.put("bonded", bonded.length());
             JSONObject conn = new JSONObject();
             for (Map.Entry<Integer, BluetoothProfile> e : proxies.entrySet()) {
                 try {
