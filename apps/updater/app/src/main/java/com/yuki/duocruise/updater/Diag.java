@@ -23,7 +23,7 @@ import java.util.regex.Pattern;
 
 /**
  * 記録シートの「指示」から来る診断。受け付けるのは決まった一覧だけ(任意のコマンドは実行しない)。
- *   updater:state / updater:packages / updater:check / updater:test-channel on|off / updater:screenshot
+ *   updater:state / updater:packages / updater:check / updater:register <コード> / updater:screenshot
  *   updater:play-install <パッケージ名> … Play ストアでそのアプリを検索して頁を開き(market://search?q=pname:)、数分間だけ「インストール」を押す
  *   updater:multiplay-log … 機器の CarPlay(MultiPlay)の部品の記録(logcat)を送る(要 READ_LOGS。adb で許可する)
  *   com.yuki.duocruise.main:〜 … 本体へブロードキャスト(キー記録は 2026-10-27 に片付けた)で渡すだけ
@@ -98,6 +98,19 @@ final class Diag {
                 ConfirmClickService.playInstall(c, pkg, row, cmd);
                 return;
             }
+            if (arg.startsWith("register ")) {
+                // Upbeater への登録(一回限りのコード。Claude に頼むと Upbeater の create_device_code で出る)
+                try {
+                    Upbeater.register(c, arg.substring("register ".length()));
+                    UpdLog.add("Upbeater に登録しました(指示による)");
+                    Remote.result(cmd.replaceAll("register\\s+\\S+", "register ****") + " → Upbeater に登録しました。続けて確認します", row);
+                    int n = UpdateEngine.checkAndInstall(c, false);
+                    Remote.result("updater:check → " + UpdateEngine.lastResult + "(開始 " + n + " 件)", row);
+                } catch (Exception e) {
+                    Remote.result(cmd.replaceAll("register\\s+\\S+", "register ****") + " → 登録できません: " + e.getMessage(), row);
+                }
+                return;
+            }
             switch (arg) {
                 case "state":
                     Remote.add("state", state(c), BuildConfig.APPLICATION_ID, String.valueOf(BuildConfig.VERSION_CODE), row, 0);
@@ -106,14 +119,6 @@ final class Diag {
                 case "check": {
                     int n = UpdateEngine.checkAndInstall(c, false);
                     Remote.result(cmd + " → " + UpdateEngine.lastResult + "(開始 " + n + " 件)", row);
-                    return;
-                }
-                case "test-channel on":
-                case "test-channel off": {
-                    boolean on = arg.endsWith("on");
-                    UpdateEngine.setTestChannel(c, on);
-                    UpdLog.add("テスト版を受け取る: " + (on ? "オン" : "オフ") + "(指示による)");
-                    Remote.result(cmd + " → テスト版を受け取る を" + (on ? "オン" : "オフ") + "にしました", row);
                     return;
                 }
                 case "packages": {
@@ -143,7 +148,7 @@ final class Diag {
                     ConfirmClickService.confirmNow(c, row, cmd);
                     return;
                 default:
-                    Remote.result(cmd + " → 受け付けない指示です(updater:state / packages / check / test-channel on|off / screenshot / confirm / multiplay-log / play-install <パッケージ名>)", row);
+                    Remote.result(cmd + " → 受け付けない指示です(updater:state / packages / check / register <コード> / screenshot / confirm / multiplay-log / play-install <パッケージ名>)", row);
                     return;
             }
         }
@@ -205,7 +210,7 @@ final class Diag {
         sb.append("画面: ").append(screen(c)).append('\n');
         sb.append("ネット: ").append(netType(c)).append('\n');
         boolean can = Build.VERSION.SDK_INT < 26 || c.getPackageManager().canRequestPackageInstalls();
-        sb.append("更新: テスト版 ").append(UpdateEngine.testChannel(c) ? "ON" : "OFF")
+        sb.append("更新: Upbeater ").append(Upbeater.status(c))
                 .append(" / インストール許可 ").append(can ? "済" : "未")
                 .append(" / 最後の確認 ").append(UpdateEngine.lastResult).append('\n');
         sb.append("ユーザー補助: 更新 ").append(onOff(c, BuildConfig.APPLICATION_ID))
