@@ -30,7 +30,7 @@ final class Trace {
     interface Ctx { String snapshot(); } // 今の状態を JSON の断片("drive":..,"yt":.. )で返す
 
     private static Context app;
-    private static Ctx ctx;
+    private static volatile Ctx ctx;
     private static Handler io;                 // 専用スレッド。書き込みは全部ここで
     private static volatile boolean on;
     private static volatile boolean shots;     // スクショも撮るか
@@ -44,6 +44,9 @@ final class Trace {
     private Trace() {}
 
     static synchronized void init(Context c, Ctx snapshot) {
+        // 画面が作り直されたら、状態は新しい画面から読む。以前は最初の画面を読み続け、11/9 朝 9:40 の
+        // CarPlay つなぎ直し以降、YouTube の幅・曲がり角までの距離・停車が古い値のまま記録されていた
+        ctx = snapshot;
         if (app != null) return;
         app = c.getApplicationContext();
         ctx = snapshot;
@@ -53,6 +56,9 @@ final class Trace {
         shots = Store.traceShots(app);
         if (Store.traceOn(app)) setOn(app, true);
     }
+
+    /** 画面を閉じるとき: まだその画面の状態を読んでいれば外す(新しい画面が先に差し替えていれば何もしない)。 */
+    static synchronized void detach(Ctx snapshot) { if (ctx == snapshot) ctx = null; }
 
     static boolean on() { return on; }
     static boolean shots() { return shots; }

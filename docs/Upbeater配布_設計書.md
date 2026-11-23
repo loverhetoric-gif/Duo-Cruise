@@ -14,6 +14,12 @@
 2. **車は Upbeater から直接受け取る。** GitHub のリリースは使わない。Market に Upbeater の端末の受け口（登録・照合・報告）を足し、GitHub を見る処理は消す。
 3. **組み立て・署名は自宅の Mac の実行役（Upbeater）で行う。**
 
+### 2026-11-22 の変更：車と同じ前の本番の鍵で署名する
+
+- 車（P3 PRO）の 1213 版（2026-11-11、drive-telemetry の `tools/publish-release.sh` で出したもの）は、前の本番の鍵 `~/development/ottocast-work/keys/mx-release.jks`（証明書の SHA-256 `81c08c02…4da4`、CN=MX Personal Apps）で署名されていた。1 の「前の鍵は手元に無い」は誤りで、この鍵は Mac に残っていた。
+- 利用者の決定により、`.upbeater/android.yml` はこの鍵で署名し、署名した証明書が車のものと同じかを確かめてから配る。**車で消して入れ直す必要は無い**（設定はそのまま）。11/14 に作った `~/.duo-cruise/signing` の鍵は使わない。
+- 最初の 1 回だけ、Upbeater 対応の Market（まとめの中の `duo-updater.apk`）を adb で上書きし、`updater:register <コード>` で登録する（今の Market は Upbeater を見ないため）。
+
 ## 3. 配るもの（1つのまとめ）
 
 Upbeater の配布は「1つのリポジトリ・1つの OS に1つのファイル」。そのため Android は zip 1つにまとめて配る。

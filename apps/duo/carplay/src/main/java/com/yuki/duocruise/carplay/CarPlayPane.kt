@@ -74,6 +74,9 @@ class CarPlayPane @JvmOverloads constructor(
         /** CarPlay の音の流れが始まった/終わった(audioType: media・default(ナビ)・alert・telephony・speechrecognition)。 */
         fun onAudio(audioType: String, active: Boolean)
 
+        /** ナビの声・通知音が実際に鳴り始めた/鳴り終わった。inMs 後にスピーカーから聞こえる(目安)。detail は記録用の説明。 */
+        fun onVoice(audioType: String, speaking: Boolean, inMs: Long, detail: String)
+
         /** ナビの案内が変わった(Duo Cruise Unlimited Edition)。CarPlay が止まったら null。 */
         fun onRoute(route: Route?)
 
@@ -97,6 +100,13 @@ class CarPlayPane @JvmOverloads constructor(
     }
 
     companion object {
+        /** onRecord の種類: iPhone からの命令(走行記録にだけ残す。更新アプリへは送らない)。 */
+        const val KIND_CAR_CMD = "car-cmd"
+        /**
+         * onRecord の種類: 通信の道(接続の記録 ConnLog へだけ。更新アプリへは送らない)。
+         * 中身は「出来事<TAB>名前=値<TAB>…」。出来事は session-up / session-down / hotspot / area
+         */
+        const val KIND_CONN = "conn"
         /** 左右それぞれの枠の大きさ(画面は 1480×480)。 */
         const val WIDTH = 740
         const val HEIGHT = 480
@@ -341,6 +351,11 @@ class CarPlayPane @JvmOverloads constructor(
                         }
                     }
                 },
+                onVoiceActive = { audioType, speaking, inMs, detail ->
+                    main.post {
+                        if (myGeneration == generation) listener?.onVoice(audioType.lowercase(), speaking, inMs, detail)
+                    }
+                },
             )
             sink = renderer
             surface?.let { renderer.setSurface(SCREEN_TYPE_MAIN, it) }
@@ -525,6 +540,7 @@ class CarPlayPane @JvmOverloads constructor(
 
     private fun sendArea() {
         val sent = controller?.showViewArea(area) ?: false
+        conn("area", "w" to areas.getOrNull(area)?.toString(), "index" to area.toString(), "sent" to sent.toString())
         if (!sent) record(DuoRecord.KIND_STATE, "CarPlay の描く範囲 ${areas.getOrNull(area)} を送れません(つながる前か、iPhone が範囲の切り替えに未対応)")
     }
 
@@ -894,6 +910,8 @@ class CarPlayPane @JvmOverloads constructor(
                 if (myGeneration != generation) return@post
                 this@CarPlayPane.session = session
                 setStatus("CarPlay 表示中")
+                conn("session-up", "iphone" to session.host, "local" to session.localAddress?.hostAddress,
+                    "iface" to ifaceOf(session.localAddress), "area" to areas.getOrNull(area)?.toString())
                 record(DuoRecord.KIND_STATE, "CarPlay の映像がつながった " + areasText() +
                     if (areas.isEmpty()) "" else " iPhone が範囲の切り替えを受けるか=" + session.acceptsViewAreas())
                 // つながった直後に範囲の切り替えを送ると、iPhone が通信を切る(2026-10-29 実機)。
@@ -914,6 +932,7 @@ class CarPlayPane @JvmOverloads constructor(
         override fun onSessionEnded(session: AirPlaySession) {
             main.post {
                 if (this@CarPlayPane.session === session) this@CarPlayPane.session = null
+                conn("session-down", "iphone" to session.host, "current" to (myGeneration == generation).toString())
                 if (myGeneration != generation) return@post
                 setStreaming(false)
                 setStatus("CarPlay が切れました(待機中)")
@@ -923,6 +942,17 @@ class CarPlayPane @JvmOverloads constructor(
 
         /** iPhone から来た命令(画面の持ち主の切り替えなど)。地図を開く頼みの効き目を見るため記録する(同じ種類は 10 秒に 1 回)。 */
         override fun onCommand(session: AirPlaySession, type: String, params: Map<String, Any?>) {
+            // 走行記録には全部・間引かずに残す(ナビの声の終わりを iPhone が合図で知らせるかを確かめる。2026-11-10)。
+            // 話している状態(appStates の speechMode)と、音量を下げる/戻す指示(duck…)は見やすく取り出す
+            val full = params.entries.joinToString(" ") { (k, v) ->
+                val s = v.toString()
+                "$k=" + if (s.length > 400) s.take(400) + "…" else s
+            }
+            val speech = (params["appStates"] as? List<*>)?.mapNotNull { it as? Map<*, *> }
+                ?.firstOrNull { it.containsKey("speechMode") }?.get("speechMode")
+            val traceText = "$type" + (if (speech != null) " speechMode=$speech" else "") + " $full"
+            main.post { if (myGeneration == generation) listener?.onRecord(KIND_CAR_CMD, traceText) }
+
             val now = android.os.SystemClock.elapsedRealtime()
             val last = commandSeen[type]
             if (last != null && now - last < 10_000) return
@@ -935,6 +965,7 @@ class CarPlayPane @JvmOverloads constructor(
         }
 
         override fun onTransportError(message: String) {
+            main.post { if (myGeneration == generation) conn("transport-error", "message" to message) }
             main.post { if (myGeneration == generation) record(DuoRecord.KIND_ERROR, "CarPlay 通信の失敗: $message") }
         }
     }
@@ -948,8 +979,14 @@ class CarPlayPane @JvmOverloads constructor(
         record(if (status is CarPlayStatus.Failed) DuoRecord.KIND_ERROR else DuoRecord.KIND_STATE, "CarPlay 状態: $text")
         // 取り合いの検出(推測を含む。記録に出して知らせる)
         when (status) {
-            is CarPlayStatus.HotspotReady -> network.conflictAfterHotspot(status.band, status.channel)
-                ?.let { record(DuoRecord.KIND_ERROR, "取り合いの可能性(Wi-Fi): $it") }
+            is CarPlayStatus.HotspotReady -> {
+                conn("hotspot", "ssid" to status.ssid, "band" to status.band, "ch" to status.channel.toString(),
+                    "bssid" to status.bssid, "address" to status.address, "backend" to status.backend,
+                    "desc" to "${status.backend} ${status.ssid} ${status.band} ch${status.channel} ${status.address}",
+                    "network" to network.describe())
+                network.conflictAfterHotspot(status.band, status.channel)
+                    ?.let { record(DuoRecord.KIND_ERROR, "取り合いの可能性(Wi-Fi): $it") }
+            }
             is CarPlayStatus.Failed -> conflictHint(status.message)?.let {
                 record(DuoRecord.KIND_ERROR, "取り合いの疑い: $it")
             }
@@ -1099,6 +1136,17 @@ class CarPlayPane @JvmOverloads constructor(
         lastRouteLog = ""
         listener?.onRoute(null)
     }
+
+    /** 接続の記録(ConnLog)へ。値の無い組は省く。 */
+    private fun conn(ev: String, vararg kv: Pair<String, String?>) {
+        val text = (listOf(ev) + kv.filter { it.second != null }.map { "${it.first}=${it.second!!.replace('\t', ' ')}" })
+            .joinToString("\t")
+        listener?.onRecord(KIND_CONN, text)
+    }
+
+    private fun ifaceOf(a: java.net.InetAddress?): String? = try {
+        a?.let { java.net.NetworkInterface.getByInetAddress(it)?.name }
+    } catch (_: Exception) { null }
 
     private fun record(kind: String, text: String) {
         DuoRecord.send(app, kind, text)

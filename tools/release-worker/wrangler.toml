@@ -1,0 +1,10 @@
+# Duo Cruise の配信口(個人用 Cloudflare)。公開: cd tools/release-worker && npx wrangler@4 deploy
+# 呼ばれる回数の目安: 車1台が15分ごとに確認 → 月 約2,900回(+ 更新のときのダウンロード数回)
+name = "duo-releases"
+main = "worker.js"
+compatibility_date = "2026-11-01"
+account_id = "f95f76412f29c64f24e18e16d58f48f6"
+
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "duo-releases"

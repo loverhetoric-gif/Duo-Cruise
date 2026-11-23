@@ -8,7 +8,8 @@ import com.shilapi.xcertplay.iap2.wire.Iap2Frame
  * ナビの案内のいまの様子(Duo Cruise Unlimited Edition だけが使う)。
  *
  * iPhone は案内を 2 種類の知らせで送ってくる(項目の番号は LIVI の iap2-csm と同じ):
- * - 0x5201 案内全体: 状態・次の曲がり角までの距離・いま向かっている曲がり角の番号の並び・目的地・残りの距離
+ * - 0x5201 案内全体: 状態・次の曲がり角までの距離・いま向かっている曲がり角の番号の並び・目的地・残りの距離・
+ *   到着予定時刻(#5)・残り時間(#6)。#5/#6 は 2026-11-06 の実走ダンプで特定(実際の到着と数分以内で一致)
  * - 0x5202 曲がり角 1 つ: 番号・曲がり方(0〜53)・曲がった先の道路の名前
  * どちらも「変わった所だけ」が届くので、[RouteGuidanceAccumulator] で積み重ねて今の姿にする。
  * 数が分からない項目は -1、文字が分からない項目は null。
@@ -37,6 +38,10 @@ class Route @JvmOverloads constructor(
     @JvmField val distanceRemainingM: Long,
     /** 案内しているアプリの名前(例「マップ」)。 */
     @JvmField val source: String?,
+    /** 到着予定時刻(UNIX 秒。iPhone は分単位に丸めて送る)。-1=知らせがない。 */
+    @JvmField val etaEpochSec: Long = -1,
+    /** 目的地までの残り時間(秒)。-1=知らせがない。 */
+    @JvmField val timeRemainingSec: Long = -1,
     /** 診断: 0x5201 の生フィールド一覧(ETA 等の在り処を特定するため。ルート開始の数回だけ非 null)。 */
     @JvmField val debug: String? = null,
 ) {
@@ -61,7 +66,8 @@ class Route @JvmOverloads constructor(
     override fun toString(): String =
         "状態=$state 曲がり角#$turnIndex 種類=$maneuverType(${Turn.name(turn)}) " +
             "あと${if (distanceToTurnM >= 0) "${distanceToTurnM}m" else "?"} 先=${onto ?: "-"} " +
-            "目的地=${destination ?: "-"} 残り=${if (distanceRemainingM >= 0) "${distanceRemainingM}m" else "?"} アプリ=${source ?: "-"}"
+            "目的地=${destination ?: "-"} 残り=${if (distanceRemainingM >= 0) "${distanceRemainingM}m" else "?"} " +
+            "残り時間=${if (timeRemainingSec >= 0) "${timeRemainingSec / 60}分" else "?"} アプリ=${source ?: "-"}"
 }
 
 /** 曲がる向き。iAP2 の曲がり方(0〜53)を、絵と光に要る粒度にまとめたもの。 */
@@ -127,6 +133,8 @@ class RouteGuidanceAccumulator {
     private var destination: String? = null
     private var remaining = -1L
     private var source: String? = null
+    private var eta = -1L
+    private var timeLeft = -1L
     private val maneuvers = LinkedHashMap<Int, Maneuver>()
     // 診断: ルート開始から数回だけ 0x5201 の生フィールドを書き出す(ETA 等の在り処を特定するため)
     private var dumpArmed = true
@@ -155,7 +163,9 @@ class RouteGuidanceAccumulator {
                 read { body.optionalString(4) }?.let { destination = it }
                 read { body.optionalU32(7) }?.let { remaining = it }
                 read { body.optionalString(19) }?.let { source = it }
-                if (state == 0) { order = emptyList(); maneuvers.clear() } // ルートが消えたら曲がり角も忘れる
+                read { body.optionalU64(5) }?.let { eta = it }      // 到着予定時刻(UNIX 秒)
+                read { body.optionalU64(6) }?.let { timeLeft = it } // 残り時間(秒)
+                if (state == 0) { order = emptyList(); maneuvers.clear(); eta = -1; timeLeft = -1 } // ルートが消えたら忘れる
                 // 診断: ルートが消えたら次のルートで再アーム。案内に入ったら数回だけ全フィールドを書き出す
                 if (state == 0) dumpArmed = true
                 else if (dumpArmed && (state == 1 || state == 5 || state == 6)) { dumpArmed = false; dumpLeft = 3; dump2Left = 5 }
@@ -183,7 +193,7 @@ class RouteGuidanceAccumulator {
     @Synchronized
     fun reset() {
         state = -1; distanceToTurn = -1; distanceText = null; order = emptyList()
-        destination = null; remaining = -1; source = null; maneuvers.clear()
+        destination = null; remaining = -1; source = null; eta = -1; timeLeft = -1; maneuvers.clear()
         dumpArmed = true; dumpLeft = 0; dump = null
     }
 
@@ -204,6 +214,8 @@ class RouteGuidanceAccumulator {
             destination = destination,
             distanceRemainingM = remaining,
             source = source,
+            etaEpochSec = eta,
+            timeRemainingSec = timeLeft,
             debug = dump,
         )
     }

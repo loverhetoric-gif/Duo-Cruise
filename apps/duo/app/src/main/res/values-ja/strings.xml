@@ -167,9 +167,9 @@
     <string name="rl_dist">光らせる距離</string>
     <string name="rl_color">光の色・強さ</string>
     <string name="n_turn_color">曲がる方向の光の色</string>
-    <string name="ra_on">曲がり角で音量を下げる</string>
-    <string name="ra_dist">音量を下げる距離</string>
-    <string name="ra_level">下げたときの音量</string>
+    <string name="ra_video">ナビの声の間の動画</string>
+    <string name="ra_video_slow">スロー</string>
+    <string name="ra_video_pause">一時停止</string>
     <string name="rr_on">到着時に YouTube を全画面</string>
     <string name="to_route">曲がり角の案内へ</string>
     <string name="to_route_light">方向の光へ</string>
@@ -188,4 +188,5 @@
     <string name="s_units">距離の単位</string>
     <string name="v_km">キロメートル</string>
     <string name="v_mi">マイル</string>
+    <string name="d_ambient">YouTube の余白を光で</string>
 </resources>

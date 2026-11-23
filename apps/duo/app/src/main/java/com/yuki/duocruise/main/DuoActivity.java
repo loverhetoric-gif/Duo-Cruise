@@ -89,6 +89,10 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         DuoLog.init(this);
         Tx.init(this);
         Crash.install(this);
+        // 接続の記録(常に残す)。機器の起動で始まっているはずだが、止まっていても画面を開いたら必ず始める
+        ConnLog.init(this);
+        ConnLogService.start(this, "画面を開いた");
+        ConnLog.event("sys", "screen-open", "restored", b != null);
         // 二重に開かれたら、前の画面を閉じる(CarPlay の Wi-Fi・Bluetooth とタッチパッドの口を取り合わないように)
         DuoActivity old = live;
         if (old != null && old != this && !old.isFinishing()) {
@@ -136,13 +140,25 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         setupInsets();
         applyLayout();
         android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
-        ytFit = SplitGeometry.fit169Pct(dm.widthPixels, dm.heightPixels); // この画面で YouTube が 16:9(黒枠なし)になる割合
+        ytFit = SplitGeometry.fit169Pct(dm.widthPixels, dm.heightPixels); // この画面で YouTube が 16:9(黒枠なし)になる割合(仮)
+        // 本当の値は、実際に並べた枠の大きさから。起動時の画面の情報はナビゲーションバー(下 64px)を除いた高さで、
+        // OTTO(1480×480)では 416px → 16:9 が「ちょうど 50%」になり、どの段でも 50:50 のままだった(11/7 実走)。
+        root.addOnLayoutChangeListener((v, l0, t0, r0, b0, ol, ot, or, ob) -> {
+            int w = v.getWidth() - v.getPaddingLeft() - v.getPaddingRight();
+            int h = v.getHeight() - v.getPaddingTop() - v.getPaddingBottom();
+            if (w <= 0 || h <= 0) return;
+            int f = SplitGeometry.fit169Pct(w, h);
+            if (f == ytFit) return;
+            ytFit = f;
+            DuoLog.log("16:9 の幅: " + w + "×" + h + " の画面で YouTube " + f + "%");
+            main.post(() -> { if (!Store.single(this)) animateYt(targetYt()); });
+        });
 
         askPermissions();
         // CarPlay は開いたら自動で始め、失敗・切断したら見張りがつなぎ直す
         startCar("開いたので自動で");
         // 走行の記録(Unlimited Edition・本人の検証用)。オンなら GPS の各点・切り替え・CPU/メモリを貯める
-        Trace.init(this, this::traceSnapshot);
+        Trace.init(this, traceCtx);
         if (Store.traceOn(this)) {
             TraceStats.start();
             if (Store.traceShots(this)) DuoLog.log("走行の記録: 録画は、次に画面で許可するまで止まっています(trace shots)");
@@ -150,6 +166,8 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         Uploader.sweep(this); // 前回までの走行で貯まった記録を、SIM でアップロード(送り先が設定されていれば)
         drive = new DriveWatch(this, new DriveWatch.Listener() {
             @Override public void driveState(int s) {
+                // 案内中(到着前)の長い停車は駐車にしない: 右折待ち・長い信号で 2 分止まると駐車になっていた(11/9 実走 19:38)
+                if (s == DriveWatch.PARKED && enRoute()) s = DriveWatch.STOPPED;
                 int was = driveState;
                 driveState = s;
                 DuoLog.log("運転の見張り: " + (s == DriveWatch.PARKED ? "駐車" : s == DriveWatch.STOPPED ? "停止" : "走行"));
@@ -182,6 +200,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         padServer = PadRouter.get(this).server();
         padServer.setState(sideMsg());
         try { tv.start(); } catch (Throwable t) { DuoLog.error("YouTube を始められません: " + DuoLog.why(t)); }
+        tv.ambient(Store.ambient(this));
         boolean asHome = getIntent() != null && getIntent().hasCategory(Intent.CATEGORY_HOME);
         DuoLog.log((BuildConfig.UNLIMITED ? "Duo Cruise Unlimited Edition" : "Duo Cruise") + " を開きました(版 "
                 + DuoLog.version() + (asHome ? "、ホームとして" : "") + ")");
@@ -341,6 +360,9 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     }
 
     @Override protected void onDestroy() {
+        ConnLog.event("sys", "screen-close", "finishing", isFinishing(), "changing", isChangingConfigurations());
+        if (live == this) ConnLog.screenGone();
+        Trace.detach(traceCtx);
         if (front == this) front = null;
         if (live == this) live = null;
         DuoLog.listener = null;
@@ -419,8 +441,28 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         if (splitAdjusting) { splitKey(code, action); return; }
         if (panel.getVisibility() == View.VISIBLE) { panel.onKey(ev); return; }
         if (isMediaKey(code)) { mediaTarget().onKey(ev); return; }
+        if (mapEngaged && movePip(code, action)) return; // コーナー中: コマンダーの上下左右で小窓を動かす
         try { active().onKey(ev); }
         catch (Throwable t) { DuoLog.error(active().name() + " へキーを渡せません: " + DuoLog.why(t)); }
+    }
+
+    /**
+     * コーナーの小窓を、コマンダーの上下左右で動かす(本人の指定)。押した瞬間と押し続け(繰り返し)で動く。
+     * 動かした場所は覚えておき、次のコーナーでもそこに出す。上下左右以外のキーは false(いつもどおり渡す)。
+     */
+    private boolean movePip(int code, int action) {
+        int dx = 0, dy = 0;
+        switch (code) {
+            case KeyEvent.KEYCODE_DPAD_LEFT: dx = -1; break;
+            case KeyEvent.KEYCODE_DPAD_RIGHT: dx = 1; break;
+            case KeyEvent.KEYCODE_DPAD_UP: dy = -1; break;
+            case KeyEvent.KEYCODE_DPAD_DOWN: dy = 1; break;
+            default: return false;
+        }
+        if (action != KeyEvent.ACTION_DOWN) return true; // 離したときは何もしない(CarPlay にも渡さない)
+        float[] at = root.nudgePip(dx, dy);
+        if (at != null) Store.setPipPos(this, at[0], at[1]);
+        return true;
     }
 
     /** ステアリングの曲送り・曲戻し・再生/一時停止。 */
@@ -560,10 +602,15 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     private void applyLayout() {
         if (curYt < 0) curYt = targetYt();
         root.setSingle(Store.single(this));
-        root.setPip(mapEngaged, true); // 小窓は左下(本人の指示)
+        root.setPip(mapEngaged, false); // 小窓は右の空き(曲がり角カードと到着カードの間)。左下は自車と曲がる先を隠していた
+        root.setPipAspect(tv.videoAspect()); // 小窓を動画の形に合わせる(黒い帯を作らない)
+        root.setPipPos(Store.pipX(this), Store.pipY(this)); // 本人がコマンダーで動かした場所(なければ右の空き)
         root.setRails(railsWanted());  // クルーズ/停車/駐車/案内: YouTube を中央全画面にし、左右の余白へ情報レール
         root.apply(Store.swapped(this), Store.side(this), Store.panelHalf(this), curYt);
         if (ytAnim == null || !ytAnim.isRunning()) fitCar(curYt);
+        // 接続の記録: CarPlay が画面に見えているか(1 画面で YouTube 側・情報レールで隠している間は見えていない)
+        boolean carShown = Store.single(this) ? active() == car : !railsWanted() && root.carWidth(curYt) > 0;
+        ConnLog.carVisible(carShown, layoutText());
         padLayoutState();
         updateHint();
         pushRail();
@@ -583,7 +630,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         return false;
     }
 
-    /** 情報レールに今の値を渡す(推測しない。案内から取れた分だけ。到着(ETA)は未特定なので「—」)。 */
+    /** 情報レールに今の値を渡す(推測しない。案内から取れた分だけ)。 */
     private void pushRail() {
         RailView.Data d = new RailView.Data();
         Route r = route;
@@ -591,7 +638,9 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         if (d.guiding) {
             d.dest = r.destination;
             if (r.distanceRemainingM >= 0) d.remain = Store.distance(this, r.distanceRemainingM);
-            d.eta = "—"; // 到着時間: iAP2 のどのフィールドか未特定(nav-raw 診断で特定中)
+            // 到着予定: iPhone が送る到着時刻(0x5201 #5)を端末の時刻表示(12/24 時間)で。来ていなければ「—」
+            if (r.etaEpochSec > 0)
+                d.eta = android.text.format.DateFormat.getTimeFormat(this).format(new java.util.Date(r.etaEpochSec * 1000L));
             if (cruiseMeters > 0) d.cruise = Store.distance(this, Math.round(cruiseMeters));
             if (navStartRemainM > 0 && r.distanceRemainingM >= 0)
                 d.progress = Math.max(0f, Math.min(1f, (navStartRemainM - r.distanceRemainingM) / (float) navStartRemainM));
@@ -622,7 +671,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
 
     /** CarPlay の枠が落ち着く幅を伝え、iPhone に描く範囲を合わせてもらう(動く前に、行き先の幅で)。 */
     private void fitCar(int yt) {
-        if (car != null) car.fitWidth(root.carWidth(yt));
+        if (car != null) { int px = root.carWidth(yt); car.fitWidth(px); ConnLog.carWidth(px); }
     }
 
     /** CarPlay の接続状態(前回値)。変化した瞬間だけ、メインビューを色で知らせる。 */
@@ -633,6 +682,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     /** 接続状態が変わったら、メインビューの縁を一瞬だけ光らせる(完了=青／不良=赤)。 */
     private void onConnChanged() {
         boolean conn = carOn() && carBluetooth(safeStatus(car));
+        ConnLog.carConn(conn, safeStatus(car) + " | " + wifiSnap());
         if (conn == lastConn) return;
         lastConn = conn;
         // 切断の精密ログ: いつ・どれだけ保って・なぜ(状態文)・そのとき箱の Wi-Fi(STA)は何をしていたか。
@@ -747,7 +797,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         if (driveState == DriveWatch.PARKED && Store.parkOn(this)) return ytFit;
         if (driveState >= DriveWatch.STOPPED && Store.stopOn(this)) return ytFit;
         if (straightEngaged) return ytFit;                              // 一本道(クルーズ)
-        if (mapClose) return SplitGeometry.clampYt(100 - ytFit);        // マップクローズ: 反転して地図を大きく
+        if (mapClose) return SplitGeometry.clampYt(100 - ytFit - MAPCLOSE_EXTRA_PCT); // マップクローズ: 反転して地図を大きく(さらに少し広げる)
         return ytFit;                                                   // デフォルト(走行中): YouTube 16:9 + CarPlay を横に
     }
 
@@ -755,7 +805,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     private final TurnPlan plan = new TurnPlan();
     private Route route;
     /** 曲がり角で地図を表示中 / そのために 1 画面の表示を地図へ切り替えた / 到着後の全画面 / 曲がり角の手前で音量を下げ中。 */
-    private boolean mapEngaged, arriveEngaged, turnDucked;
+    private boolean mapEngaged, arriveEngaged;
     /** 一本道(次の曲がり角が遠い)なので YouTube を大きくしている。 */
     private boolean straightEngaged;
     /** 情報レール: 案内開始時の残り距離(進行度の分母)と、開始からの航続距離(GPS 累積)。 */
@@ -764,8 +814,6 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     private android.location.Location cruiseLast;
     /** コーナーで地図を前に出した対象の曲がり角の番号。番号が進んだ＝その曲がり角を通過した。 */
     private int cornerTurnIndex = -1;
-    /** 通過後、次の曲がり角がこの距離より近ければ1本のコーナーとして続ける(連続カーブでバタつかせない)。 */
-    private static final int CORNER_CHAIN_M = 150;
     /** 通過して(または案内終了で)地図を戻すまでの余韻。 */
     private static final long CORNER_TAIL_MS = 2000;
     /** 一度でも走り出したか。起動直後(未走行)は 50:50、走り出したら各ビューへ移る。 */
@@ -774,10 +822,14 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     private boolean mapClose;
     /** マップクローズの接近帯: コーナー発火距離(mapDist)の外側、この距離までを地図強調にする(仮。実走で詰める)。 */
     private static final int MAPCLOSE_BAND_M = 500;
+    /** マップクローズで、反転(地図 58%)からさらに地図を広げる幅(%)。上下の帯はアンビエントで埋める(2026-11-10 テスト: 地図 62%)。 */
+    private static final int MAPCLOSE_EXTRA_PCT = 4;
     /** Uターン・ロータリー・分岐(寄り=三叉路)は複雑なので、通常より手前からコーナービューにする(仮)。 */
     private static final int SPECIAL_CORNER_EXTRA_M = 150;
 
     private final Runnable mapRelease = this::mapRelease;
+    /** 戻す予約を入れてある(入れ直さない)。 */
+    private boolean cornerReleasing;
 
     /** CarPlay から(メインスレッド)。CarPlay が止まったら null。 */
     static void carRoute(Route r) {
@@ -794,7 +846,6 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
             plan.hintDist = Store.hintDist(this);
             plan.mapDist = Store.mapDist(this);
             plan.lightDist = Store.lightDist(this);
-            plan.duckDist = Store.duckDist(this);
             plan.update(r.getGuiding(), r.getArrived(), r.turnIndex, r.distanceToTurnM, r.getSide());
         }
         // 新しいルートが始まったら、到着後の全画面をやめる
@@ -838,16 +889,22 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
                 if (cornerOk && dist <= cornerAt) engageMap();    // 曲がり角に接近 → 地図を前へ(特例は手前から)
             } else if (idx != cornerTurnIndex) {
                 // 出していた曲がり角を通過した(番号が進んだ)
-                main.removeCallbacks(mapRelease);
-                if (dist <= CORNER_CHAIN_M) cornerTurnIndex = idx; // 次の曲がり角も近い → 1本として継続(連続)
-                else main.postDelayed(mapRelease, CORNER_TAIL_MS); // 次は遠い → 余韻を残して解除
+                // 次の曲がり角がもうコーナーの距離に入っている → 外さずに1本として続ける(連続)。
+                // 以前は 150m で切っていたため、200〜300m おきの曲がり角で「戻る→1秒後にまたコーナー」とばたついた
+                // (11/9 実走: 国道170号を降りた先で 4 回連続)。余韻の途中で近づいて入った場合も、ここで取り消す。
+                if (cornerOk && dist <= cornerAt) {
+                    main.removeCallbacks(mapRelease);
+                    cornerReleasing = false;
+                    cornerTurnIndex = idx;
+                } else {
+                    releaseCornerOnce();                           // 次は遠い → 余韻を残して解除
+                }
             } else {
                 main.removeCallbacks(mapRelease); // まだその曲がり角へ接近中 → 0m まで保持
+                cornerReleasing = false;
             }
         } else if (mapEngaged) {
-            // 案内終了 / 地図フロント OFF → 余韻を残して戻す
-            main.removeCallbacks(mapRelease);
-            main.postDelayed(mapRelease, CORNER_TAIL_MS);
+            releaseCornerOnce(); // 案内終了 / 地図フロント OFF → 余韻を残して戻す
         }
         // マップクローズ(地図を大きく): コーナーの手前の帯で、CarPlay を大きくして予告する(反転)。
         boolean closeWant = mapOn && guiding && dist >= 0 && everMoved && cornerOk && !mapEngaged
@@ -858,8 +915,6 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
             if (mapClose) showMode("mapclose", R.string.mode_mapclose, R.string.mode_mapclose_cap, Store.neonTurn(this));
             animateYt(targetYt());
         }
-        boolean duck = plan.duck && Store.turnDuck(this);
-        if (duck != turnDucked) { turnDucked = duck; applyDuck(); }
     }
 
     /** 案内の板を出すか。表示の設定・地図が見えているか・メニューが出ているかで決める。 */
@@ -901,11 +956,23 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         showMode("corner", R.string.mode_corner, R.string.mode_corner_cap, Store.neonTurn(this));
         Trace.clipHold(); // コーナーは通過するまでクリップを止めない(自動停止を取り消す)
         main.removeCallbacks(mapRelease); // 戻すのは、曲がり角を通過して plan.map が外れてから(applyRoute)
+        cornerReleasing = false;
         DuoLog.log("曲がり角の案内: CarPlay を全画面にし、YouTube を小窓にしました");
+    }
+
+    /**
+     * 余韻のあとに戻す予約を、1回だけ入れる。案内は1秒足らずごとに届くので、届くたびに予約を入れ直すと
+     * 2秒が永遠に来ず、案内が途切れるまでコーナーのままだった(11/7 実走: 次の曲がり角まで 17km でも 35 分間)。
+     */
+    private void releaseCornerOnce() {
+        if (cornerReleasing) return;
+        cornerReleasing = true;
+        main.postDelayed(mapRelease, CORNER_TAIL_MS);
     }
 
     private void mapRelease() {
         main.removeCallbacks(mapRelease);
+        cornerReleasing = false;
         if (!mapEngaged) return;
         mapEngaged = false;
         cornerTurnIndex = -1;
@@ -932,7 +999,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         focusActive();
     }
 
-    @Override public void routeSettingsChanged() { applyRoute(); updateStraight(); }
+    @Override public void routeSettingsChanged() { applyRoute(); updateStraight(); tv.ambient(Store.ambient(this)); }
 
     /**
      * 一本道: 案内中で、次の曲がり角が設定の距離より遠ければ YouTube を大きくする(2 画面のときだけ)。
@@ -1018,13 +1085,36 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     /** 運転の見張りの状態が変わったら、対応するモードの帯を出す(自動が効いているときだけ)。 */
     private void modeForDrive(int from, int to) {
         if (from == to || driveHeld) return; // 手動で保っているときは、自動の帯は出さない(嘘になる)
-        if (to == DriveWatch.PARKED && Store.parkOn(this))
-            showMode("parking", R.string.mode_parking, R.string.mode_parking_cap, 0xFF59E3B0);
-        else if (to == DriveWatch.STOPPED && Store.stopOn(this))
-            showMode("stopped", R.string.mode_stopped, R.string.mode_stopped_cap, 0xFF4F8CFF);
-        else if (to == DriveWatch.MOVING && from != DriveWatch.MOVING && (Store.parkOn(this) || Store.stopOn(this)))
-            showMode("driving", R.string.mode_driving, 0, Theme.NEON_WHITE);
+        main.removeCallbacks(stopBand);
+        // コーナー中は画面がコーナーのままなので、停車・駐車・走行の帯は出さない(帯と見た目が食い違うため)
+        if (to == DriveWatch.PARKED && Store.parkOn(this)) {
+            if (!mapEngaged) { showMode("parking", R.string.mode_parking, R.string.mode_parking_cap, 0xFF59E3B0); stopBandShown = true; }
+        } else if (to == DriveWatch.STOPPED && Store.stopOn(this)) {
+            // 停車の帯は、止まってから少し待って出す。渋滞の 1〜2 秒の停車で帯がばたつかないように(11/9 実走)
+            stopBandShown = false;
+            main.postDelayed(stopBand, STOP_BAND_DELAY_MS);
+        } else if (to == DriveWatch.MOVING && from != DriveWatch.MOVING) {
+            // 走り出したときの帯は、停車・駐車の帯を出していたときだけ。クルーズ中なら「クルーズ」と出す
+            if (stopBandShown && !mapEngaged) {
+                if (straightEngaged) showMode("cruise", R.string.mode_cruise, R.string.mode_cruise_cap, 0xFFB07BFF);
+                else showMode("driving", R.string.mode_driving, 0, Theme.NEON_WHITE);
+            }
+            stopBandShown = false;
+        }
     }
+
+    /** 停車の帯を出すのを、止まってから(見張りの 3 秒に加えて)この時間だけ待つ。 */
+    private static final long STOP_BAND_DELAY_MS = 5000;
+    /** 停車・駐車の帯を出した(走り出したら「走行/クルーズ」の帯で戻りを知らせる)。 */
+    private boolean stopBandShown;
+    private final Runnable stopBand = () -> {
+        if (driveState != DriveWatch.STOPPED || driveHeld || mapEngaged) return;
+        showMode("stopped", R.string.mode_stopped, R.string.mode_stopped_cap, 0xFF4F8CFF);
+        stopBandShown = true;
+    };
+
+    /** 案内中で、まだ到着していない。 */
+    private boolean enRoute() { Route r = route; return r != null && r.getGuiding() && !r.getArrived(); }
 
     /** モードの帯を左端から出す。初めてのモードのときだけ、下に一行の説明を添える。 */
     private void showMode(String key, int nameRes, int capRes, int color) {
@@ -1402,6 +1492,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         nameBluetooth();
         DuoLog.log("CarPlay を開始します(" + why + ")");
         carOn = true;
+        ConnLog.carOn(true, why);
         carRetryMs = CAR_RETRY_MIN_MS;
         try { car.start(); } catch (Throwable t) { DuoLog.error("CarPlay を始められません: " + DuoLog.why(t)); }
         stateChanged();
@@ -1409,7 +1500,9 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
 
     /** CarPlay の Bluetooth が iPhone とつながっている状態か(つながった後、Wi-Fi へ移って接続中まで)。 */
     static boolean carBluetooth(String s) {
-        return s.startsWith("iPhone と準備中") || s.startsWith("無線 CarPlay 接続中");
+        // 「CarPlay 表示中」(映像のセッションが始まった瞬間の文)も接続中。抜けていると、つながった直後に
+        // 一瞬「切断」と判定され、縁が不良の色に光り、記録に偽の切断が残っていた(2026-11-23 実機の接続の記録で判明)
+        return s.startsWith("iPhone と準備中") || s.startsWith("無線 CarPlay 接続中") || s.startsWith("CarPlay 表示中");
     }
 
     /** つなぎ直しが要る状態か(失敗・切断・始められない・停止のまま)。 */
@@ -1436,6 +1529,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     void stopCar() {
         DuoLog.log("CarPlay を止めます");
         carOn = false;
+        ConnLog.carOn(false, "操作盤・指示で止めた");
         carSounds.clear();
         applyDuck();
         try { car.destroy(); } catch (Throwable t) { DuoLog.error("CarPlay を止められません: " + DuoLog.why(t)); }
@@ -1706,26 +1800,56 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
         try { return p.status(); } catch (Throwable t) { return "状態を読めません " + DuoLog.why(t); }
     }
 
-    /** いま鳴っている CarPlay の音の種類(audioType)。 */
+    /** いま流れが開いている CarPlay の音の種類(audioType)。 */
     private final java.util.Set<String> carSounds = new java.util.HashSet<>();
+    /** いま流れが開いているナビの声・通知音の種類(default・alert など)。この間だけ YouTube を下げる。 */
+    private final java.util.Set<String> carVoices = new java.util.HashSet<>();
     private final Runnable applyDuck = this::applyDuck;
-    /** ナビ音声のあいだ YouTube を下げる音量。 */
-    static final float DUCK_NAV = 0.2f;
+    /** YouTube を下げる速さ(声が聞こえる前に下げ切る)と、戻す速さ。 */
+    private static final long DUCK_DOWN_MS = 250, DUCK_UP_MS = 900;
+    /**
+     * 流れが閉じてから戻し始めるまでの間(声の余韻)。戻し方そのものは tv-voice.js(無音のまま速さを戻し、1.5 秒でなめらかに)。
+     */
+    private static final long DUCK_RELEASE_MS = 300;
+    /** Y!カーナビの警告音のあいだの YouTube の音量。 */
+    private static final float DUCK_ALERT = 0.2f;
+    private boolean voiceDucked;
 
-    /** CarPlay の音が始まった/終わった(メインスレッド)。 */
+    private static boolean isVoiceType(String t) {
+        return !t.equals("media") && !t.equals("telephony") && !t.equals("speechrecognition");
+    }
+
+    /**
+     * CarPlay の音の流れが開いた/閉じた(メインスレッド)。YouTube の音量はこれだけで動かす(初版と同じ)。
+     * ナビの声・通知音: 開いたらすぐ無音へクロスフェードしてスロー、閉じたら 0.3 秒おいて戻す。電話・Siri: 一時停止。
+     * iPhone は声を鳴らすときに流れを開き、鳴らし終えると閉じる(コードで受け取る合図。音の大きさは測らない)。
+     */
     static void carAudio(String audioType, boolean active) {
         DuoActivity a = live;
         if (a == null) return;
-        if (active) a.carSounds.add(audioType); else a.carSounds.remove(audioType);
+        boolean voice = isVoiceType(audioType);
+        if (active) { a.carSounds.add(audioType); if (voice) a.carVoices.add(audioType); }
+        else { a.carSounds.remove(audioType); a.carVoices.remove(audioType); }
+        Trace.event("car-audio", audioType + (active ? " 開始" : " 終了"));
         a.main.removeCallbacks(a.applyDuck);
-        // 下げるのはすぐ、戻すのは1秒待ってから(ナビの言葉の切れ目で上がったり下がったりしないように)
-        if (active) a.applyDuck(); else a.main.postDelayed(a.applyDuck, 1000);
+        if (!active && voice) a.main.postDelayed(a.applyDuck, DUCK_RELEASE_MS);
+        else a.applyDuck();
         a.updateNavSplit();
     }
 
     /**
+     * 声の実音の鳴り始め/鳴り終わり(音の大きさで判定)。音量には使わず、走行記録にだけ残す
+     * (流れの開閉と実際の声のずれを確かめる材料。2026-11-10、音量を流れの開閉だけに戻した)。
+     */
+    static void carVoice(String audioType, boolean speaking, long inMs, String detail) {
+        Trace.event("voice", audioType + (speaking ? " 鳴り始め" : " 鳴り終わり") + " 聞こえるまで" + inMs + "ms"
+                + (detail == null || detail.isEmpty() ? "" : " " + detail));
+    }
+
+    /**
      * Apple の機器と同じ考え方: 基本は YouTube。CarPlay の
-     * ・ナビの声・通知音(default/alert/compatibility) → YouTube を 20% に下げて重ねる
+     * ・ナビの声・通知音(default/alert/compatibility) → 流れが開いている間、YouTube を無音へクロスフェードしてスロー(設定で一時停止)
+     *   スローの音は一切出さない(無音・消音にしてから速さを変え、速さを戻してから音を戻す。tv-voice.js)
      * ・電話・Siri(telephony/speechrecognition) → YouTube を一時停止し、終わったら再開
      * ・音楽(media) → 何もしない
      * 鳴り終わったら元の音量に戻す。
@@ -1733,28 +1857,34 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     private void applyDuck() {
         float level = 1f;
         boolean call = false;
-        for (String t : carSounds) {
+        for (String t : carSounds)
             if (t.equals("telephony") || t.equals("speechrecognition")) { level = 0f; call = true; }
-            else if (!t.equals("media")) level = Math.min(level, DUCK_NAV);
+        if (alertDucked) level = Math.min(level, DUCK_ALERT); // Y!カーナビの警告音
+        fadeDuckTo(level); // 急に切り替えず、自然に上げ下げする(ナビの声の間は tv-voice.js が音量を持つ)
+        // ナビの声: 流れが開いている間だけ。曲がり角の距離・画面の切り替えには連動させない
+        boolean voice = !carVoices.isEmpty();
+        boolean pause = Store.navVideo(this) == Store.NAV_VIDEO_PAUSE;
+        if (voice != voiceDucked) {
+            voiceDucked = voice;
+            Trace.event("duck", (voice ? "ナビの声: 無音へ・" + (pause ? "一時停止" : "スロー") : "ナビの声の終わり: 戻す")
+                    + " 声の流れ=" + carVoices + " 流れ全部=" + carSounds);
         }
-        if (turnDucked) level = Math.min(level, Store.duckLevel(this) / 100f); // 曲がり角の手前(Unlimited Edition)
-        if (alertDucked) level = Math.min(level, Store.duckLevel(this) / 100f); // Y!カーナビの警告
-        fadeDuckTo(level); // 急に切り替えず、自然に上げ下げする
-        tv.hold(call); // 電話・Siri の間は一時停止。終わったら、止める前に再生していれば再開
+        tv.voice(voice, pause);
+        tv.hold(call); // 電話・Siri の間は一時停止。終われば再開
+        ConnLog.ytVoice(voice, call);
     }
 
-    /** YouTube の音量を、目標までなめらかに上げ下げする(ナビ音声の重なりを自然に)。 */
-    private android.animation.ValueAnimator duckAnim;
+    /** YouTube の音量を目標へ。下げるのは速く、戻すのはゆっくり。フェードは YouTube の中で1回だけ行う。 */
     private float curDuck = 1f;
-    private static final long DUCK_FADE_MS = 350;
     private void fadeDuckTo(float target) {
-        if (duckAnim != null) duckAnim.cancel();
-        if (Math.abs(curDuck - target) < 0.02f) { curDuck = target; tv.duck(target); return; }
-        duckAnim = android.animation.ValueAnimator.ofFloat(curDuck, target);
-        duckAnim.setDuration(DUCK_FADE_MS);
-        duckAnim.setInterpolator(new android.view.animation.DecelerateInterpolator());
-        duckAnim.addUpdateListener(a -> { curDuck = (float) a.getAnimatedValue(); tv.duck(curDuck); });
-        duckAnim.start();
+        if (Math.abs(curDuck - target) < 0.01f) return;
+        long ms = target < curDuck ? DUCK_DOWN_MS : DUCK_UP_MS;
+        curDuck = target;
+        tv.duck(target, ms);
+        ConnLog.ytDuck(target, "声の流れ=" + carVoices + " 流れ全部=" + carSounds + (alertDucked ? " Y!警告" : ""));
+        // 実際に YouTube の音量を動かした時刻と理由を走行記録へ(声の流れ・実音との、ずれを数字で確かめるため)
+        Trace.event("duck", Math.round(target * 100) + "% " + ms + "ms 声の流れ=" + carVoices
+                + " 流れ全部=" + carSounds + (alertDucked ? " Y!警告" : ""));
     }
 
     /** 状態が変わったら、少し待ってまとめて1回送る。 */
@@ -1774,6 +1904,8 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
     // ───────── 走行の記録(Trace) ─────────
 
     /** いまの状態を JSON の断片で返す(記録の各行に添える)。Trace のスレッドから呼ばれる。 */
+    /** 記録に添える状態。画面が作り直されたら、新しい画面のものに差し替わる(Trace.init)。 */
+    private final Trace.Ctx traceCtx = this::traceSnapshot;
     private String traceSnapshot() {
         Route r = route;
         int side = Store.side(this);
@@ -1790,7 +1922,8 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
                 + ",\"nav\":" + (navEngaged ? 1 : 0)
                 + ",\"held\":" + (driveHeld ? 1 : 0)
                 + ",\"conn\":" + (lastConn ? 1 : 0)
-                + ",\"turnM\":" + (r == null ? -1 : r.distanceToTurnM);
+                + ",\"turnM\":" + (r == null ? -1 : r.distanceToTurnM)
+                + ",\"leftS\":" + (r == null ? -1 : r.timeRemainingSec);
     }
 
     private static final int REQ_SHOT = 0xD0C;
@@ -1853,6 +1986,7 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
             return r == null ? "YouTube の部品は「" + cmd + "」を扱いません" : r;
         }
         if (cmd.equals("trace") || cmd.startsWith("trace ")) return traceCommand(cmd);
+        if (cmd.equals("connlog")) return ConnLog.where();
         switch (cmd) {
             case "state": return stateText();
             case "swap": swap(); return "入れ替えました: " + layoutText();

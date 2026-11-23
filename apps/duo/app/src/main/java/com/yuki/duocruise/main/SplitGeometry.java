@@ -103,14 +103,41 @@ final class SplitGeometry {
         return new int[]{x, 0, x + vw, h};
     }
 
-    /** 曲がり角の小窓(YouTube)。幅は画面の 1/3、16:9。下の隅(left なら左下、普段は右下)。 */
-    static int[] pip(int w, int h, boolean left) { return pip(w, h, left, 16); }
+    static int[] pip(int w, int h, boolean left) { return pip(w, h, left, 0f); }
 
-    /** 小窓の置き場所(余白 m px)。影で浮かせるため、呼び手は影が収まる余白を渡す。 */
-    static int[] pip(int w, int h, boolean left, int m) {
-        int pw = Math.round(w / 3f), ph = Math.min(h, Math.round(pw * 9 / 16f));
-        return left ? new int[]{m, h - m - ph, m + pw, h - m} : new int[]{w - m - pw, h - m - ph, w - m, h - m};
+    /**
+     * 曲がり角の小窓(YouTube)。2026-11-06 の録画で、左下の 1/3 幅の小窓が CarPlay の自車の印と曲がる先の道を
+     * 隠していたので、右の「曲がり角カードと到着カードの間」(CarPlay の地図で一番使われていない所)へ置く。
+     * 大きさは幅 21%・高さ 40% の箱に、動画の形(aspect=横÷縦、0 なら 16:9)で収める(黒い帯を作らない)。
+     * left なら従来どおり左下。
+     */
+    static int[] pip(int w, int h, boolean left, float aspect) { return pip(w, h, left, aspect, -1f, -1f); }
+
+    /**
+     * 小窓。fx・fy は本人がコマンダーで動かした中心の位置(画面に対する割合)。負なら既定の場所。
+     * どこへ動かしても画面の内側(縁から m)に収める。
+     */
+    static int[] pip(int w, int h, boolean left, float aspect, float fx, float fy) {
+        float a = aspect > 0.3f && aspect < 4f ? aspect : 16f / 9f;
+        int maxW = Math.round(w * PIP_W), maxH = Math.round(h * PIP_H), m = 16;
+        int pw = maxW, ph = Math.round(pw / a);
+        if (ph > maxH) { ph = maxH; pw = Math.round(ph * a); }
+        if (fx >= 0f && fy >= 0f) {
+            int lx = Math.max(m, Math.min(w - m - pw, Math.round(fx * w) - pw / 2));
+            int ty = Math.max(m, Math.min(h - m - ph, Math.round(fy * h) - ph / 2));
+            return new int[]{lx, ty, lx + pw, ty + ph};
+        }
+        if (left) return new int[]{m, h - m - ph, m + pw, h - m};
+        int cy = Math.round(h * PIP_CY);
+        int top = Math.max(m, Math.min(h - m - ph, cy - ph / 2));
+        return new int[]{w - m - pw, top, w - m, top + ph};
     }
+
+    /**
+     * 小窓の箱(画面に対する幅・高さの割合)と、縦の中心(曲がり角カードの下〜到着カードの上の真ん中)。
+     * 11/7 の本人の指定で 1.2 倍に(幅 21%→25.2%、高さ 40%→48%。OTTO では 311×175 → 373×210)。
+     */
+    static final float PIP_W = 0.252f, PIP_H = 0.48f, PIP_CY = 0.445f;
 
     /**
      * 1画面のときの、出さない側の置き場所(画面の右の外)。大きさは画面と同じ。

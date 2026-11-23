@@ -167,9 +167,9 @@
     <string name="rl_dist">Light At</string>
     <string name="rl_color">Light Color &amp; Intensity</string>
     <string name="n_turn_color">Turn Light Color</string>
-    <string name="ra_on">Lower YouTube Before Turns</string>
-    <string name="ra_dist">Lower From</string>
-    <string name="ra_level">Lowered Volume</string>
+    <string name="ra_video">Video During Nav Voice</string>
+    <string name="ra_video_slow">Slow motion</string>
+    <string name="ra_video_pause">Pause</string>
     <string name="rr_on">YouTube Full Screen on Arrival</string>
     <string name="to_route">Turn-by-Turn</string>
     <string name="to_route_light">Direction Light</string>
@@ -188,4 +188,5 @@
     <string name="s_units">Distance Units</string>
     <string name="v_km">Kilometers</string>
     <string name="v_mi">Miles</string>
+    <string name="d_ambient">Ambient light</string>
 </resources>

@@ -161,9 +161,6 @@
     <string name="rl_dist">Leuchten ab</string>
     <string name="rl_color">Lichtfarbe &amp; Intensität</string>
     <string name="n_turn_color">Farbe des Abbiegelichts</string>
-    <string name="ra_on">Vor Abbiegungen leiser</string>
-    <string name="ra_dist">Leiser ab</string>
-    <string name="ra_level">Reduzierte Lautstärke</string>
     <string name="rr_on">YouTube bei Ankunft im Vollbild</string>
     <string name="to_route">Zu Abbiegehinweisen</string>
     <string name="to_route_light">Zum Richtungslicht</string>
@@ -182,4 +179,6 @@
     <string name="s_units">Entfernungseinheiten</string>
     <string name="v_km">Kilometer</string>
     <string name="v_mi">Meilen</string>
+    <string name="d_ambient">Umgebungslicht</string>
+    <string name="ra_video_slow">Zeitlupe</string>
 </resources>

@@ -135,6 +135,8 @@ public final class TvPane {
         }
         KeyEvent k = translate(e);
         if (k == null) return false;
+        // 操作すると TV 版の操作の表示が出るので、アンビエントを 6 秒止める(表示を隠さない)
+        if (e.getAction() == KeyEvent.ACTION_DOWN) web.evaluateJavascript("if(window.__duoAmb)__duoAmb.hold=Date.now()+6000", null);
         if (!web.hasFocus()) web.requestFocus();
         web.dispatchKeyEvent(k);
         return true;
@@ -271,6 +273,9 @@ public final class TvPane {
             } catch (NumberFormatException e) {
                 r = "番号は 0〜" + (UA_NAMES.length - 1);
             }
+        } else if (c.startsWith("tv-ambient:")) {
+            setAmbient(c.endsWith("1")); // 確かめる用(本体の設定は変えない。次に設定が変わると設定の値に戻る)
+            r = "アンビエント: " + (ambient ? "オン" : "オフ");
         } else if (c.equals("tv-reload")) {
             if (web != null) web.reload();
             r = "読み直します";
@@ -367,6 +372,7 @@ public final class TvPane {
         @Override public void onReceivedError(WebView v, WebResourceRequest r, WebResourceError e) {
             if (r.isForMainFrame()) {
                 loadState = "失敗";
+                com.yuki.duocruise.main.ConnLog.ytError("読み込み失敗 " + e.getErrorCode() + " " + e.getDescription());
                 TvLog.error(app, "読み込み失敗: " + e.getErrorCode() + " " + e.getDescription() + " URL=" + shortUrl(r.getUrl().toString()));
             }
         }
@@ -374,6 +380,7 @@ public final class TvPane {
         @Override public boolean onRenderProcessGone(WebView v, RenderProcessGoneDetail d) {
             if (v != web) return true;
             final String why = d.didCrash() ? "クラッシュ" : "メモリ不足で止められた";
+            com.yuki.duocruise.main.ConnLog.ytError("WebView の描画が止まった: " + why);
             main.post(() -> rebuildWebView(why));
             return true;
         }
@@ -529,15 +536,50 @@ public final class TvPane {
             + "if(!v)return JSON.stringify({nv:1,id:id});"
             + "var q=v.getVideoPlaybackQuality?v.getVideoPlaybackQuality():null;"
             + "return JSON.stringify({p:!v.paused&&!v.ended,w:v.videoWidth,h:v.videoHeight,"
-            + "d:q?q.droppedVideoFrames:-1,f:q?q.totalVideoFrames:-1,m:v.muted,id:id,t:v.currentTime});})()";
+            + "d:q?q.droppedVideoFrames:-1,f:q?q.totalVideoFrames:-1,m:v.muted,id:id,t:v.currentTime,"
+            + "rs:v.readyState,sk:v.seeking,en:v.ended,"
+            + "ec:v.error?v.error.code:0,em:v.error?(v.error.message||''):''});})()";
+
+
+    /**
+     * アンビエント: YouTube の枠より動画が細いとき(マップクローズなどで上下に黒い帯が出るとき)、
+     * 帯を動画の色の光で埋める。中身は assets/tv-ambient.js(見え方の決まりもそこに書いてある)。
+     * オン・オフは本体の設定(画面 → YouTube の余白を光で)から setAmbient で受ける。
+     */
+    private String ambientJs;
+    private boolean ambient = true;
+
+    public void setAmbient(boolean on) {
+        ambient = on;
+        injectAmbient();
+    }
+
+    private void injectAmbient() {
+        if (web == null || destroyed) return;
+        if (ambientJs == null) {
+            try (java.io.InputStream in = app.getAssets().open("tv-ambient.js")) {
+                java.io.ByteArrayOutputStream o = new java.io.ByteArrayOutputStream();
+                byte[] buf = new byte[8192]; int n;
+                while ((n = in.read(buf)) > 0) o.write(buf, 0, n);
+                ambientJs = o.toString("UTF-8");
+            } catch (Exception e) {
+                ambientJs = "";
+                TvLog.error(app, "アンビエントを読めません: " + e);
+            }
+        }
+        if (!ambientJs.isEmpty()) web.evaluateJavascript(ambientJs + "(" + ambient + ")", null);
+    }
 
     private final Runnable poller = new Runnable() {
         @Override public void run() {
             if (destroyed) return;
             if (web != null) web.evaluateJavascript(POLL_JS, TvPane.this::onPoll);
+            injectAmbient(); // 読み直しで消えても次の確認で戻る(2回目以降は設定を渡すだけ)
+            if (voiceOn) sendVoice(); // ナビの声の間にページが読み直されても、無音・スローに戻す
             // 動画が切り替わると音量が戻ることがあるので、下げている間は5秒ごとにかけ直す
-            if (web != null && duck < 1f) web.evaluateJavascript(
-                    "(function(){var v=document.querySelector('video');if(v&&!window.__duoFade)v.volume=" + duck + ";})()", null);
+            if (web != null && duck < 1f && !voiceOn) web.evaluateJavascript(
+                    "(function(){var v=document.querySelector('video');"
+                    + "if(v&&!window.__duoFade&&!(window.__duoVoiceActive&&window.__duoVoiceActive()))v.volume=" + duck + ";})()", null);
             main.postDelayed(this, POLL_MS);
         }
     };
@@ -548,11 +590,18 @@ public final class TvPane {
             if (!(v instanceof String) || ((String) v).isEmpty()) return;
             JSONObject o = new JSONObject((String) v);
             remember(o);
-            if (o.optInt("nv") == 1) return;
+            if (o.optInt("nv") == 1) { com.yuki.duocruise.main.ConnLog.yt("no-video", null, null); return; }
             boolean p = o.optBoolean("p");
             String res = o.optInt("w") + "x" + o.optInt("h");
+            if (o.optInt("w") > 0 && o.optInt("h") > 0) { videoW = o.optInt("w"); videoH = o.optInt("h"); }
             int dropped = o.optInt("d", -1), total = o.optInt("f", -1);
             String now = (p ? "再生中 " : "停止 ") + res + (o.optBoolean("m") ? " 消音" : "");
+            // 接続の記録: 再生・一時停止・読み込み待ち・エラー(MediaError の番号と文)・画質
+            int ec = o.optInt("ec");
+            String ytState = ec != 0 ? "error" : o.optBoolean("en") ? "ended"
+                    : (!o.optBoolean("p") && o.optInt("rs", 4) < 3 && !o.optBoolean("sk")) ? "paused"
+                    : (o.optInt("rs", 4) < 3 || o.optBoolean("sk")) ? "loading" : p ? "playing" : "paused";
+            com.yuki.duocruise.main.ConnLog.yt(ytState, res, ec != 0 ? "MediaError " + ec + " " + o.optString("em") : null);
             boolean changed = !now.equals(playState);
             playState = now;
             if (changed) TvLog.state(app, "再生の状態: " + now);
@@ -621,16 +670,66 @@ public final class TvPane {
      * YouTube の音量を level へ、約0.3秒かけてなめらかに変える(Apple の機器でナビが割り込むときと同じ動き)。
      * 再生は止めない。端末の音量ではなく、ページの動画の音量だけを変える。
      */
-    public void setDuck(float level) {
+    public void setDuck(float level) { setDuck(level, 300); }
+
+    /**
+     * 音量を fadeMs かけて level へ。フェードはページの中で1回だけ(呼ぶ側で刻まない)。
+     * なめらかに聞こえるよう、時間はゆっくり始まりゆっくり終わる曲線(smoothstep)、音量は耳の感じ方に合わせて二乗で動かす。
+     */
+    public void setDuck(float level, long fadeMs) {
         level = Math.max(0f, Math.min(1f, level));
         if (level == duck) return;
         duck = level;
         TvLog.state(app, level >= 1f ? "音量を戻した" : "CarPlay の音のため音量を " + Math.round(level * 100) + "% に下げた");
         if (web == null) return;
-        web.evaluateJavascript("(function(t){var v=document.querySelector('video');if(!v)return;"
-                + "clearInterval(window.__duoFade);var s=v.volume,n=0;"
-                + "window.__duoFade=setInterval(function(){n++;v.volume=s+(t-s)*Math.min(1,n/10);"
-                + "if(n>=10){clearInterval(window.__duoFade);window.__duoFade=0;}},30);})(" + level + ")", null);
+        if (voiceOn) { sendVoice(); return; } // ナビの声の間は音量を tv-voice.js が持つ。戻す先の音量だけ伝える
+        long ms = Math.max(0, Math.min(3000, fadeMs));
+        web.evaluateJavascript("(function(t,d){var v=document.querySelector('video');if(!v)return;"
+                + "clearInterval(window.__duoFade);var s=Math.sqrt(v.volume),e=Math.sqrt(t),t0=Date.now();"
+                + "if(d<=0){v.volume=t;window.__duoFade=0;return;}"
+                + "window.__duoFade=setInterval(function(){var x=Math.min(1,(Date.now()-t0)/d),k=x*x*(3-2*x),a=s+(e-s)*k;"
+                + "v.volume=Math.max(0,Math.min(1,a*a));"
+                + "if(x>=1){clearInterval(window.__duoFade);window.__duoFade=0;}},16);})(" + level + "," + ms + ")", null);
+    }
+
+    /** いま再生中の動画の横÷縦(定期の様子見で取った値)。分からなければ 0。 */
+    public float videoAspect() { return videoH > 0 ? videoW / (float) videoH : 0f; }
+    private int videoW, videoH;
+
+    // ---------------- ナビの声の間(クロスフェード → 無音でスロー → 戻す) ----------------
+
+    /** 中身は assets/tv-voice.js(動きの決まりもそこに書いてある)。 */
+    private String voiceJs;
+    private boolean voiceOn, voicePause;
+
+    /**
+     * ナビの声が始まった/終わった。始まり: 音量を 0 へクロスフェードし、0 になってから無音のままスロー(または一時停止)。
+     * 終わり: 無音のまま速さを戻し、ごく小さい音からなめらかに音量を戻す。スローの音は一切出さない。
+     */
+    public void setVoice(boolean on, boolean pause) {
+        if (on == voiceOn && pause == voicePause) return;
+        voiceOn = on;
+        voicePause = pause;
+        TvLog.state(app, on ? "ナビの声: YouTube を無音へ(" + (pause ? "一時停止" : "スロー") + ")" : "ナビの声が終わった: YouTube を戻す");
+        sendVoice();
+    }
+
+    private void sendVoice() {
+        if (web == null || destroyed) return;
+        if (voiceJs == null) {
+            try (java.io.InputStream in = app.getAssets().open("tv-voice.js")) {
+                java.io.ByteArrayOutputStream o = new java.io.ByteArrayOutputStream();
+                byte[] buf = new byte[8192]; int n;
+                while ((n = in.read(buf)) > 0) o.write(buf, 0, n);
+                voiceJs = o.toString("UTF-8");
+            } catch (Exception e) {
+                voiceJs = "";
+                TvLog.error(app, "ナビの声の間の動きを読めません: " + e);
+            }
+        }
+        if (voiceJs.isEmpty()) return;
+        web.evaluateJavascript(voiceJs + ";window.__duoVoice(" + voiceOn + ",{base:" + duck
+                + ",mode:'" + (voicePause ? "pause" : "slow") + "'});", null);
     }
 
     // ---------------- 電話・Siri の間の一時停止 ----------------
@@ -643,11 +742,11 @@ public final class TvPane {
         held = on;
         if (on) {
             heldWasPlaying = playing;
-            if (playing) { pauseVideo(); TvLog.state(app, "電話・Siri のため一時停止"); }
+            if (playing) { pauseVideo(); TvLog.state(app, "電話・Siri・ナビの声のため一時停止"); }
         } else if (heldWasPlaying) {
             heldWasPlaying = false;
             playVideo();
-            TvLog.state(app, "電話・Siri が終わったので再開");
+            TvLog.state(app, "電話・Siri・ナビの声が終わったので再開");
         }
     }
 

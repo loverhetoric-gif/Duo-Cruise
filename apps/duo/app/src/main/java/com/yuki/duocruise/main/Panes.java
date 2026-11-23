@@ -25,11 +25,17 @@ final class Panes {
                 /** 状態が変わった。画面の記録にだけ出す(更新アプリへは CarPlayPane が送り済み)。 */
                 @Override public void onStatus(String status) {
                     DuoLog.local("state", "CarPlay の状態: " + status);
+                    ConnLog.carStatus(status);
                     DuoActivity.stateChanged();
                 }
 
                 /** 記録した内容。画面の記録にだけ出す(更新アプリへは CarPlayPane が送り済み)。 */
                 @Override public void onRecord(String kind, String text) {
+                    // iPhone からの命令は走行記録にだけ(数が多いので画面の記録には出さない)
+                    if (com.yuki.duocruise.carplay.CarPlayPane.KIND_CAR_CMD.equals(kind)) { Trace.event("car-cmd", text); return; }
+                    // 通信の道(iPhone の IP・こちらの IP・口・CarPlay 用の Wi-Fi・描く範囲)は接続の記録へだけ
+                    if (com.yuki.duocruise.carplay.CarPlayPane.KIND_CONN.equals(kind)) { ConnLog.carNet(text); return; }
+                    if ("error".equals(kind)) ConnLog.event("carplay", "error", "text", text);
                     DuoLog.local(kind, "CarPlay: " + text);
                     // 切断の理由(失敗・通信エラー・取り合い)は logcat だと数十秒で流れて吸い出す頃に消える。
                     // 永続の走行記録(Trace)にも残し、外での切断の原因を後から辿れるようにする。
@@ -41,6 +47,11 @@ final class Panes {
                     DuoActivity.carAudio(audioType, active);
                 }
 
+                /** ナビの声が実際に鳴り始めた/鳴り終わった(YouTube とのクロスフェードの合図)。 */
+                @Override public void onVoice(String audioType, boolean speaking, long inMs, String detail) {
+                    DuoActivity.carVoice(audioType, speaking, inMs, detail);
+                }
+
                 /** ナビの案内(Duo Cruise Unlimited Edition だけ。リリース版では届かない)。 */
                 @Override public void onRoute(Route route) {
                     DuoActivity.carRoute(route);
@@ -48,6 +59,7 @@ final class Panes {
 
                 /** 映像が届き始めた/止まった。つながるまでの演出を出し入れする。 */
                 @Override public void onStream(boolean active) {
+                    ConnLog.carStream(active);
                     DuoActivity.stateChanged();
                 }
             }, BuildConfig.UNLIMITED, Store.rightHand(a)));
@@ -122,8 +134,12 @@ final class Panes {
         @Override public boolean onGenericMotion(MotionEvent e) { return false; }
         @Override public String status() { return p.status(); }
         @Override public String command(String cmd) { return p.command(cmd); }
-        @Override public void duck(float level) { p.setDuck(level); }
+        @Override public void duck(float level) { p.setDuck(level, 300); }
+        @Override public void duck(float level, long fadeMs) { p.setDuck(level, fadeMs); }
+        @Override public float videoAspect() { return p.videoAspect(); }
         @Override public void hold(boolean on) { p.setHold(on); }
+        @Override public void voice(boolean on, boolean pause) { p.setVoice(on, pause); }
+        @Override public void ambient(boolean on) { p.setAmbient(on); }
         @Override public void back() { p.back(); }
         @Override public void typeText(String text) { p.typeText(text); }
         @Override public void typeKey(int keyCode) { p.typeKey(keyCode); }

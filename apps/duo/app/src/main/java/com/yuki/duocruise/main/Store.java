@@ -10,6 +10,9 @@ final class Store {
     static SharedPreferences p(Context c) { return c.getApplicationContext().getSharedPreferences("duo", Context.MODE_PRIVATE); }
 
     /** true のとき、CarPlay を右・YouTube を左に置く。 */
+    /** YouTube の上下の余白(黒い帯)を、動画の色の光で埋める(アンビエント)。既定はオン。 */
+    static boolean ambient(Context c) { return p(c).getBoolean("ambient", true); }
+    static void setAmbient(Context c, boolean v) { p(c).edit().putBoolean("ambient", v).apply(); }
     static boolean swapped(Context c) { return p(c).getBoolean("swapped", false); }
     static void setSwapped(Context c, boolean v) { p(c).edit().putBoolean("swapped", v).apply(); }
 
@@ -56,6 +59,23 @@ final class Store {
     /** 普段の、YouTube の幅の割合(20〜100%)。50＝半々、100＝YouTube 全画面。 */
     static int splitYt(Context c) { return SplitGeometry.clampYt(p(c).getInt("splitYt", 50)); }
     static void setSplitYt(Context c, int v) { p(c).edit().putInt("splitYt", SplitGeometry.clampYt(v)).apply(); }
+
+    /** コーナーの小窓の中心(画面に対する割合)。本人がコマンダーで動かした位置。-1 なら既定の場所。 */
+    static float pipX(Context c) { return p(c).getFloat("pipX", -1f); }
+    static float pipY(Context c) { return p(c).getFloat("pipY", -1f); }
+    static void setPipPos(Context c, float x, float y) { p(c).edit().putFloat("pipX", x).putFloat("pipY", y).apply(); }
+
+    /**
+     * ナビの声の間の YouTube の動画: そのまま(音量だけ下げる)/ 一時停止。既定はそのまま。
+     * 以前あった「スロー」(1)は、音が間延びして怖かったのでやめた(2026-11-10 本人)。保存が 1 の端末はそのままに読む。
+     */
+    /**
+     * ナビの声の間の YouTube: 音量は必ず 0 へクロスフェードし、そのうえでスロー(既定)か一時停止。
+     * 音量・速さは声の流れだけで動かす(曲がり角の距離・画面の切り替えでは動かさない。2026-11-10 本人の指定)。
+     */
+    static final int NAV_VIDEO_SLOW = 1, NAV_VIDEO_PAUSE = 2;
+    static int navVideo(Context c) { return p(c).getInt("navVideo", NAV_VIDEO_SLOW) == NAV_VIDEO_PAUSE ? NAV_VIDEO_PAUSE : NAV_VIDEO_SLOW; }
+    static void setNavVideo(Context c, int v) { p(c).edit().putInt("navVideo", v == NAV_VIDEO_PAUSE ? NAV_VIDEO_PAUSE : NAV_VIDEO_SLOW).apply(); }
 
     /** ナビ音声が流れている間の、YouTube の幅の割合(%)。 */
     static int navYt(Context c) { return SplitGeometry.clampYt(p(c).getInt("navYt", 50)); }
@@ -162,14 +182,7 @@ final class Store {
     static int lightDist(Context c) { return p(c).getInt("rtLightDist", 200); }
     static void setLightDist(Context c, int v) { p(c).edit().putInt("rtLightDist", clampDist(v)).apply(); }
 
-    /** 曲がり角の手前で YouTube の音量を下げるか。 */
-    static boolean turnDuck(Context c) { return p(c).getBoolean("rtDuck", false); }
-    static void setTurnDuck(Context c, boolean v) { p(c).edit().putBoolean("rtDuck", v).apply(); }
-    static int duckDist(Context c) { return p(c).getInt("rtDuckDist", 150); }
-    static void setDuckDist(Context c, int v) { p(c).edit().putInt("rtDuckDist", clampDist(v)).apply(); }
-    /** 下げたときの音量(%)。 */
-    static int duckLevel(Context c) { return p(c).getInt("rtDuckLv", 30); }
-    static void setDuckLevel(Context c, int v) { p(c).edit().putInt("rtDuckLv", Math.max(0, Math.min(100, v))).apply(); }
+
 
     /** 到着したら YouTube を全画面にするか。 */
     static boolean arriveFull(Context c) { return p(c).getBoolean("rtArrive", false); }

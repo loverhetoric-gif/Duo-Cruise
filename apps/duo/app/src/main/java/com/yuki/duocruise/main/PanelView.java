@@ -338,6 +338,9 @@ final class PanelView extends ViewGroup {
             items.add(new Item(() -> T(R.string.d_target), host::sideText, host::switchSide, true));
             items.add(new Item(() -> T(R.string.d_layout), host::layoutText, host::swap, true));
             items.add(new Item(() -> T(R.string.d_split), () -> GO, () -> show(SPLIT)));
+            // YouTube の上下の余白を動画の色の光で埋める(マップクローズなどで帯が出るとき)
+            items.add(new Item(() -> T(R.string.d_ambient), () -> Store.ambient(getContext()) ? T(R.string.on) : T(R.string.off),
+                    () -> { Store.setAmbient(getContext(), !Store.ambient(getContext())); host.routeSettingsChanged(); refresh(); }, true));
             items.add(back(T(R.string.to_menu)));
         } else if (p == CONTROLS) {
             title.setText(T(R.string.m_controls));
@@ -733,7 +736,7 @@ final class PanelView extends ViewGroup {
                 items.add(new Item(() -> T(R.string.r_map), () -> onOff(Store.mapFront(c)), () -> show(R_MAP)));
                 items.add(new Item(() -> T(R.string.r_straight), () -> onOff(Store.straightOn(c)), () -> show(R_STRAIGHT)));
                 items.add(new Item(() -> T(R.string.r_light), () -> onOff(Store.turnLight(c)), () -> show(R_LIGHT)));
-                items.add(new Item(() -> T(R.string.r_audio), () -> onOff(Store.turnDuck(c)), () -> show(R_AUDIO)));
+                items.add(new Item(() -> T(R.string.r_audio), () -> T(Store.navVideo(c) == Store.NAV_VIDEO_PAUSE ? R.string.ra_video_pause : R.string.ra_video_slow), () -> show(R_AUDIO)));
                 items.add(new Item(() -> T(R.string.r_arrive), () -> onOff(Store.arriveFull(c)), () -> show(R_ARRIVE)));
                 items.add(back(T(R.string.to_vehicle)));
                 break;
@@ -801,16 +804,11 @@ final class PanelView extends ViewGroup {
                 break;
             case R_AUDIO:
                 title.setText(T(R.string.r_audio));
-                items.add(new Item(() -> T(R.string.ra_on), () -> onOff(Store.turnDuck(c)),
-                        () -> { Store.setTurnDuck(c, !Store.turnDuck(c)); changed(); }, true));
-                items.add(new Item(() -> T(R.string.ra_dist), () -> {}, distSlider(() -> Store.duckDist(c), v -> Store.setDuckDist(c, v))));
-                items.add(new Item(() -> T(R.string.ra_level), () -> {}, new Slider() {
-                    public int value() { return Store.duckLevel(c); }
-                    public int max() { return 100; }
-                    public void nudge(int d) { Store.setDuckLevel(c, value() + d * 5); changed(); }
-                    public String text() { return value() + "%"; }
-                    public int tint() { return Theme.NEON_WHITE; }
-                }));
+                // ナビの声の間の動画(音は必ず無音へ): スロー ⇄ 一時停止 と押すたびに切り替え
+                items.add(new Item(() -> T(R.string.ra_video), () -> T(Store.navVideo(c) == Store.NAV_VIDEO_PAUSE
+                                ? R.string.ra_video_pause : R.string.ra_video_slow),
+                        () -> { Store.setNavVideo(c, Store.navVideo(c) == Store.NAV_VIDEO_PAUSE
+                                ? Store.NAV_VIDEO_SLOW : Store.NAV_VIDEO_PAUSE); changed(); }));
                 items.add(back(T(R.string.to_route)));
                 break;
             default: // R_ARRIVE

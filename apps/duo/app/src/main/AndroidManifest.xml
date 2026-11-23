@@ -14,6 +14,9 @@
     <!-- 走行の記録の全画面スクショ(MediaProjection の前面サービス。本人が画面で一度「開始」を押して許す) -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <!-- 接続の記録(ConnLog): 機器の起動から常駐して、CarPlay・YouTube・Wi-Fi・Bluetooth の接続を残す -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <!-- 「OTTO のホームを開く」でホームアプリを探すため -->
     <queries>
         <intent>
@@ -71,6 +74,22 @@
             android:name=".ShotService"
             android:exported="false"
             android:foregroundServiceType="mediaProjection" />
+        <!-- 接続の記録(常に残す記録。走行の記録の on/off とは別)。起動・更新で始まり、止められても戻る -->
+        <service
+            android:name=".ConnLogService"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice" />
+        <receiver
+            android:name=".ConnLogBoot"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.ACTION_SHUTDOWN" />
+                <action android:name="android.intent.action.REBOOT" />
+            </intent-filter>
+        </receiver>
         <!-- 記録シートの「指示」の受け口(送れるのは同じ署名の更新アプリだけ) -->
         <receiver
             android:name=".CommandReceiver"

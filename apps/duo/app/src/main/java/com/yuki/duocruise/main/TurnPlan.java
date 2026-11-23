@@ -10,10 +10,10 @@ package com.yuki.duocruise.main;
  */
 final class TurnPlan {
     /** 設定(m)。 */
-    int hintDist = 1000, mapDist = 300, lightDist = 200, duckDist = 150;
+    int hintDist = 1000, mapDist = 300, lightDist = 200;
 
-    /** 案内を出す・地図を出す・音量を下げる、が要るか。 */
-    boolean hint, map, duck;
+    /** 案内を出す・地図を出す、が要るか。(音量は曲がり角の距離では動かさない。ナビの声が実際に鳴っている間だけ下げる) */
+    boolean hint, map;
     /** 今回の知らせで光らせる側("L"/"R")。光らせないなら null。 */
     String light;
     /** 今回の知らせで到着した。 */
@@ -33,7 +33,6 @@ final class TurnPlan {
         boolean known = guiding && index >= 0 && dist >= 0;
         hint = known && dist <= hintDist;
         map = known && dist <= mapDist;
-        duck = known && dist <= duckDist;
         if (known && side != null && dist <= lightDist && index != litIndex) {
             light = side;
             litIndex = index;
@@ -43,7 +42,7 @@ final class TurnPlan {
 
     /** CarPlay が止まった・ルートが消えた。 */
     void clear() {
-        hint = map = duck = arrivedNow = false;
+        hint = map = arrivedNow = false;
         light = null;
         litIndex = Integer.MIN_VALUE;
         wasArrived = false;
