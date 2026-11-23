@@ -518,6 +518,8 @@ public final class ConnLogService extends Service {
                 String ssid = i.getSSID() == null ? "" : i.getSSID();
                 boolean tether = (ips != null && ips.startsWith("172.20.10.")) || ssid.toLowerCase(java.util.Locale.ROOT).contains("iphone");
                 o.put("iphoneTether", tether);
+                // 画面が閉じている間は Android が SSID・BSSID を伏せる(裏のサービスには位置情報の許可が効かない)
+                if ("<unknown ssid>".equals(ssid)) o.put("ssidHidden", true);
             }
             // この Wi-Fi の道が通信できるか(validated)
             if (cm != null) for (Map.Entry<Network, NetworkCapabilities> e : caps.entrySet()) {
@@ -551,9 +553,14 @@ public final class ConnLogService extends Service {
                     if (ad instanceof Inet4Address) b.append(' ').append(ad.getHostAddress());
                 ifaces.put(b.toString());
                 String n = ni.getName();
-                if (n.startsWith("ap") || n.startsWith("swlan") || n.startsWith("wlan1") || n.startsWith("p2p")) apIfaces.add(n);
+                // ホットスポット・P2P の口: 本体の Wi-Fi(子機)の口以外の wlan と、ap・swlan・p2p。
+                // P3 PRO の本体のホットスポットは wlan2(2026-11-23 実機)
+                boolean hasV4 = b.indexOf(" ") > 0;
+                if (hasV4 && !n.equals(staIface()) && (n.startsWith("wlan") || n.startsWith("ap") || n.startsWith("swlan") || n.startsWith("p2p")))
+                    apIfaces.add(n);
             }
             o.put("ifaces", ifaces);
+            o.put("apIfaces", new JSONArray(apIfaces));
             if ("unreadable".equals(o.optString("state")))
                 o.put("state", apIfaces.isEmpty() ? "off(口から推定)" : "on(口から推定 " + apIfaces + ")");
             // つながっている機器: ARP の表(読めるかは機器しだい。Android 10 以降の普通のアプリは読めないことが多い)
@@ -574,6 +581,16 @@ public final class ConnLogService extends Service {
             try { o.put("err", DuoLog.why(t)); } catch (Throwable ignored) { }
         }
         return o;
+    }
+
+    /** 本体の Wi-Fi(子機)の口の名前(通信の道から)。分からなければ wlan0。 */
+    private String staIface() {
+        for (Map.Entry<Network, NetworkCapabilities> e : caps.entrySet()) {
+            if (!e.getValue().hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) continue;
+            LinkProperties lp = links.get(e.getKey());
+            if (lp != null && lp.getInterfaceName() != null) return lp.getInterfaceName();
+        }
+        return "wlan0";
     }
 
     /** ip neigh(読めれば)。読めなければ null。 */
@@ -623,6 +640,13 @@ public final class ConnLogService extends Service {
                 } catch (Throwable ignored) { }
             }
             o.put("connected", conn);
+            // 機器同士のつながり(ACL)。CarPlay の iPhone は音声のプロファイルではなくこちらに出る
+            JSONArray acl = new JSONArray();
+            try {
+                java.lang.reflect.Method m = BluetoothDevice.class.getMethod("isConnected");
+                for (BluetoothDevice d : a.getBondedDevices()) if (Boolean.TRUE.equals(m.invoke(d))) acl.put(dev(d));
+                o.put("acl", acl);
+            } catch (Throwable ignored) { /* 読めない機器 */ }
         } catch (Throwable t) {
             try { o.put("err", DuoLog.why(t)); } catch (Throwable ignored) { }
         }

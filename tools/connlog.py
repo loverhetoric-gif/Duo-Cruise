@@ -138,6 +138,9 @@ def show(arg=None, with_snap=False, rows=None, title=None):
             car_up = o
         if c == "carplay" and e == "disconnected" and car_up:
             periods.append((car_up, o)); car_up = None
+        # 切断の行が書かれずにアプリ・機器が終わったとき(入れ替え・落ちた・電源断)も、そこで区切る
+        if c == "sys" and e in ("screen-close", "shutdown", "boot", "app-updated", "crash", "service-start") and car_up:
+            periods.append((car_up, dict(o, cut=e))); car_up = None
         if c == "snap":
             if with_snap:
                 print(f"{t}  {'まとめ':<8} {snap_line(o)}")
@@ -148,7 +151,7 @@ def show(arg=None, with_snap=False, rows=None, title=None):
     if periods:
         print("\n== CarPlay がつながっていた時間帯")
         for a, b in periods:
-            end = str(b.get("t"))[11:19] if b else "(記録の終わりまで)"
+            end = (str(b.get("t"))[11:19] + (f"(アプリ・機器の {b['cut']} で区切り)" if b.get("cut") else "")) if b else "(記録の終わりまで)"
             print(f"  {str(a.get('t'))[11:19]} 〜 {end}  {a.get('path')}")
     snaps = [o for o in rows if o.get("cat") == "snap"]
     if snaps:

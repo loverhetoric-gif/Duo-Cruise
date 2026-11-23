@@ -1500,7 +1500,9 @@ public class DuoActivity extends Activity implements KeyRouter.Sink, PanelView.H
 
     /** CarPlay の Bluetooth が iPhone とつながっている状態か(つながった後、Wi-Fi へ移って接続中まで)。 */
     static boolean carBluetooth(String s) {
-        return s.startsWith("iPhone と準備中") || s.startsWith("無線 CarPlay 接続中");
+        // 「CarPlay 表示中」(映像のセッションが始まった瞬間の文)も接続中。抜けていると、つながった直後に
+        // 一瞬「切断」と判定され、縁が不良の色に光り、記録に偽の切断が残っていた(2026-11-23 実機の接続の記録で判明)
+        return s.startsWith("iPhone と準備中") || s.startsWith("無線 CarPlay 接続中") || s.startsWith("CarPlay 表示中");
     }
 
     /** つなぎ直しが要る状態か(失敗・切断・始められない・停止のまま)。 */

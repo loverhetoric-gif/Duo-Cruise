@@ -313,6 +313,15 @@ CarPlay のナビが送ってくる案内の中身(次の曲がり角の曲が�
 - **吸い出しと一覧(Mac)**: `python3 tools/connlog.py pull` で `~/.duo-cruise/connlog/<機種>/` へ。`python3 tools/connlog.py show [yyyyMMdd] [--snap]` で 1 日の流れ(何時何分に何がつながり・切れたか)と、CarPlay がつながっていた時間帯の一覧。`live` で吸い出さずに今日の分を見る
 - 記録シートの指示 `connlog` で、置き場所と量を返す
 
+### 実機(P3 PRO)の接続の記録で分かったこと(2026-11-23、自宅)
+
+- **CarPlay の通信は OTTO 本体のホットスポット**: 口は `wlan2`(192.168.43.1、名前 `OttoAibox-P3 Pro-99F0`)。iPhone は 192.168.43.x でつながる。同じ時に、OTTO 本体の Wi-Fi(子機、`wlan0`)は別の Wi-Fi(自宅)につながっていた。子機と親機は別の口で、同時に動く
+- **SIM が無い(`gsm.sim.state=ABSENT`)のに、携帯回線 `rmnet_data2` が通信できる状態(internet・validated)で出る**。本体の Wi-Fi を切ると、既定の通信の道がこの携帯回線に切り替わり、Wi-Fi が戻ると Wi-Fi に戻った。ホットスポット(wlan2)は Wi-Fi を切っている間も立ったまま。11/21 の「テザリングと CarPlay の併用」が、どの道(iPhone のテザリング/この携帯回線)で成り立っていたかは、次の実車の記録で確かめる
+- `sys.boot.reason` は P3 PRO では読める(`reboot,`)。仮想機では読めなかった
+- `/proc/net/arp` は読める(ホットスポットにつながっている機器と IP が分かる)
+- **画面(DuoActivity)が閉じている間は、Android が Wi-Fi の SSID・BSSID を伏せる**(裏のサービスには位置情報の許可が効かない)。記録では `ssidHidden: true`。IP・周波数・電波・validated は読める
+- 直したこと: 映像のセッションが始まった瞬間の状態の文「CarPlay 表示中」が「接続中」と判定されず、つながった直後に一瞬「切断」になり、縁が不良の色に光り・記録に偽の切断が残っていた(`DuoActivity.carBluetooth`)
+
 ---
 
 ## 12. 確かめていないこと・既知の問題
