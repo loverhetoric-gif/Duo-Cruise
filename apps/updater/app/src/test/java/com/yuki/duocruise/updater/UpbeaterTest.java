@@ -111,9 +111,11 @@ public class UpbeaterTest {
     /**
      * Upbeater の Hub と同じ作り方(hub/scripts/signing-key.mjs の鍵・WebCrypto の Ed25519・base64url)で署名した値。
      * 使い捨ての鍵なので、リポジトリに置いてよい。Hub の署名を Java の確かめで通せることを確かめる。
+     * 2026-11-23: Hub の住所を独自ドメイン(upbeater.loverhetoric.com)に変えたため、取得先をその住所にして
+     * Hub の signManifest と同じ手順(WebCrypto の Ed25519・JSON・base64url)で新しい使い捨ての鍵で署名し直した。
      */
-    static final String HUB_PUB = "_d3Iom_iZpF1NQD24bb_WMwVrSiFiCtZHzfLhLgZ0tQ";
-    static final String HUB_SIGNED = "{\"payload\":\"eyJ2IjoxLCJhcHBfaWQiOiIxMTExMTExMS0yMjIyLTMzMzMtNDQ0NC01NTU1NTU1NTU1NTUiLCJvcyI6ImFuZHJvaWQiLCJzZXEiOjcsImNvbW1pdF9zaGEiOiJhYmMiLCJyZWxlYXNlX2lkIjoiciIsInNoYTI1NiI6ImFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWIiLCJzaXplIjoxMjM0LCJ1cmwiOiJodHRwczovL3VwYmVhdGVyLWh1Yi50d2lsaWdodC1zdGFyLTlkOWQud29ya2Vycy5kZXYvdjEvYXJ0aWZhY3RzLzAwMDAwMDAwLTAwMDAtMDAwMC0wMDAwLTAwMDAwMDAwMDAwMD90PXgiLCJpc3N1ZWRfYXQiOjEsImV4cGlyZXNfYXQiOjQxMDI0NDQ4MDAwMDAsImtleV9nZW5lcmF0aW9uIjoxfQ\",\"signature\":\"ggoIpZl43_asjcGi3YdZ-lsU_hz4QTKxzWVwpoUKlYRBQ2Gcp-6tI8c8WrxAkrNsBXuu_OEWoGr_wtrdd-dSDg\",\"key_generation\":1}";
+    static final String HUB_PUB = "bRB87qCd6Kh9JBE0cmgPdSeshig9pclCc8iECpGABf8";
+    static final String HUB_SIGNED = "{\"payload\":\"eyJ2IjoxLCJhcHBfaWQiOiIxMTExMTExMS0yMjIyLTMzMzMtNDQ0NC01NTU1NTU1NTU1NTUiLCJvcyI6ImFuZHJvaWQiLCJzZXEiOjcsImNvbW1pdF9zaGEiOiJhYmMiLCJyZWxlYXNlX2lkIjoiciIsInNoYTI1NiI6ImFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWIiLCJzaXplIjoxMjM0LCJ1cmwiOiJodHRwczovL3VwYmVhdGVyLmxvdmVyaGV0b3JpYy5jb20vdjEvYXJ0aWZhY3RzLzAwMDAwMDAwLTAwMDAtMDAwMC0wMDAwLTAwMDAwMDAwMDAwMD90PXgiLCJpc3N1ZWRfYXQiOjEsImV4cGlyZXNfYXQiOjQxMDI0NDQ4MDAwMDAsImtleV9nZW5lcmF0aW9uIjoxfQ\",\"signature\":\"UtfrnSUNDvoOnUwQxfr4CJWMQYUNeDB77T-5Fnss6zUGByXVDZ3bJaq6T0EQtfMjnv9VzUechoJPe9vzSrTNCQ\",\"key_generation\":1}";
 
     @Test public void acceptsHubSignature() throws Exception {
         Map<Integer, byte[]> hub = new HashMap<>();
