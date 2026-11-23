@@ -117,8 +117,11 @@ jobs:
           PUB="$(printf '%s' "$KEYS" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(json.dumps({str(k["gen"]): k["jwk"]["x"] for k in d["keys"] if k["status"] != "revoked"}, separators=(",",":")))')"
           REV="$(printf '%s' "$KEYS" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(",".join(str(k["gen"]) for k in d["keys"] if k["status"] == "revoked"))')"
           [ "$PUB" != "{}" ] || { echo "使える公開鍵がありません"; exit 1; }
-          echo "UPBEATER_PUBLIC_KEYS=$PUB" >> "$GITHUB_ENV"
-          echo "UPBEATER_REVOKED_GENERATIONS=$REV" >> "$GITHUB_ENV"
+          # 名前は DUO_ で始める。Upbeater の実行役は UPBEATER_ で始まる名前を予約語として GITHUB_ENV から黙って捨てるため、
+          # 以前の UPBEATER_PUBLIC_KEYS は次の手順に届かず、Market が公開鍵なしで組み立てられ、車が版を受け取れなかった(2026-11-23)
+          echo "DUO_UPBEATER_PUBLIC_KEYS=$PUB" >> "$GITHUB_ENV"
+          echo "DUO_UPBEATER_REVOKED_GENERATIONS=$REV" >> "$GITHUB_ENV"
+          echo "DUO_UPBEATER_PUB_FIRST=$(printf '%s' "$PUB" | python3 -c 'import json,sys; print(next(iter(json.load(sys.stdin).values())))')" >> "$GITHUB_ENV"
           echo "公開鍵：$PUB"
           echo "VC=$((2000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
           if [ -z "${DUO_PUSH_TOPIC:-}" ] && [ -s "$HOME/.duo-cruise/push-topic" ]; then echo "DUO_PUSH_TOPIC=$(cat "$HOME/.duo-cruise/push-topic")" >> "$GITHUB_ENV"; fi
@@ -136,6 +139,13 @@ jobs:
         run: |
           set -euo pipefail
           gradle --no-daemon assembleDebug -Pvc=$VC
+          # 公開鍵が本当に埋め込まれたかを確かめる(入っていないと、車は「知らない鍵の署名」で版を受け取れない)
+          # (pipefail の下で grep -q が先に終わると unzip が SIGPIPE で失敗扱いになるので、いったんファイルに出す)
+          unzip -p app/build/outputs/apk/debug/app-debug.apk 'classes*.dex' > "$RUNNER_TEMP/market.dex"
+          LC_ALL=C grep -a -q -F "$DUO_UPBEATER_PUB_FIRST" "$RUNNER_TEMP/market.dex" \
+            || { echo "Market に Upbeater の公開鍵が入っていません"; exit 1; }
+          rm -f "$RUNNER_TEMP/market.dex"
+          echo "Market に Upbeater の公開鍵が入っていることを確かめました"
 
       - name: Duo Cruise 本体を作る（apps/duo があるときだけ）
         working-directory: apps/duo
@@ -162,6 +172,8 @@ jobs:
             echo "$app: 1つ前の中身を版番号 $VC で作り直します"
             (
               cd "prev-src/apps/$app"
+              # 1つ前の中身が古い名前(UPBEATER_PUBLIC_KEYS)で鍵を読む版でも、鍵が入るようにする(この手順の中だけで渡す)
+              export UPBEATER_PUBLIC_KEYS="${DUO_UPBEATER_PUBLIC_KEYS:-}" UPBEATER_REVOKED_GENERATIONS="${DUO_UPBEATER_REVOKED_GENERATIONS:-}"
               echo "sdk.dir=$ANDROID_HOME" > local.properties
               if [ -f gradlew ]; then chmod +x gradlew; ./gradlew --no-daemon assembleDebug -Pvc=$VC; else gradle --no-daemon assembleDebug -Pvc=$VC; fi
             ) && cp "prev-src/apps/$app/app/build/outputs/apk/debug/app-debug.apk" "prev-out/$app.apk" \
