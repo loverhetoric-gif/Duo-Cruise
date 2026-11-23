@@ -2,7 +2,7 @@
 # - 自宅の Mac の実行役（macos）で動く。GitHub Actions は使わない
 # - 配るのは1つのまとめ（duo-bundle.zip：manifest.json・duo-updater.apk・duo-main.apk・戻す用の prev-*.apk）
 # - 版番号（versionCode）は 2000 + Upbeater の実行番号（前の鍵の版 1199〜1201 より必ず大きい）
-# - 署名の鍵は Mac の ~/.duo-cruise/signing（.upbeater/android-keygen.yml で作る）。リポジトリ・ログに出さない
+# - 署名の鍵は車のアプリと同じ前の本番の鍵（Mac の ~/development/ottocast-work/keys）。リポジトリ・ログに出さない（2026-11-22 変更）
 # - 車の Market に埋め込む Upbeater の公開鍵は、組み立てのたびに Hub の GET /v1/keys から取る
 # - 最初の版を車で確かめるまでは手動実行だけ（確かめたら push を足す：設計書 6 の 7）
 name: android
@@ -171,16 +171,23 @@ jobs:
       - name: 署名して、まとめを作る
         run: |
           set -euo pipefail
-          DIR="$HOME/.duo-cruise/signing"
-          [ -f "$DIR/mx.jks" ] && [ -f "$DIR/pass" ] || { echo "署名の鍵がありません。先に .upbeater/android-keygen.yml を実行してください"; exit 1; }
-          export KS_PASS="$(cat "$DIR/pass")"
+          # 車のアプリと同じ鍵(前の本番の鍵)で署名する。2026-11-22 利用者の決定: 車(P3 PRO)の 1213 版はこの鍵で、
+          # 11/14 に作った新しい鍵(~/.duo-cruise/signing)で署名すると、車で消して入れ直す(設定が消える)ことになるため。
+          # 取り違えを防ぐため、署名した証明書の SHA-256 が車のものと同じかを確かめる
+          KS="$HOME/development/ottocast-work/keys/mx-release.jks"
+          KS_PASS_FILE="$HOME/development/ottocast-work/keys/mx-release-password.txt"
+          CAR_CERT="81c08c02c306e794bf23b9910730733ac2651c9bcb514d9fe3b62dac498f4da4"
+          [ -f "$KS" ] && [ -f "$KS_PASS_FILE" ] || { echo "車のアプリの署名の鍵がありません: $KS"; exit 1; }
+          export KS_PASS="$(cat "$KS_PASS_FILE")"
           BT="$ANDROID_HOME/build-tools/$BT_SIGN"
           rm -rf out && mkdir -p out
           sign() {
             "$BT/zipalign" -f -p 4 "$1" "$RUNNER_TEMP/aligned.apk"
-            "$BT/apksigner" sign --ks "$DIR/mx.jks" --ks-key-alias mx --ks-pass env:KS_PASS --key-pass env:KS_PASS \
+            "$BT/apksigner" sign --ks "$KS" --ks-key-alias mx --ks-pass env:KS_PASS --key-pass env:KS_PASS \
               --v4-signing-enabled false --out "out/$2" "$RUNNER_TEMP/aligned.apk"
             "$BT/apksigner" verify "out/$2"
+            "$BT/apksigner" verify --print-certs "out/$2" | grep -q "SHA-256 digest: $CAR_CERT" \
+              || { echo "$2: 車のアプリと違う鍵で署名されました"; exit 1; }
           }
           sign apps/updater/app/build/outputs/apk/debug/app-debug.apk duo-updater.apk
           if [ "$HAS_DUO" = 1 ]; then sign apps/duo/app/build/outputs/apk/debug/app-debug.apk duo-main.apk; fi
