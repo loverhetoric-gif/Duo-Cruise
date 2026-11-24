@@ -21,8 +21,8 @@ android {
         // 受け取り先(Upbeater)と、その署名の公開鍵(世代番号 → base64url)。公開鍵は Upbeater の GET /v1/keys の値を
         // 組み立てのときに渡す(.upbeater/android.yml)。空なら署名を確かめられないので、何も入れない
         buildConfigField "String", "UPBEATER_HUB", "\"https://upbeater.loverhetoric.com\""
-        buildConfigField "String", "UPBEATER_PUBLIC_KEYS", "\"" + (System.getenv('UPBEATER_PUBLIC_KEYS') ?: '').replace('\\', '').replace('"', '\\"') + "\""
-        buildConfigField "String", "UPBEATER_REVOKED", "\"" + (System.getenv('UPBEATER_REVOKED_GENERATIONS') ?: '').replaceAll('[^0-9,]', '') + "\""
+        buildConfigField "String", "UPBEATER_PUBLIC_KEYS", "\"" + (System.getenv('DUO_UPBEATER_PUBLIC_KEYS') ?: '').replace('\\', '').replace('"', '\\"') + "\""
+        buildConfigField "String", "UPBEATER_REVOKED", "\"" + (System.getenv('DUO_UPBEATER_REVOKED_GENERATIONS') ?: '').replaceAll('[^0-9,]', '') + "\""
     }
     buildFeatures { buildConfig true }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
